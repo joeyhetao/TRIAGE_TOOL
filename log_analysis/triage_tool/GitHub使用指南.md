@@ -77,7 +77,16 @@ git push                         # 推送到 GitHub
 
 ```bash
 ssh-keygen -t ed25519 -C "你的邮箱"   # 生成密钥
-cat ~/.ssh/id_ed25519.pub              # 复制公钥内容
+                                     # 复制公钥内容
+CMD（命令提示符）：
+Copy code to clipboard
+type %USERPROFILE%\.ssh\id_ed25519.pub
+PowerShell：
+Copy code to clipboard
+Get-Content ~/.ssh/id_ed25519.pub
+Git Bash（推荐，命令和 Linux 一样）：
+Copy code to clipboard
+cat ~/.ssh/id_ed25519.pub
 ```
 
 然后粘贴到：GitHub → Settings → SSH and GPG keys → New SSH key
