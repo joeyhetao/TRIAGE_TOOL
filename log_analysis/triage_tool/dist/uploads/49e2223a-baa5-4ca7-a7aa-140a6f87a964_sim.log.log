@@ -1,0 +1,150 @@
+
+                Synopsys VCS® Simulator
+                  Version S-2021.09-SP2-10
+         Copyright (c) 1991-2021 by Synopsys Inc.
+                         ALL RIGHTS RESERVED
+
+This software and the associated documentation are confidential and
+proprietary to Synopsys, Inc. Your use or disclosure of this software
+is subject to the terms and conditions of a written license agreement
+between you, or your company, and Synopsys, Inc. In the event of
+publications, the following notice is applicable:
+
+                  UNPUBLISHED, LICENSED SOFTWARE.
+  CONTAINS PROPRIETARY INFORMATION WHICH IS THE PROPERTY OF SYNOPSYS.
+
+Compiler version S-2021.09-SP2-10; Runtime version S-2021.09-SP2-10;  Feb 25 2026  21:00:00
+
+ --- Compiling source files ---
+  Compiling file: tb/env/axi_env.sv
+  Compiling file: tb/agent/axi_agent.sv
+  Compiling file: tb/monitor/axi_monitor.sv
+  Compiling file: tb/scoreboard/axi_scoreboard.sv
+  Compiling file: tb/sequence/axi_base_seq.sv
+  Compiling file: tb/test/axi_smoke_test.sv
+  Compiling file: rtl/axi_master.sv
+  Compiling file: rtl/axi_slave.sv
+
+ --- Elaboration ---
+  Top-level module : tb_top
+  Elaboration time : 3.24 sec
+
+$finish called from file "tb/tb_top.sv", line 44.
+Enabling SHM tracing...
+
+UVM_INFO @ 0 [RNTST] tb_top: Running test axi_smoke_test...
+UVM_INFO @ 0 [UVMTOP] tb_top.uvm_test_top: ---Starting test---
+
+UVM_INFO @ 10ns [CFG] tb_top.uvm_test_top.env.agt.drv: AXI driver configured: DATA_WIDTH=64, ADDR_WIDTH=32
+
+UVM_INFO @ 50ns [SEQ_START] tb_top.uvm_test_top: Starting base sequence axi_wr_rd_seq
+
+# -----------------------------------------------------------------------
+# AXI Write Transaction #1
+# -----------------------------------------------------------------------
+UVM_INFO @ 120ns [DRV] tb_top.uvm_test_top.env.agt.drv: AWADDR=0x00001000  AWLEN=0x0F  AWSIZE=3
+
+UVM_WARNING @ 150ns [WSTRB_CHK] tb/agent/axi_agent.sv:87: WSTRB=0x00 on non-last beat, potential data loss
+This may indicate the driver is issuing a partial write with no byte-enable on an intermediate beat.
+
+UVM_INFO @ 200ns [MON] tb_top.uvm_test_top.env.agt.mon: AXI Write Response: BRESP=OKAY  BID=0x01
+
+# -----------------------------------------------------------------------
+# AXI Read Transaction #1
+# -----------------------------------------------------------------------
+UVM_INFO @ 250ns [DRV] tb_top.uvm_test_top.env.agt.drv: ARADDR=0x00001000  ARLEN=0x0F  ARSIZE=3
+
+UVM_INFO @ 310ns [MON] tb_top.uvm_test_top.env.agt.mon: First read data beat received: RDATA=0xDEADBEEF00000001
+
+UVM_ERROR @ 380ns [COMPARE_FAIL] tb/scoreboard/axi_scoreboard.sv:142: Data mismatch on AXI read beat 0: expected=0xDEADBEEF00000001 got=0xCAFEBABE00000001
+Expected data does not match DUT output. Check write-to-read pipeline latency.
+
+UVM_INFO @ 400ns [SCB] tb_top.uvm_test_top.env.scb: Scoreboard: 1 error(s) accumulated so far
+
+# -----------------------------------------------------------------------
+# AXI Write Transaction #2 — crossing 4K boundary
+# -----------------------------------------------------------------------
+UVM_INFO @ 450ns [DRV] tb_top.uvm_test_top.env.agt.drv: AWADDR=0x00001FF0  AWLEN=0x07  AWSIZE=3
+
+UVM_WARNING @ 460ns [BOUNDARY4K] tb/agent/axi_agent.sv:210: AXI4 4KB boundary crossing detected: AWADDR=0x00001FF0 AWLEN=0x07 AWSIZE=3
+AXI4 spec section A3.4.1 prohibits crossing a 4KB boundary in a single transaction. RTL may handle this incorrectly.
+
+UVM_ERROR @ 520ns [RESP_ERR] tb/scoreboard/axi_scoreboard.sv:178: AXI BRESP error: BRESP=SLVERR BID=0x02 for AWADDR=0x00001FF0
+Slave returned SLVERR on boundary-crossing write. Root cause: address decoder out-of-range logic triggered.
+
+# -----------------------------------------------------------------------
+# Clock / Reset Check
+# -----------------------------------------------------------------------
+UVM_WARNING @ 600ns [CLK_GLITCH] tb/monitor/axi_monitor.sv:55: Clock glitch detected at 598ns. Duration < 0.5 period. Possible metastability in DUT reset path.
+
+UVM_INFO @ 650ns [RST] tb_top.uvm_test_top.env: Reset de-asserted, protocol monitor re-enabled.
+
+# -----------------------------------------------------------------------
+# Interrupt Handling Test
+# -----------------------------------------------------------------------
+UVM_INFO @ 700ns [SEQ_START] tb_top.uvm_test_top: Starting interrupt test sequence axi_intr_seq
+
+UVM_ERROR @ 850ns [INTR_TIMEOUT] tb/sequence/axi_base_seq.sv:312: Interrupt not received within timeout: intr_id=3 timeout_cycles=100
+The interrupt line remained de-asserted after write to trigger register at offset 0x0048. Possible missing IRQ wiring in RTL.
+
+UVM_WARNING @ 870ns [STALL] tb/monitor/axi_monitor.sv:98: AXI handshake stall detected: ARVALID=1 ARREADY=0 for 32 consecutive cycles on channel AR
+Stall may indicate DUT is in a deadlock state. Monitor will continue watching.
+
+# -----------------------------------------------------------------------
+# Out-of-order ID test
+# -----------------------------------------------------------------------
+UVM_INFO @ 900ns [SEQ_START] tb_top.uvm_test_top: Starting out-of-order ID test axi_ooo_seq
+
+UVM_ERROR @ 1020ns [ID_MISMATCH] tb/scoreboard/axi_scoreboard.sv:223: Out-of-order response ID mismatch: expected BID=0x03 got BID=0x05
+Outstanding write transaction IDs did not return in FIFO order. This violates the AXI ordering model for same-ID transactions.
+
+UVM_ERROR @ 1050ns [RDATA_X] tb/monitor/axi_monitor.sv:134: X/Z value detected on RDATA bus at 1048ns: RDATA=32'hxxxxxxxx RID=0x04
+Unknown logic value propagated to read data bus. Possible uninitialized register or clock-domain crossing issue.
+
+# -----------------------------------------------------------------------
+# Sequence timeout and cleanup
+# -----------------------------------------------------------------------
+UVM_INFO @ 1100ns [SEQ] tb_top.uvm_test_top: Sequence axi_ooo_seq completed with errors, proceeding to cleanup
+
+UVM_FATAL @ 1150ns [PHASING] tb/env/axi_env.sv:67: run_phase hung: objection never dropped after 1000ns timeout
+Sequence item axi_ooo_seq raised UVM objection but never called drop_objection. Check for missing phase.drop_objection() in sequence body.
+
+UVM_INFO @ 1150ns [FINISH] tb_top.uvm_test_top: Test shutting down due to FATAL error.
+
+--- UVM Report catcher Summary ---
+
+--- UVM Report Summary ---
+
+** Report counts by severity
+UVM_INFO :   18
+UVM_WARNING :    4
+UVM_ERROR :    5
+UVM_FATAL :    1
+
+** Report counts by id
+[BOUNDARY4K]            1
+[CFG]                   1
+[CLK_GLITCH]            1
+[COMPARE_FAIL]          1
+[DRV]                   2
+[FINISH]                1
+[ID_MISMATCH]           1
+[INTR_TIMEOUT]          1
+[MON]                   2
+[PHASING]               1
+[RDATA_X]               1
+[RESP_ERR]              1
+[RNST]                  1
+[RST]                   1
+[SCB]                   1
+[SEQ]                   1
+[SEQ_START]             3
+[STALL]                 1
+[UVMTOP]                1
+[WSTRB_CHK]             1
+
+$finish at simulation time                 1150ns
+           V C S   S i m u l a t i o n   R e p o r t
+Time: 1150 ns
+CPU Time:      2.760 seconds;       Data structure size:   0.5Mb
+Thu Feb 26 08:00:00 2026

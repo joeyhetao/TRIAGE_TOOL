@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>仿真日志分析报告</title>
+  <style>
+    body{font-family:"Microsoft YaHei",Arial,sans-serif;background:#F4F6F9;
+         margin:0;padding:20px;color:#333}
+    h1{color:#1F497D;text-align:center;margin-bottom:4px}
+    .subtitle{text-align:center;color:#888;margin-bottom:20px;font-size:13px}
+    .summary-bar{display:flex;gap:16px;justify-content:center;margin-bottom:24px}
+    .scard{background:#fff;border-radius:8px;padding:12px 24px;text-align:center;
+            box-shadow:0 1px 4px rgba(0,0,0,.1)}
+    .scard .num{font-size:28px;font-weight:bold}
+    .scard .lbl{font-size:12px;color:#888}
+    .fatal-num{color:#C00000} .error-num{color:#ED7D31}
+    .warning-num{color:#B8860B} .unmatch-num{color:#A6A6A6}
+    .log-card{background:#fff;border-radius:8px;margin-bottom:16px;
+               box-shadow:0 1px 4px rgba(0,0,0,.1);overflow:hidden}
+    .log-header{background:#2E74B5;color:#fff;padding:10px 16px;
+                 display:flex;justify-content:space-between;align-items:center}
+    .log-name{font-weight:bold;font-size:14px}
+    .stat-badges{display:flex;gap:8px}
+    .sbadge{border-radius:4px;padding:2px 8px;font-size:12px;font-weight:bold}
+    .sbadge.fatal{background:#C00000} .sbadge.error{background:#ED7D31}
+    .sbadge.warning{background:#B8860B}
+    .log-body{padding:16px}
+    .section-title{font-weight:bold;color:#2E74B5;margin:12px 0 6px;
+                    font-size:13px;border-bottom:1px solid #E0E0E0;padding-bottom:4px}
+    .first-error-box{background:#FFF8F8;border-radius:4px;padding:10px;margin-bottom:8px}
+    .info-table{width:100%;border-collapse:collapse;font-size:13px}
+    .info-table td{padding:5px 8px;border:1px solid #E8E8E8}
+    .info-table td:nth-child(odd){background:#F5F8FF;font-weight:bold;
+                                   width:12%;white-space:nowrap}
+    .desc{word-break:break-all}
+    .badge{border-radius:4px;padding:2px 8px;color:#fff;font-size:12px;font-weight:bold}
+    .match-box{border-radius:4px;padding:10px 14px;font-size:13px;margin-top:4px}
+    .match-box.matched{background:#E8F5E9;border-left:4px solid #70AD47}
+    .match-box.unmatched{background:#F5F5F5;border-left:4px solid #A6A6A6;color:#666}
+    .match-title{font-weight:bold;color:#2E7D32;margin-bottom:8px}
+    .match-by{font-weight:normal;color:#888;font-size:12px}
+  </style>
+</head>
+<body>
+  <h1>仿真日志分析报告</h1>
+  <div class="subtitle">生成时间：2026-02-26 20:50:25 &nbsp;|&nbsp; 共分析 1 个日志文件</div>
+  <div class="summary-bar">
+    <div class="scard"><div class="num">1</div><div class="lbl">日志总数</div></div>
+    <div class="scard"><div class="num fatal-num">1</div><div class="lbl">UVM_FATAL</div></div>
+    <div class="scard"><div class="num error-num">5</div><div class="lbl">UVM_ERROR</div></div>
+    <div class="scard"><div class="num warning-num">4</div><div class="lbl">UVM_WARNING</div></div>
+    <div class="scard"><div class="num unmatch-num">0</div><div class="lbl">未匹配</div></div>
+  </div>
+  
+        <div class="log-card">
+          <div class="log-header">
+            <span class="log-name">📄 sim.log</span>
+            <span class="stat-badges">
+              <span class="sbadge fatal">FATAL: 1</span>
+              <span class="sbadge error">ERROR: 5</span>
+              <span class="sbadge warning">WARNING: 4</span>
+            </span>
+          </div>
+          <div class="log-body">
+            
+            <div class="section-title">首错信息</div>
+            <div class="first-error-box" style="border-left:4px solid #C00000">
+              <table class="info-table">
+                <tr>
+                  <td>错误级别</td>
+                  <td><span class="badge" style="background:#C00000">UVM_FATAL</span></td>
+                  <td>时间戳</td><td>1150ns</td>
+                </tr>
+                <tr><td>错误ID</td><td>PHASING</td>
+                    <td>位置</td><td>tb/env/axi_env.sv:67</td></tr>
+                <tr><td>描述</td><td colspan="3" class="desc">run_phase hung: objection never dropped after 1000ns timeout Sequence item axi_ooo_seq raised UVM objection but never called drop_objection. Check for missing phase.drop_objection() in sequence body.</td></tr>
+              </table>
+            </div>
+            <div class="section-title">匹配结果</div>
+            
+            <div class="match-box matched">
+              <div class="match-title">✅ 命中知识库 <span class="match-by">（关键词匹配）</span></div>
+              <table class="info-table">
+                <tr><td>报错原因</td><td>时序违例</td>
+                    <td>根因分类</td><td>DUT Bug</td></tr>
+                <tr><td>所属模块</td><td>tb/env/axi_env</td>
+                    <td>录入人</td><td>melo.liao</td></tr>
+                <tr><td>解决方案</td><td colspan="3"></td></tr>
+                <tr><td>关联用例</td><td colspan="3">tc_sanity</td></tr>
+              </table>
+            </div>
+          </div>
+        </div>
+</body>
+</html>

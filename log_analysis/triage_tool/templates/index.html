@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>仿真日志分类分诊工具</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="page-wrap">
+  <div class="top-bar">
+    <span class="tool-title">🔍 仿真日志分类分诊工具</span>
+    <span class="tool-sub">Simulation Log Triage Tool</span>
+  </div>
+
+  <div class="card upload-card">
+    <h2 class="card-title">上传仿真日志</h2>
+
+    <!-- 拖拽区域 -->
+    <div class="drop-zone" id="dropZone" onclick="fileInput.click()">
+      <div class="drop-icon">📂</div>
+      <div class="drop-text">拖拽日志文件到此处，或 <span class="link-btn">点击选择文件</span></div>
+      <div class="drop-hint">仅支持 .log 格式，可多选</div>
+      <input type="file" id="fileInput" multiple accept=".log" style="display:none">
+    </div>
+
+    <!-- 已选文件列表 -->
+    <div class="file-list" id="fileList"></div>
+
+    <!-- 知识库路径 -->
+    <div class="form-row">
+      <label class="form-label">📋 知识库路径</label>
+      <input type="text" id="dbPath" class="form-input" value="{{ db_default }}" placeholder="error_db.xlsx 路径">
+      <label for="dbInput" class="btn btn-secondary">选择文件</label>
+      <input type="file" id="dbInput" accept=".xlsx" style="display:none">
+    </div>
+
+    <!-- 提交按钮 -->
+    <div class="btn-row">
+      <button class="btn btn-primary" id="analyzeBtn" onclick="startAnalyze()">
+        <span id="btnText">开始分析</span>
+        <span id="btnSpinner" class="spinner" style="display:none"></span>
+      </button>
+    </div>
+    <div id="errMsg" class="err-msg"></div>
+  </div>
+</div>
+
+<script>
+  const dropZone  = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+  const fileList  = document.getElementById('fileList');
+  const dbInput   = document.getElementById('dbInput');
+  const dbPath    = document.getElementById('dbPath');
+  let selectedFiles = [];
+
+  // 拖拽
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault(); dropZone.classList.remove('drag-over');
+    addFiles(e.dataTransfer.files);
+  });
+  fileInput.addEventListener('change', () => {
+    addFiles(fileInput.files);
+    fileInput.value = '';   // 清空，确保再次选同一文件时仍触发 change 事件
+  });
+  dbInput.addEventListener('change', () => { if (dbInput.files[0]) dbPath.value = dbInput.files[0].name; });
+
+  function addFiles(files) {
+    const rejected = [];
+    for (const f of files) {
+      if (f.name.toLowerCase().endsWith('.log')) {
+        selectedFiles.push(f);
+      } else {
+        rejected.push(f.name);
+      }
+    }
+    if (rejected.length) {
+      document.getElementById('errMsg').textContent =
+        '以下文件不是 .log 格式，已跳过：' + rejected.join('、');
+    } else {
+      document.getElementById('errMsg').textContent = '';
+    }
+    renderFileList();
+  }
+
+  function removeFile(idx) {
+    selectedFiles.splice(idx, 1);
+    renderFileList();
+  }
+
+  function renderFileList() {
+    if (!selectedFiles.length) { fileList.innerHTML = ''; return; }
+    fileList.innerHTML = selectedFiles.map((f, i) =>
+      `<div class="file-item">
+        <span class="file-icon">📄</span>
+        <span class="file-name">${f.name}</span>
+        <span class="file-size">${(f.size/1024).toFixed(1)} KB</span>
+        <span class="file-remove" onclick="removeFile(${i})">✕</span>
+      </div>`
+    ).join('');
+  }
+
+  async function startAnalyze() {
+    if (!selectedFiles.length) {
+      document.getElementById('errMsg').textContent = '请先选择日志文件';
+      return;
+    }
+    document.getElementById('errMsg').textContent = '';
+    document.getElementById('btnText').textContent = '分析中...';
+    document.getElementById('btnSpinner').style.display = 'inline-block';
+    document.getElementById('analyzeBtn').disabled = true;
+
+    const formData = new FormData();
+    selectedFiles.forEach(f => formData.append('logs', f));
+    formData.append('db_path', dbPath.value);
+
+    try {
+      const resp = await fetch('/analyze', { method: 'POST', body: formData });
+      const data = await resp.json();
+      if (data.redirect) {
+        window.location.href = data.redirect;
+      } else {
+        document.getElementById('errMsg').textContent = data.error || '分析失败';
+      }
+    } catch(e) {
+      document.getElementById('errMsg').textContent = '请求失败：' + e.message;
+    } finally {
+      document.getElementById('btnText').textContent = '开始分析';
+      document.getElementById('btnSpinner').style.display = 'none';
+      document.getElementById('analyzeBtn').disabled = false;
+    }
+  }
+</script>
+</body>
+</html>
