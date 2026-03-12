@@ -56,13 +56,10 @@
     <!-- 右侧详情面板 -->
     <div class="detail-area">
       {% for r in results %}
-      {% set fe = r.first_error %}
-      {% set match = r.match %}
-      {% set entry = match.entry if match.entry else {} %}
-      {% set level = fe.level if fe else '' %}
+      {% set ri = loop.index0 %}
 
       <div class="detail-panel {% if loop.first %}active{% endif %}"
-           id="panel-{{ loop.index0 }}">
+           id="panel-{{ ri }}">
 
         <div class="panel-filename">📄 {{ r.file }}</div>
 
@@ -85,107 +82,122 @@
           </div>
         </div>
 
-        <!-- 首错信息 -->
+        <!-- 前 N 条错误 -->
         <div class="section-block">
-          <div class="section-title">首错信息</div>
-          {% if fe %}
-          <div class="first-error-box level-{{ level|lower }}">
-            <div class="fe-grid">
-              <div class="fe-kv"><span class="fe-k">错误级别</span>
-                <span class="badge badge-{{ level|lower }}">{{ level }}</span></div>
-              <div class="fe-kv"><span class="fe-k">时间戳</span>
-                <span class="fe-v">{{ fe.timestamp }}</span></div>
-              <div class="fe-kv"><span class="fe-k">错误ID</span>
-                <span class="fe-v mono">{{ fe.error_id }}</span></div>
-              <div class="fe-kv"><span class="fe-k">位置</span>
-                <span class="fe-v mono">{{ fe.location }}</span></div>
-              <div class="fe-kv full"><span class="fe-k">描述</span>
-                <span class="fe-v desc">{{ fe.description }}</span></div>
-            </div>
+          <div class="section-title">
+            前 {{ r.top_errors | length }} 条错误（按出现顺序）
           </div>
+
+          {% if r.top_errors %}
+            {% for err in r.top_errors %}
+            {% set ei = loop.index0 %}
+            {% set ematch = err.match %}
+            {% set eentry = ematch.entry if ematch.entry else {} %}
+            {% set elevel = err.level %}
+
+            <div class="error-item" id="erritem-{{ ri }}-{{ ei }}">
+              <!-- 错误头 -->
+              <div class="error-item-hdr level-{{ elevel | lower }}">
+                <span class="error-idx">#{{ loop.index }}</span>
+                <span class="badge badge-{{ elevel | lower }}">{{ elevel }}</span>
+                <span class="error-id-sm mono">{{ err.error_id }}</span>
+                <span class="error-ts">@ {{ err.timestamp }}</span>
+              </div>
+
+              <!-- 错误详情 -->
+              <div class="fe-grid" style="margin:8px 0 10px">
+                <div class="fe-kv">
+                  <span class="fe-k">位置</span>
+                  <span class="fe-v mono">{{ err.location }}</span>
+                </div>
+                <div class="fe-kv full">
+                  <span class="fe-k">描述</span>
+                  <span class="fe-v desc">{{ err.description }}</span>
+                </div>
+              </div>
+
+              <!-- 匹配结果 -->
+              {% if ematch.status == 'matched' %}
+              <div class="match-box matched">
+                <div class="match-header">
+                  ✅ 命中知识库
+                  <span class="match-by">（{{ '错误ID精确匹配' if ematch.match_by == 'error_id' else ('关键词匹配' if ematch.match_by == 'keywords' else '手动录入') }}）</span>
+                </div>
+                <div class="entry-grid">
+                  <div class="eg-kv"><span class="eg-k">报错原因</span><span class="eg-v">{{ eentry.get('报错原因','') }}</span></div>
+                  <div class="eg-kv"><span class="eg-k">根因分类</span><span class="eg-v">{{ eentry.get('根因分类','') }}</span></div>
+                  <div class="eg-kv"><span class="eg-k">所属模块</span><span class="eg-v">{{ eentry.get('所属模块','') }}</span></div>
+                  <div class="eg-kv"><span class="eg-k">录入人</span><span class="eg-v">{{ eentry.get('录入人','') }}</span></div>
+                  <div class="eg-kv full"><span class="eg-k">解决方案</span><span class="eg-v">{{ eentry.get('解决方案','') }}</span></div>
+                  <div class="eg-kv full"><span class="eg-k">关联用例</span><span class="eg-v mono">{{ eentry.get('关联用例','') }}</span></div>
+                </div>
+              </div>
+
+              {% elif ematch.status == 'unmatched' %}
+              <div class="match-box unmatched">
+                <div class="match-header">❌ 未匹配 — 建议将该报错条目添加至错误数据库</div>
+                <!-- 回写表单 -->
+                <div class="writeback-form" id="form-{{ ri }}-{{ ei }}">
+                  <div class="form-grid">
+                    <div class="fg-item">
+                      <label>关键描述关键词 <span class="hint">多个用逗号分隔</span></label>
+                      <input type="text" class="fi" id="kw-{{ ri }}-{{ ei }}"
+                             placeholder="如：length mismatch,expected"
+                             value="{{ err.description[:50] }}">
+                    </div>
+                    <div class="fg-item">
+                      <label>报错原因 <span class="req">*</span></label>
+                      <input type="text" class="fi" id="reason-{{ ri }}-{{ ei }}" placeholder="填写根因说明">
+                    </div>
+                    <div class="fg-item">
+                      <label>所属模块</label>
+                      <input type="text" class="fi" id="module-{{ ri }}-{{ ei }}"
+                             value="{{ err.location.split('(')[0].split('/')[-1] }}" placeholder="模块名">
+                    </div>
+                    <div class="fg-item">
+                      <label>根因分类 <span class="req">*</span></label>
+                      <select class="fi" id="category-{{ ri }}-{{ ei }}">
+                        <option>DUT Bug</option>
+                        <option>TB Bug</option>
+                        <option>用例问题</option>
+                        <option>环境问题</option>
+                      </select>
+                    </div>
+                    <div class="fg-item full">
+                      <label>解决方案</label>
+                      <input type="text" class="fi" id="solution-{{ ri }}-{{ ei }}" placeholder="处理建议">
+                    </div>
+                    <div class="fg-item">
+                      <label>关联用例</label>
+                      <input type="text" class="fi" id="case-{{ ri }}-{{ ei }}" placeholder="用例名称">
+                    </div>
+                    <div class="fg-item">
+                      <label>录入人</label>
+                      <input type="text" class="fi" id="author-{{ ri }}-{{ ei }}" placeholder="姓名">
+                    </div>
+                  </div>
+                  <button class="btn btn-primary mt8"
+                          onclick="writeBack({{ ri }}, {{ ei }}, '{{ r.file }}',
+                                   '{{ elevel }}', '{{ err.error_id }}')">
+                    写回知识库
+                  </button>
+                  <span class="wb-msg" id="wbmsg-{{ ri }}-{{ ei }}"></span>
+                </div>
+              </div>
+
+              {% else %}
+              <div class="empty-box">无匹配信息</div>
+              {% endif %}
+
+            </div><!-- /.error-item -->
+            {% endfor %}
+
           {% else %}
           <div class="empty-box">该日志无报错信息</div>
           {% endif %}
         </div>
 
-        <!-- 匹配结果 -->
-        <div class="section-block">
-          <div class="section-title">知识库匹配结果</div>
-
-          {% if match.status == 'matched' %}
-          <div class="match-box matched">
-            <div class="match-header">
-              ✅ 命中知识库
-              <span class="match-by">（{{ '错误ID精确匹配' if match.match_by == 'error_id' else '关键词匹配' }}）</span>
-            </div>
-            <div class="entry-grid">
-              <div class="eg-kv"><span class="eg-k">报错原因</span><span class="eg-v">{{ entry.get('报错原因','') }}</span></div>
-              <div class="eg-kv"><span class="eg-k">根因分类</span><span class="eg-v">{{ entry.get('根因分类','') }}</span></div>
-              <div class="eg-kv"><span class="eg-k">所属模块</span><span class="eg-v">{{ entry.get('所属模块','') }}</span></div>
-              <div class="eg-kv"><span class="eg-k">录入人</span><span class="eg-v">{{ entry.get('录入人','') }}</span></div>
-              <div class="eg-kv full"><span class="eg-k">解决方案</span><span class="eg-v">{{ entry.get('解决方案','') }}</span></div>
-              <div class="eg-kv full"><span class="eg-k">关联用例</span><span class="eg-v mono">{{ entry.get('关联用例','') }}</span></div>
-            </div>
-          </div>
-
-          {% elif match.status == 'unmatched' %}
-          <div class="match-box unmatched">
-            <div class="match-header">❌ 未匹配 — 建议将该报错条目添加至错误数据库</div>
-            <!-- 回写表单 -->
-            <div class="writeback-form" id="form-{{ loop.index0 }}">
-              <div class="form-grid">
-                <div class="fg-item">
-                  <label>关键描述关键词 <span class="hint">多个用逗号分隔</span></label>
-                  <input type="text" class="fi" id="kw-{{ loop.index0 }}"
-                         placeholder="如：length mismatch,expected"
-                         value="{{ fe.description[:50] if fe else '' }}">
-                </div>
-                <div class="fg-item">
-                  <label>报错原因 <span class="req">*</span></label>
-                  <input type="text" class="fi" id="reason-{{ loop.index0 }}" placeholder="填写根因说明">
-                </div>
-                <div class="fg-item">
-                  <label>所属模块</label>
-                  <input type="text" class="fi" id="module-{{ loop.index0 }}"
-                         value="{{ fe.location.split('.')[0] if fe else '' }}" placeholder="模块名">
-                </div>
-                <div class="fg-item">
-                  <label>根因分类 <span class="req">*</span></label>
-                  <select class="fi" id="category-{{ loop.index0 }}">
-                    <option>DUT Bug</option>
-                    <option>TB Bug</option>
-                    <option>用例问题</option>
-                    <option>环境问题</option>
-                  </select>
-                </div>
-                <div class="fg-item full">
-                  <label>解决方案</label>
-                  <input type="text" class="fi" id="solution-{{ loop.index0 }}" placeholder="处理建议">
-                </div>
-                <div class="fg-item">
-                  <label>关联用例</label>
-                  <input type="text" class="fi" id="case-{{ loop.index0 }}" placeholder="用例名称">
-                </div>
-                <div class="fg-item">
-                  <label>录入人</label>
-                  <input type="text" class="fi" id="author-{{ loop.index0 }}" placeholder="姓名">
-                </div>
-              </div>
-              <button class="btn btn-primary mt8"
-                      onclick="writeBack({{ loop.index0 }}, '{{ r.file }}',
-                               '{{ level }}', '{{ fe.error_id if fe else '' }}')">
-                写回知识库
-              </button>
-              <span class="wb-msg" id="wbmsg-{{ loop.index0 }}"></span>
-            </div>
-          </div>
-
-          {% else %}
-          <div class="empty-box">无首错，无需匹配</div>
-          {% endif %}
-        </div>
-
-      </div>
+      </div><!-- /.detail-panel -->
       {% endfor %}
     </div>
   </div>
@@ -199,24 +211,27 @@
     el.classList.add('active');
   }
 
-  async function writeBack(idx, fileName, level, errorId) {
-    const reason = document.getElementById('reason-' + idx).value.trim();
+  async function writeBack(fileIdx, errorIdx, fileName, level, errorId) {
+    const key    = fileIdx + '-' + errorIdx;
+    const reason = document.getElementById('reason-' + key).value.trim();
     if (!reason) {
-      document.getElementById('wbmsg-' + idx).textContent = '请填写报错原因';
-      document.getElementById('wbmsg-' + idx).style.color = '#C00000';
+      const msg = document.getElementById('wbmsg-' + key);
+      msg.textContent  = '请填写报错原因';
+      msg.style.color  = '#C00000';
       return;
     }
     const payload = {
       file_name:    fileName,
+      error_idx:    errorIdx,
       level:        level,
       error_id:     errorId,
-      keywords:     document.getElementById('kw-'       + idx).value,
+      keywords:     document.getElementById('kw-'       + key).value,
       reason:       reason,
-      module:       document.getElementById('module-'   + idx).value,
-      category:     document.getElementById('category-' + idx).value,
-      solution:     document.getElementById('solution-' + idx).value,
-      related_case: document.getElementById('case-'     + idx).value,
-      author:       document.getElementById('author-'   + idx).value,
+      module:       document.getElementById('module-'   + key).value,
+      category:     document.getElementById('category-' + key).value,
+      solution:     document.getElementById('solution-' + key).value,
+      related_case: document.getElementById('case-'     + key).value,
+      author:       document.getElementById('author-'   + key).value,
     };
     try {
       const resp = await fetch('/writeback', {
@@ -225,20 +240,29 @@
         body: JSON.stringify(payload),
       });
       const data = await resp.json();
-      const msg = document.getElementById('wbmsg-' + idx);
+      const msg  = document.getElementById('wbmsg-' + key);
       if (data.success) {
         msg.textContent = '✅ 已成功写入知识库';
         msg.style.color = '#2E7D32';
-        document.querySelector('#form-' + idx + ' .btn').disabled = true;
-        // 更新左侧导航徽章
-        const badge = document.querySelector('#nav-' + idx + ' .nav-badge');
-        if (badge) badge.remove();
+        document.querySelector('#form-' + key + ' .btn').disabled = true;
+        // 若当前面板已无待写回条目，移除左侧导航未匹配徽章
+        const panel = document.getElementById('panel-' + fileIdx);
+        const activeUnmatched = Array.from(
+          panel.querySelectorAll('.match-box.unmatched')
+        ).filter(box => {
+          const btn = box.querySelector('.btn');
+          return btn && !btn.disabled;
+        });
+        if (activeUnmatched.length <= 1) {
+          const badge = document.querySelector('#nav-' + fileIdx + ' .nav-badge');
+          if (badge) badge.remove();
+        }
       } else {
         msg.textContent = '写入失败：' + (data.error || '未知错误');
         msg.style.color = '#C00000';
       }
     } catch(e) {
-      document.getElementById('wbmsg-' + idx).textContent = '请求失败：' + e.message;
+      document.getElementById('wbmsg-' + key).textContent = '请求失败：' + e.message;
     }
   }
 </script>

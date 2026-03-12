@@ -178,7 +178,38 @@ body { font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
 .hint       { font-weight: normal; color: #999; font-size: 11px; }
 .wb-msg     { margin-left: 10px; font-size: 13px; }
 
+/* ── 模式切换 Tab ─────────────────────────────────────── */
+.mode-tabs   { display: flex; gap: 0; margin-bottom: 18px;
+               border-bottom: 2px solid #D6E4F0; }
+.mode-tab    { background: none; border: none; padding: 8px 20px;
+               font-size: 13px; font-family: inherit; cursor: pointer;
+               color: #666; border-bottom: 2px solid transparent;
+               margin-bottom: -2px; transition: color .15s; }
+.mode-tab:hover  { color: #2E74B5; }
+.mode-tab.active { color: #2E74B5; font-weight: bold;
+                   border-bottom-color: #2E74B5; }
+
+/* ── 路径输入框 ───────────────────────────────────────── */
+.path-textarea { width: 100%; min-height: 120px; box-sizing: border-box;
+                 border: 1px solid #CCC; border-radius: 6px;
+                 padding: 10px 12px; font-size: 13px;
+                 font-family: monospace; resize: vertical;
+                 line-height: 1.6; }
+.path-textarea:focus { outline: none; border-color: #2E74B5; }
+
 /* ── 空状态 ───────────────────────────────────────────── */
 .empty-box { background: #F9F9F9; border: 1px dashed #DDD;
              border-radius: 6px; padding: 14px; color: #999;
              font-size: 13px; text-align: center; }
+
+/* ── 多错误条目 ───────────────────────────────────────── */
+.error-item { background: #FAFAFA; border: 1px solid #E4E8EE;
+              border-radius: 6px; padding: 10px;
+              margin-bottom: 10px; }
+.error-item-hdr { display: flex; align-items: center; gap: 8px;
+                  padding: 5px 10px; margin: -10px -10px 10px;
+                  border-radius: 5px 5px 0 0; background: #F0F3F8; }
+.error-idx  { font-weight: bold; color: #555; font-size: 13px;
+              min-width: 22px; }
+.error-id-sm { font-family: monospace; font-size: 12px; color: #555; }
+.error-ts   { font-size: 12px; color: #999; margin-left: auto; }

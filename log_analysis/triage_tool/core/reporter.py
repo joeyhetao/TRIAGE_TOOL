@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from pathlib import Path
 from datetime import datetime
+from html import escape as h
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
@@ -45,7 +46,8 @@ def generate_excel(results: list, output_path: str) -> str:
     for r in results:
         ws = wb.create_sheet(title=Path(r['file']).stem[:28])
         _write_log_sheet(ws, r)
-        fe = r.get('first_error') or {}
+        top = r.get('top_errors', [])
+        fe = top[0] if top else {}
         match = r.get('match', {})
         entry = match.get('entry') or {}
         summary_data.append([
@@ -59,7 +61,6 @@ def generate_excel(results: list, output_path: str) -> str:
             entry.get('报错原因', '-'),
         ])
 
-    # 汇总Sheet
     ws_sum = wb.create_sheet(title='汇总', index=0)
     _write_summary_sheet(ws_sum, summary_data)
 
@@ -68,13 +69,12 @@ def generate_excel(results: list, output_path: str) -> str:
 
 
 def _write_log_sheet(ws, r: dict):
-    font_h, fill_h, align_h = _header_style()
     border = _thin_border()
 
     def w(row_data, fill_color=None, bold=False):
         ws.append(row_data)
         row_idx = ws.max_row
-        for ci, cell in enumerate(ws[row_idx], 1):
+        for cell in ws[row_idx]:
             cell.border = border
             cell.alignment = Alignment(wrap_text=True, vertical='center')
             if fill_color:
@@ -99,41 +99,36 @@ def _write_log_sheet(ws, r: dict):
        stat['UVM_FATAL'] + stat['UVM_ERROR'] + stat['UVM_WARNING']])
     ws.append([])
 
-    # 首错信息
-    fe = r.get('first_error')
-    w(['首错信息', '', '', ''], fill_color='D6E4F0', bold=True)
-    ws.merge_cells(start_row=ws.max_row, start_column=1, end_row=ws.max_row, end_column=4)
-    if fe:
-        level_color = COLORS.get(fe['level'], 'FFFFFF')
-        w(['错误级别', fe['level'], '时间戳', fe['timestamp']],
-          fill_color=level_color)
-        w(['错误ID', fe['error_id'], '位置', fe['location']])
-        w(['描述', fe['description'], '', ''])
+    # 前 N 条错误及匹配结果
+    top_errors = r.get('top_errors', [])
+    if top_errors:
+        for idx, err in enumerate(top_errors, 1):
+            w([f'错误 #{idx}', '', '', ''], fill_color='D6E4F0', bold=True)
+            ws.merge_cells(start_row=ws.max_row, start_column=1,
+                           end_row=ws.max_row, end_column=4)
+            level_color = COLORS.get(err['level'], 'FFFFFF')
+            w(['错误级别', err['level'], '时间戳', err['timestamp']],
+              fill_color=level_color)
+            w(['错误ID', err['error_id'], '位置', err['location']])
+            w(['描述', err['description'], '', ''])
+
+            ematch = err.get('match', {})
+            if ematch.get('status') == 'matched':
+                eentry = ematch['entry']
+                w(['匹配状态', '✅ 命中知识库', '匹配方式',
+                   'ID精确匹配' if ematch.get('match_by') == 'error_id' else '关键词匹配'],
+                  fill_color='E2EFDA')
+                w(['报错原因', eentry.get('报错原因', ''), '根因分类', eentry.get('根因分类', '')])
+                w(['所属模块', eentry.get('所属模块', ''), '录入人',   eentry.get('录入人', '')])
+                w(['解决方案', eentry.get('解决方案', ''), '', ''])
+                w(['关联用例', eentry.get('关联用例', ''), '', ''])
+            elif ematch.get('status') == 'unmatched':
+                w(['匹配状态', '❌ 未匹配 — 建议将该报错条目添加至错误数据库', '', ''],
+                  fill_color='F2F2F2')
+            ws.append([])
     else:
-        w(['无报错', '', '', ''])
-    ws.append([])
+        w(['无报错信息', '', '', ''])
 
-    # 匹配结果
-    match = r.get('match', {})
-    w(['匹配结果', '', '', ''], fill_color='D6E4F0', bold=True)
-    ws.merge_cells(start_row=ws.max_row, start_column=1, end_row=ws.max_row, end_column=4)
-
-    if match.get('status') == 'matched':
-        entry = match['entry']
-        w(['匹配状态', '✅ 命中知识库', '匹配方式',
-           'ID精确匹配' if match.get('match_by') == 'error_id' else '关键词匹配'],
-          fill_color='E2EFDA')
-        w(['报错原因', entry.get('报错原因', ''), '根因分类', entry.get('根因分类', '')])
-        w(['所属模块', entry.get('所属模块', ''), '录入人', entry.get('录入人', '')])
-        w(['解决方案', entry.get('解决方案', ''), '', ''])
-        w(['关联用例', entry.get('关联用例', ''), '', ''])
-    elif match.get('status') == 'unmatched':
-        w(['匹配状态', '❌ 未匹配 — 建议将该报错条目添加至错误数据库', '', ''],
-          fill_color='F2F2F2')
-    else:
-        w(['匹配状态', '— 无首错', '', ''])
-
-    # 列宽
     for col, width in zip(['A', 'B', 'C', 'D'], [16, 40, 16, 40]):
         ws.column_dimensions[col].width = width
 
@@ -151,13 +146,13 @@ def _write_summary_sheet(ws, summary_data: list):
     headers = ['日志文件', 'FATAL数', 'ERROR数', 'WARNING数',
                '首错ID', '首错级别', '匹配状态', '报错原因']
     ws.append(headers)
-    for ci, cell in enumerate(ws[3], 1):
+    for cell in ws[3]:
         cell.font = font_h
         cell.fill = fill_h
         cell.alignment = align_h
         cell.border = border
 
-    for ri, row in enumerate(summary_data):
+    for row in summary_data:
         ws.append(row)
         row_idx = ws.max_row
         fill_color = None
@@ -171,7 +166,7 @@ def _write_summary_sheet(ws, summary_data: list):
             if fill_color:
                 cell.fill = PatternFill(fill_type='solid', fgColor=fill_color)
 
-    for col, width in zip(['A','B','C','D','E','F','G','H'],
+    for col, width in zip(['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'],
                           [30, 10, 10, 12, 20, 14, 12, 40]):
         ws.column_dimensions[col].width = width
 
@@ -187,59 +182,62 @@ def generate_html(results: list, output_path: str) -> str:
 
     log_sections = ''
     for r in results:
-        fe = r.get('first_error') or {}
-        match = r.get('match', {})
-        entry = match.get('entry') or {}
-        level = fe.get('level', '')
-        level_color = LEVEL_HTML.get(level, '#CCCCCC')
-
-        match_html = ''
-        if match.get('status') == 'matched':
-            by = 'ID精确匹配' if match.get('match_by') == 'error_id' else '关键词匹配'
-            match_html = f'''
-            <div class="match-box matched">
-              <div class="match-title">✅ 命中知识库 <span class="match-by">（{by}）</span></div>
-              <table class="info-table">
-                <tr><td>报错原因</td><td>{entry.get("报错原因","")}</td>
-                    <td>根因分类</td><td>{entry.get("根因分类","")}</td></tr>
-                <tr><td>所属模块</td><td>{entry.get("所属模块","")}</td>
-                    <td>录入人</td><td>{entry.get("录入人","")}</td></tr>
-                <tr><td>解决方案</td><td colspan="3">{entry.get("解决方案","")}</td></tr>
-                <tr><td>关联用例</td><td colspan="3">{entry.get("关联用例","")}</td></tr>
-              </table>
-            </div>'''
-        elif match.get('status') == 'unmatched':
-            match_html = '''
-            <div class="match-box unmatched">
-              ❌ 未匹配 — 建议将该报错条目添加至错误数据库
-            </div>'''
-        else:
-            match_html = '<div class="match-box">— 无首错信息</div>'
-
-        first_error_html = ''
-        if fe:
-            first_error_html = f'''
-            <div class="section-title">首错信息</div>
-            <div class="first-error-box" style="border-left:4px solid {level_color}">
-              <table class="info-table">
-                <tr>
-                  <td>错误级别</td>
-                  <td><span class="badge" style="background:{level_color}">{level}</span></td>
-                  <td>时间戳</td><td>{fe.get("timestamp","")}</td>
-                </tr>
-                <tr><td>错误ID</td><td>{fe.get("error_id","")}</td>
-                    <td>位置</td><td>{fe.get("location","")}</td></tr>
-                <tr><td>描述</td><td colspan="3" class="desc">{fe.get("description","")}</td></tr>
-              </table>
-            </div>'''
-        else:
-            first_error_html = '<div class="first-error-box">无报错信息</div>'
-
+        top_errors = r.get('top_errors', [])
         stat = r['statistics']
+
+        errors_html = ''
+        for idx, err in enumerate(top_errors, 1):
+            level = err.get('level', '')
+            level_color = LEVEL_HTML.get(level, '#CCCCCC')
+            ematch = err.get('match', {})
+            eentry = ematch.get('entry') or {}
+
+            if ematch.get('status') == 'matched':
+                by = ('ID精确匹配' if ematch.get('match_by') == 'error_id'
+                      else ('关键词匹配' if ematch.get('match_by') == 'keywords'
+                            else '手动录入'))
+                match_html = f'''
+              <div class="match-box matched">
+                <div class="match-title">✅ 命中知识库 <span class="match-by">（{h(by)}）</span></div>
+                <table class="info-table">
+                  <tr><td>报错原因</td><td>{h(str(eentry.get("报错原因","")))}</td>
+                      <td>根因分类</td><td>{h(str(eentry.get("根因分类","")))}</td></tr>
+                  <tr><td>所属模块</td><td>{h(str(eentry.get("所属模块","")))}</td>
+                      <td>录入人</td><td>{h(str(eentry.get("录入人","")))}</td></tr>
+                  <tr><td>解决方案</td><td colspan="3">{h(str(eentry.get("解决方案","")))}</td></tr>
+                  <tr><td>关联用例</td><td colspan="3">{h(str(eentry.get("关联用例","")))}</td></tr>
+                </table>
+              </div>'''
+            elif ematch.get('status') == 'unmatched':
+                match_html = '''
+              <div class="match-box unmatched">
+                ❌ 未匹配 — 建议将该报错条目添加至错误数据库
+              </div>'''
+            else:
+                match_html = '<div class="match-box">— 无匹配信息</div>'
+
+            errors_html += f'''
+          <div class="error-item">
+            <div class="error-item-hdr" style="border-left:4px solid {level_color}">
+              <span class="error-idx">#{idx}</span>
+              <span class="badge" style="background:{level_color}">{h(level)}</span>
+              <span class="error-id-sm">[{h(err.get("error_id",""))}]</span>
+              <span class="error-ts">@ {h(err.get("timestamp",""))}</span>
+            </div>
+            <table class="info-table">
+              <tr><td>位置</td><td colspan="3" class="desc">{h(err.get("location",""))}</td></tr>
+              <tr><td>描述</td><td colspan="3" class="desc">{h(err.get("description",""))}</td></tr>
+            </table>
+            {match_html}
+          </div>'''
+
+        if not top_errors:
+            errors_html = '<div class="match-box">— 无报错信息</div>'
+
         log_sections += f'''
         <div class="log-card">
           <div class="log-header">
-            <span class="log-name">📄 {r["file"]}</span>
+            <span class="log-name">📄 {h(r["file"])}</span>
             <span class="stat-badges">
               <span class="sbadge fatal">FATAL: {stat["UVM_FATAL"]}</span>
               <span class="sbadge error">ERROR: {stat["UVM_ERROR"]}</span>
@@ -247,9 +245,8 @@ def generate_html(results: list, output_path: str) -> str:
             </span>
           </div>
           <div class="log-body">
-            {first_error_html}
-            <div class="section-title">匹配结果</div>
-            {match_html}
+            <div class="section-title">前 {len(top_errors)} 条错误</div>
+            {errors_html}
           </div>
         </div>'''
 
@@ -282,8 +279,14 @@ def generate_html(results: list, output_path: str) -> str:
     .log-body{{padding:16px}}
     .section-title{{font-weight:bold;color:#2E74B5;margin:12px 0 6px;
                     font-size:13px;border-bottom:1px solid #E0E0E0;padding-bottom:4px}}
-    .first-error-box{{background:#FFF8F8;border-radius:4px;padding:10px;margin-bottom:8px}}
-    .info-table{{width:100%;border-collapse:collapse;font-size:13px}}
+    .error-item{{background:#FAFAFA;border:1px solid #EEE;border-radius:4px;
+                 padding:10px;margin-bottom:10px}}
+    .error-item-hdr{{display:flex;align-items:center;gap:8px;padding:4px 8px;
+                     margin:-10px -10px 8px;background:#F5F5F5;border-radius:4px 4px 0 0}}
+    .error-idx{{font-weight:bold;color:#555;font-size:13px}}
+    .error-id-sm{{font-family:monospace;font-size:12px;color:#666}}
+    .error-ts{{font-size:12px;color:#999}}
+    .info-table{{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:8px}}
     .info-table td{{padding:5px 8px;border:1px solid #E8E8E8}}
     .info-table td:nth-child(odd){{background:#F5F8FF;font-weight:bold;
                                    width:12%;white-space:nowrap}}

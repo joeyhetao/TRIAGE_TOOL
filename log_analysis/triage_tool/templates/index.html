@@ -15,16 +15,38 @@
   <div class="card upload-card">
     <h2 class="card-title">上传仿真日志</h2>
 
-    <!-- 拖拽区域 -->
-    <div class="drop-zone" id="dropZone" onclick="fileInput.click()">
-      <div class="drop-icon">📂</div>
-      <div class="drop-text">拖拽日志文件到此处，或 <span class="link-btn">点击选择文件</span></div>
-      <div class="drop-hint">仅支持 .log 格式，可多选</div>
-      <input type="file" id="fileInput" multiple accept=".log" style="display:none">
+    <!-- 模式切换 Tab -->
+    <div class="mode-tabs">
+      <button class="mode-tab active" id="tabUpload" onclick="switchMode('upload')">
+        ⬆ 上传文件
+      </button>
+      <button class="mode-tab" id="tabPath" onclick="switchMode('path')">
+        📂 指定路径
+      </button>
     </div>
 
-    <!-- 已选文件列表 -->
-    <div class="file-list" id="fileList"></div>
+    <!-- ── 上传文件模式 ─────────────────────────────── -->
+    <div id="modeUpload">
+      <div class="drop-zone" id="dropZone" onclick="fileInput.click()">
+        <div class="drop-icon">📂</div>
+        <div class="drop-text">拖拽日志文件到此处，或 <span class="link-btn">点击选择文件</span></div>
+        <div class="drop-hint">仅支持 .log 格式，可多选</div>
+        <input type="file" id="fileInput" multiple accept=".log" style="display:none">
+      </div>
+      <div class="file-list" id="fileList"></div>
+    </div>
+
+    <!-- ── 指定路径模式 ─────────────────────────────── -->
+    <div id="modePath" style="display:none">
+      <textarea id="logPaths" class="path-textarea"
+                placeholder="输入日志文件路径或 glob 表达式，每行一个，例如：
+/home/proj/sim_results/sim.log
+/home/proj/regression/**/*.log
+D:\sim\run1\*.log"></textarea>
+      <div class="drop-hint" style="margin-top:6px">
+        支持 <code>*</code> 和 <code>**</code> 通配符，多路径每行一个或逗号分隔，最多 100 个文件
+      </div>
+    </div>
 
     <!-- 知识库路径 -->
     <div class="form-row">
@@ -52,8 +74,19 @@
   const dbInput   = document.getElementById('dbInput');
   const dbPath    = document.getElementById('dbPath');
   let selectedFiles = [];
+  let currentMode   = 'upload';
 
-  // 拖拽
+  // ── 模式切换 ──────────────────────────────────────
+  function switchMode(mode) {
+    currentMode = mode;
+    document.getElementById('tabUpload').classList.toggle('active', mode === 'upload');
+    document.getElementById('tabPath').classList.toggle('active', mode === 'path');
+    document.getElementById('modeUpload').style.display = mode === 'upload' ? '' : 'none';
+    document.getElementById('modePath').style.display   = mode === 'path'   ? '' : 'none';
+    document.getElementById('errMsg').textContent = '';
+  }
+
+  // ── 上传模式：拖拽 & 文件选择 ─────────────────────
   dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
   dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
   dropZone.addEventListener('drop', e => {
@@ -62,7 +95,7 @@
   });
   fileInput.addEventListener('change', () => {
     addFiles(fileInput.files);
-    fileInput.value = '';   // 清空，确保再次选同一文件时仍触发 change 事件
+    fileInput.value = '';
   });
   dbInput.addEventListener('change', () => { if (dbInput.files[0]) dbPath.value = dbInput.files[0].name; });
 
@@ -101,19 +134,32 @@
     ).join('');
   }
 
+  // ── 提交分析 ──────────────────────────────────────
   async function startAnalyze() {
-    if (!selectedFiles.length) {
-      document.getElementById('errMsg').textContent = '请先选择日志文件';
-      return;
-    }
     document.getElementById('errMsg').textContent = '';
+
+    const formData = new FormData();
+    formData.append('db_path', dbPath.value);
+
+    if (currentMode === 'upload') {
+      if (!selectedFiles.length) {
+        document.getElementById('errMsg').textContent = '请先选择日志文件';
+        return;
+      }
+      selectedFiles.forEach(f => formData.append('logs', f));
+    } else {
+      const paths = document.getElementById('logPaths').value.trim();
+      if (!paths) {
+        document.getElementById('errMsg').textContent = '请输入日志文件路径';
+        return;
+      }
+      formData.append('path_mode', '1');
+      formData.append('log_paths', paths);
+    }
+
     document.getElementById('btnText').textContent = '分析中...';
     document.getElementById('btnSpinner').style.display = 'inline-block';
     document.getElementById('analyzeBtn').disabled = true;
-
-    const formData = new FormData();
-    selectedFiles.forEach(f => formData.append('logs', f));
-    formData.append('db_path', dbPath.value);
 
     try {
       const resp = await fetch('/analyze', { method: 'POST', body: formData });

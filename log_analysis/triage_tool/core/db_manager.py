@@ -41,9 +41,12 @@ class _FileLock:
             except FileExistsError:
                 # 检查是否为僵尸锁（持锁进程崩溃后未释放）
                 try:
-                    age = time.monotonic() - os.path.getmtime(self.lock_path)
+                    age = time.time() - os.path.getmtime(self.lock_path)
                     if age > self.STALE_TIMEOUT:
-                        os.remove(self.lock_path)
+                        try:
+                            os.remove(self.lock_path)
+                        except OSError:
+                            pass  # Windows: 文件仍被持有，等待自然释放
                         continue
                 except FileNotFoundError:
                     continue  # 锁文件刚被别人释放，重试
