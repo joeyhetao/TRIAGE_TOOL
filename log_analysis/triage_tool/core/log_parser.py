@@ -65,6 +65,10 @@ def parse_log(filepath: str) -> dict:
             if level in statistics:
                 statistics[level] += 1
 
+            # WARNING 仅统计，不计入 top_errors；FATAL/ERROR 才参与匹配
+            if level == 'UVM_WARNING':
+                continue
+
             # top_errors 未满时才记录条目（仍需对全文统计错误数）
             if len(top_errors) < TOP_N:
                 pending = {

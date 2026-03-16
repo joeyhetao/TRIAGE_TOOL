@@ -13,8 +13,8 @@ log_analysis/triage_tool/
 ├── triage_tool.spec    # PyInstaller build spec (auto-generated, do not edit)
 ├── error_db.xlsx       # Default knowledge base (Excel)
 ├── core/
-│   ├── log_parser.py   # UVM log regex parsing
-│   ├── matcher.py      # Two-stage KB matching
+│   ├── log_parser.py   # UVM log streaming parser + parallel dispatch
+│   ├── matcher.py      # Two-stage KB matching (per top_errors entry)
 │   ├── db_manager.py   # Excel KB read/write with concurrent locking
 │   └── reporter.py     # Excel and HTML report generation
 ├── templates/          # Jinja2 templates (index.html, result.html)
@@ -30,18 +30,21 @@ pip install -r requirements.txt
 python app.py                         # http://127.0.0.1:5000
 python app.py --host 0.0.0.0 --port 8080
 
-# Build single Windows executable
+# Build executable (Windows: separator is ;, Linux: separator is :)
 pip install pyinstaller
 pyinstaller --onefile --console \
-  --add-data "templates;templates" \
+  --add-data "templates;templates" \   # Windows
   --add-data "static;static" \
-  --name triage_tool \
-  app.py
-# Output: dist/triage_tool.exe (~18 MB)
+  --name triage_tool app.py            # Output: dist/triage_tool.exe
+
+pyinstaller --onefile --console \
+  --add-data "templates:templates" \   # Linux
+  --add-data "static:static" \
+  --name triage_tool app.py            # Output: dist/triage_tool
 ```
 
-Before rebuilding, close any running `triage_tool.exe` — Windows locks the file.
-Deploy by copying only `dist/triage_tool.exe`; `uploads/`, `reports/`, and `error_db.xlsx` are created automatically next to the exe on first run.
+Before rebuilding on Windows, close any running `triage_tool.exe` — Windows locks the file.
+Deploy by copying only the binary; `uploads/`, `reports/`, and `error_db.xlsx` are created automatically next to it on first run.
 
 ## Intranet / Offline Dependency Constraint
 
@@ -62,13 +65,17 @@ Do not introduce new third-party dependencies. `core/log_parser.py` and `core/ma
 This is a Flask web app for triaging UVM simulation log files against an Excel knowledge base.
 
 **Request flow:**
-1. User uploads `.log` files → `/analyze`
-2. `core/log_parser.py` extracts `UVM_FATAL/ERROR/WARNING` entries via regex; identifies the highest-priority "first error" per file
-3. `core/matcher.py` matches the first error against `error_db.xlsx` in two stages: (1) exact error ID + type, (2) all keywords present in description (AND logic)
-4. Results rendered in `result.html`; unmatched errors can be written back via `/writeback`
+1. User uploads `.log` files **or** specifies server-local glob patterns → `/analyze`
+2. `core/log_parser.py` streams each file line-by-line (constant memory regardless of file size, per-file limit 10 GB), extracts up to `TOP_N=5` `UVM_FATAL/ERROR/WARNING` entries with up to 3 continuation lines each; files are parsed in parallel via `ThreadPoolExecutor`; scanning continues to end-of-file to produce accurate FATAL/ERROR/WARNING totals
+3. `core/matcher.py` runs two-stage KB matching on **each** of the `top_errors` entries: (1) exact error ID + type, (2) all keywords present in description (AND logic); Chinese full-width comma `，` treated same as `,`
+4. Results rendered in `result.html` with per-error match panels; unmatched errors can be written back via `/writeback` (requires `error_idx` to target a specific entry)
 5. Reports exported as Excel or HTML via `/export/excel` and `/export/html`
 
-**Session state** is stored in module-level dicts (`_current_results`, `_current_db_path`) keyed by a UUID from the Flask session cookie — not in Flask's session object. State is lost on restart by design.
+**Dual input modes:**
+- *Upload mode*: files saved to `uploads/` with session-prefixed names, deleted immediately after parsing (result kept in `_store`)
+- *Path mode*: server reads files directly via `glob.glob()` patterns (supports `**` recursion, comma/newline-separated patterns, max 5000 files per request, `.log` extension filter)
+
+**Session state** is stored in module-level dict `_store` keyed by a UUID from the Flask session cookie. Each entry holds `{'results': ..., 'db_path': ..., 'ts': time.time()}`. Entries expire after 2 hours (`_STORE_TTL = 7200`); stale entries are swept on each access. State is lost on restart by design.
 
 ### PyInstaller Path Handling
 
@@ -92,9 +99,10 @@ else:
 ```
 threading.Lock  →  serializes threads within the same process
 _FileLock       →  serializes across processes/machines (stdlib only)
-                   creates error_db.xlsx.lock via O_CREAT|O_EXCL (atomic on NTFS)
-                   auto-clears stale locks older than 60 s
+                   creates error_db.xlsx.lock via O_CREAT|O_EXCL (atomic on NTFS/ext4)
+                   auto-clears stale locks older than 60 s  (uses time.time(), not monotonic)
                    raises TimeoutError after 15 s if lock cannot be acquired
+                   os.remove() wrapped in try/except OSError for Windows compatibility
 ```
 
 `load_db` retries up to 3 times on read failure to tolerate brief write windows.
@@ -103,7 +111,7 @@ _FileLock       →  serializes across processes/machines (stdlib only)
 
 `error_db.xlsx` columns: `错误类型`, `错误ID`, `关键描述关键词`, `报错原因`, `所属模块`, `根因分类`, `解决方案`, `关联用例`, `录入人`, `录入日期`
 
-- `关键描述关键词` is comma-separated; ALL keywords must match (AND logic)
+- `关键描述关键词` is comma-separated (`,` or `，`); ALL keywords must match (AND logic)
 - Users can supply a custom path (including UNC network share) via the UI
 
 ## Key Reference Documents

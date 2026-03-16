@@ -14,7 +14,7 @@ pip download flask openpyxl -d ./packages
 pip install --no-index --find-links=./packages flask openpyxl
 ```
 
-If the goal is to eliminate third-party dependencies entirely: `flask` can be replaced with `http.server` (stdlib), and `openpyxl` can be replaced with `csv` (stdlib, changes output from `.xlsx` to `.csv`). The business logic in `core/log_parser.py` and `core/matcher.py` has no third-party dependencies and would not need changes.
+Do not introduce new third-party dependencies. `core/log_parser.py` and `core/matcher.py` are intentionally stdlib-only.
 
 ## Running the Application
 
@@ -31,20 +31,29 @@ python app.py --host 0.0.0.0 --port 8080
 
 ## Building the Executable
 
-The preferred distribution method is a single `.exe` built with PyInstaller. The exe auto-opens a browser on startup and requires no Python installation on the target machine.
+The preferred distribution method is a single binary built with PyInstaller.
 
 ```bash
 pip install pyinstaller
 
+# Windows（--add-data 分隔符用 ;）
 pyinstaller --onefile --console \
   --add-data "templates;templates" \
   --add-data "static;static" \
   --name triage_tool \
   app.py
 # Output: dist/triage_tool.exe (~18 MB)
+
+# Linux（--add-data 分隔符用 :）
+pyinstaller --onefile --console \
+  --add-data "templates:templates" \
+  --add-data "static:static" \
+  --name triage_tool \
+  app.py
+# Output: dist/triage_tool
 ```
 
-**Before rebuilding**: the old `dist/triage_tool.exe` must not be running (Windows locks the file). Close the console window first.
+**Before rebuilding on Windows**: the old `dist/triage_tool.exe` must not be running (Windows locks the file). Close the console window first.
 
 Deploy by copying only `dist/triage_tool.exe` to the target machine. `uploads/`, `reports/`, and `error_db.xlsx` are created automatically next to the exe on first run.
 
@@ -52,26 +61,30 @@ Deploy by copying only `dist/triage_tool.exe` to the target machine. `uploads/`,
 
 ## Architecture Overview
 
-This is a Flask web application for triaging UVM (Universal Verification Methodology) simulation log files. The workflow is:
+This is a Flask web application for triaging UVM simulation log files. The workflow is:
 
-1. User uploads one or more `.log` files via the web UI
-2. `core/log_parser.py` parses each log, extracting UVM_FATAL/ERROR/WARNING entries via regex, and identifies the "first error" (highest-priority error)
-3. `core/matcher.py` compares each log's first error against an Excel knowledge base (`error_db.xlsx`) using two-stage matching: exact error ID match first, then keyword substring match
-4. Results are displayed in `templates/result.html`; unmatched errors can be written back to the knowledge base via `/writeback`
+1. User uploads `.log` files **or** specifies server-local glob patterns via the web UI
+2. `core/log_parser.py` streams each file line-by-line (constant memory, any file size up to 10 GB per-file limit), extracts up to `TOP_N=5` `UVM_FATAL/ERROR/WARNING` entries with up to 3 continuation lines; files parsed in parallel via `ThreadPoolExecutor`; full scan for accurate totals even after `TOP_N` reached
+3. `core/matcher.py` runs two-stage matching on **each** entry in `top_errors`: (1) exact error ID + type, (2) all keywords in description (AND logic, Chinese `，` treated same as `,`)
+4. Results are displayed in `templates/result.html` with per-error match panels; unmatched errors can be written back via `/writeback` with `error_idx` to target a specific entry
 5. Reports can be exported as Excel or HTML via `/export/excel` and `/export/html`
+
+### Dual Input Modes
+
+- **Upload mode**: files saved to `uploads/` with session-prefixed names, **deleted immediately** after parsing (result kept in `_store`); startup cleanup as fallback
+- **Path mode**: Flask reads files directly via `glob.glob()` patterns (supports `**` recursion, comma/newline-separated patterns, max 5000 files, `.log` extension filter)
 
 ### Key Files
 
-- [app.py](app.py) — Flask routes; in-memory session state (`_current_results`, `_current_db_path`) keyed by session UUID; contains `sys.frozen` guard for PyInstaller path resolution
-- [core/log_parser.py](core/log_parser.py) — UVM log regex parser; appends the next line to descriptions when it's not another UVM entry
-- [core/matcher.py](core/matcher.py) — Two-stage matching logic against knowledge base entries
-- [core/db_manager.py](core/db_manager.py) — Read/write Excel knowledge base; thread-safe and cross-process-safe via `threading.Lock` + `_FileLock`; auto-creates `error_db.xlsx` with styled headers if missing
-- [core/reporter.py](core/reporter.py) — Generates styled Excel and self-contained HTML reports
-- [PRD.md](PRD.md) — Full product requirements document; update when adding/changing features
+- [app.py](app.py) — Flask routes; `_store` dict with 2h TTL for session state; `sys.frozen` guard for PyInstaller path resolution; `MAX_FILE_SIZE = 10 GB`, `MAX_PATH_FILES = 5000`
+- [core/log_parser.py](core/log_parser.py) — streaming UVM log parser; `pending` state machine for continuation lines; `parse_logs()` dispatches parallel `ThreadPoolExecutor`
+- [core/matcher.py](core/matcher.py) — two-stage matching; iterates `top_errors` list, attaches `match` field to each entry; supports `，` in keyword splits
+- [core/db_manager.py](core/db_manager.py) — read/write Excel KB; `threading.Lock` + `_FileLock`; `time.time()` for stale lock age; `os.remove()` wrapped for Windows compat
+- [core/reporter.py](core/reporter.py) — styled Excel and self-contained HTML reports; `html.escape()` on all dynamic content
+- [PRD.md](PRD.md) — full product requirements; update when adding/changing features
+- [BUGLOG.md](BUGLOG.md) — historical bug fixes with root cause analysis; update when fixing bugs
 
 ### PyInstaller Path Handling
-
-When running as a frozen exe, `__file__` points to the temporary extraction directory (`sys._MEIPASS`), not the exe location. `app.py` resolves this with:
 
 ```python
 if getattr(sys, 'frozen', False):
@@ -81,29 +94,35 @@ else:
     BASE_DIR = _BUNDLE_DIR = Path(__file__).parent
 ```
 
-Any new files that need to be **read at runtime** (e.g. templates) must use `_BUNDLE_DIR`; any files that need to be **written at runtime** must use `BASE_DIR`.
+Use `_BUNDLE_DIR` for files read at startup; `BASE_DIR` for files written at runtime.
 
 ### Concurrent Write Safety (`core/db_manager.py`)
 
-`append_entry` uses two layers of locking to handle simultaneous writes from multiple users, including across machines sharing the knowledge base on a network drive:
-
 ```
 threading.Lock  →  serializes threads within the same process
-_FileLock       →  serializes across processes / machines (stdlib only)
-                   creates error_db.xlsx.lock using O_CREAT|O_EXCL (atomic on NTFS)
-                   auto-clears stale locks older than 60 s (crashed process recovery)
-                   raises TimeoutError after 15 s if lock cannot be acquired
+_FileLock       →  serializes across processes/machines (stdlib only)
+                   creates error_db.xlsx.lock via O_CREAT|O_EXCL (atomic on NTFS/ext4)
+                   age check uses time.time() (not monotonic) vs os.path.getmtime()
+                   auto-clears stale locks older than 60 s
+                   os.remove() in try/except OSError (Windows held-file compat)
+                   raises TimeoutError after 15 s
 ```
 
-`load_db` retries up to 3 times on read failure to tolerate the brief window during a write.
+`load_db` retries up to 3 times on read failure.
+
+### Session Design
+
+Session state uses `_store: dict` (module-level), keyed by UUID from Flask session cookie:
+
+```python
+_store[sid] = {'results': [...], 'db_path': '...', 'ts': time.time()}
+```
+
+TTL is 2 hours (`_STORE_TTL = 7200`); stale entries swept on each `_get_results()` call. State is lost on restart by design.
 
 ### Knowledge Base Schema (`error_db.xlsx`)
 
 Columns: `错误类型`, `错误ID`, `关键描述关键词`, `报错原因`, `所属模块`, `根因分类`, `解决方案`, `关联用例`, `录入人`, `录入日期`
 
-- `关键描述关键词` is a comma-separated list; matching requires ALL keywords to be present in the error description (AND logic)
-- `error_db.xlsx` in the project root is the default knowledge base; users can specify a custom path (including a UNC network share path) via the UI
-
-### Session Design
-
-Session state is stored in Python module-level dicts (`_current_results`, `_current_db_path`) rather than Flask sessions, keyed by a UUID stored in the Flask session cookie. Uploaded files are prefixed with the session UUID to avoid collisions. State is lost on exe restart by design.
+- `关键描述关键词` comma-separated (`,` or `，`); ALL keywords required (AND logic)
+- Users can specify a custom path (including UNC network share) via the UI

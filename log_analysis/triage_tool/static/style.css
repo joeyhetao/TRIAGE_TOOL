@@ -155,6 +155,38 @@ body { font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
 .match-box.matched .match-header   { color: #2E7D32; }
 .match-box.unmatched .match-header { color: #666; }
 .match-by { font-weight: normal; font-size: 12px; color: #888; }
+.entry-count { background: #C8E6C9; color: #2E7D32; border-radius: 10px;
+               padding: 0 7px; font-size: 11px; font-weight: bold; }
+.match-hdr-btns { float: right; display: flex; gap: 6px; }
+.btn-expand, .btn-supp { font-size: 11px; background: none; border-radius: 4px;
+                          padding: 1px 8px; cursor: pointer; font-family: inherit; }
+.btn-expand { color: #2E74B5; border: 1px solid #2E74B5; }
+.btn-expand:hover { background: #EAF2FB; }
+.btn-supp { color: #2E7D32; border: 1px solid #70AD47; }
+.btn-supp:hover { background: #F0FFF4; }
+/* entry-extra 默认隐藏，.show-extra 时全部展开 */
+.entry-extra { display: none; }
+.show-extra .entry-extra { display: flex; }
+.entry-sep { text-align: center; font-size: 12px; color: #999; margin: 8px 0 4px;
+             border-top: 1px dashed #C8E6C9; padding-top: 8px; }
+/* 补充录入表单 */
+.supp-form { margin-top: 12px; border-top: 1px dashed #B7DDB0; padding-top: 10px; }
+.supp-title { font-size: 13px; font-weight: bold; color: #1B5E20; margin-bottom: 8px; }
+
+/* ── 查询知识库模式 ─────────────────────────────── */
+.query-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; margin-bottom: 4px; }
+.qf-item { display: flex; flex-direction: column; gap: 4px; }
+.qf-full { grid-column: 1 / -1; }
+.qf-label { font-size: 13px; font-weight: bold; color: #333; }
+/* 查询结果卡片 */
+.qr-card { background: #FAFAFA; border: 1px solid #E0E0E0; border-radius: 6px;
+           padding: 10px 14px; margin-bottom: 10px; }
+.qr-hdr  { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+           margin-bottom: 6px; }
+.qr-id   { font-size: 13px; color: #1F497D; font-weight: bold; }
+.qr-module { font-size: 12px; color: #666; }
+.qr-cat  { font-size: 12px; background: #EDF2FB; color: #2E74B5;
+           border-radius: 10px; padding: 1px 8px; }
 
 .entry-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
 .eg-kv      { display: flex; gap: 8px; align-items: baseline; }

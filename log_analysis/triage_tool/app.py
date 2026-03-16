@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
+import re
 import sys
 import io
 import time
@@ -43,7 +44,7 @@ REPORT_DIR.mkdir(exist_ok=True)
 # F4: 单文件大小上限 10 GB
 MAX_FILE_SIZE = 10 * 1024 * 1024 * 1024
 # 路径模式一次最多分析文件数
-MAX_PATH_FILES = 100
+MAX_PATH_FILES = 5000
 
 app = Flask(__name__,
             template_folder=str(_BUNDLE_DIR / 'templates'),
@@ -242,16 +243,29 @@ def writeback():
             if r['file'] == file_name:
                 top_errors = r.get('top_errors', [])
                 if 0 <= error_idx < len(top_errors):
-                    top_errors[error_idx]['match'] = {
-                        'status':   'matched',
-                        'match_by': 'manual',
-                        'entry':    entry,
-                    }
+                    cur_match = top_errors[error_idx].get('match', {})
+                    if cur_match.get('status') == 'matched':
+                        # 补充录入：在原有 entries 基础上追加新条目，不覆盖已有匹配
+                        existing = list(cur_match.get('entries') or
+                                        ([cur_match['entry']] if cur_match.get('entry') else []))
+                        top_errors[error_idx]['match'] = {
+                            'status':   'matched',
+                            'match_by': cur_match.get('match_by', 'manual'),
+                            'entry':    cur_match['entry'],
+                            'entries':  existing + [entry],
+                        }
+                    else:
+                        top_errors[error_idx]['match'] = {
+                            'status':   'matched',
+                            'match_by': 'manual',
+                            'entry':    entry,
+                            'entries':  [entry],
+                        }
                 # 重新计算汇总状态
                 if not top_errors:
-                    r['match'] = {'status': 'no_error', 'entry': None}
+                    r['match'] = {'status': 'no_error', 'entry': None, 'entries': []}
                 elif any(e['match']['status'] == 'unmatched' for e in top_errors):
-                    r['match'] = {'status': 'unmatched', 'entry': None}
+                    r['match'] = {'status': 'unmatched', 'entry': None, 'entries': []}
                 else:
                     r['match'] = top_errors[0]['match']
                 break
@@ -260,6 +274,47 @@ def writeback():
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/query', methods=['POST'])
+def query_kb():
+    """知识库模糊查询：按错误类型、错误ID（部分匹配）、关键词（任意词命中）搜索。"""
+    data     = request.get_json() or {}
+    db_path  = data.get('db_path', '').strip() or DB_DEFAULT
+    level    = data.get('level',    '').strip().upper()
+    error_id = data.get('error_id', '').strip().lower()
+    text     = data.get('text',     '').strip().lower()
+
+    try:
+        from core.db_manager import load_db
+        db_entries = load_db(db_path)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+    tokens = [t for t in re.split(r'[\s,，]+', text) if t] if text else []
+
+    SEARCH_FIELDS = ['错误ID', '关键描述关键词', '报错原因', '解决方案', '所属模块', '根因分类']
+    scored = []
+    for entry in db_entries:
+        # 错误类型精确过滤
+        if level and str(entry.get('错误类型', '')).strip().upper() != level:
+            continue
+        # 错误ID部分匹配过滤
+        if error_id and error_id not in str(entry.get('错误ID', '')).strip().lower():
+            continue
+        # 关键词模糊评分：任意词命中即计入
+        if tokens:
+            blob = ' '.join(str(entry.get(f, '')) for f in SEARCH_FIELDS).lower()
+            score = sum(1 for t in tokens if t in blob)
+            if score == 0:
+                continue
+        else:
+            score = 1
+        scored.append((score, entry))
+
+    scored.sort(key=lambda x: -x[0])
+    entries = [e for _, e in scored[:100]]
+    return jsonify({'entries': entries, 'total': len(scored)})
 
 
 @app.route('/export/excel')

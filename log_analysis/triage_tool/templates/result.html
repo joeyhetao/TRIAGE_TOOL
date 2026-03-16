@@ -118,11 +118,23 @@
 
               <!-- 匹配结果 -->
               {% if ematch.status == 'matched' %}
-              <div class="match-box matched">
+              {% set eentries = ematch.get('entries') or ([ematch.get('entry')] if ematch.get('entry') else []) %}
+              <div class="match-box matched" id="matchbox-{{ ri }}-{{ ei }}">
                 <div class="match-header">
                   ✅ 命中知识库
-                  <span class="match-by">（{{ '错误ID精确匹配' if ematch.match_by == 'error_id' else ('关键词匹配' if ematch.match_by == 'keywords' else '手动录入') }}）</span>
+                  <span class="match-by">（{{ '错误ID精确匹配' if ematch.match_by == 'error_id' else ('关键词匹配' if ematch.match_by == 'keywords' else '手动录入') }}）
+                    {% if eentries|length > 1 %}<span class="entry-count">共 {{ eentries|length }} 条</span>{% endif %}
+                  </span>
+                  <span class="match-hdr-btns">
+                    <button class="btn-expand" onclick="toggleExtra(this)" title="显示全部字段">显示全部 ▾</button>
+                    <button class="btn-supp" onclick="toggleSupp('suppform-{{ ri }}-{{ ei }}', this)">+ 补充录入</button>
+                  </span>
                 </div>
+
+                {% for eentry in eentries %}
+                {% if eentries|length > 1 %}
+                <div class="entry-sep">— 根因 {{ loop.index }} —</div>
+                {% endif %}
                 <div class="entry-grid">
                   <div class="eg-kv"><span class="eg-k">报错原因</span><span class="eg-v">{{ eentry.get('报错原因','') }}</span></div>
                   <div class="eg-kv"><span class="eg-k">根因分类</span><span class="eg-v">{{ eentry.get('根因分类','') }}</span></div>
@@ -130,6 +142,61 @@
                   <div class="eg-kv"><span class="eg-k">录入人</span><span class="eg-v">{{ eentry.get('录入人','') }}</span></div>
                   <div class="eg-kv full"><span class="eg-k">解决方案</span><span class="eg-v">{{ eentry.get('解决方案','') }}</span></div>
                   <div class="eg-kv full"><span class="eg-k">关联用例</span><span class="eg-v mono">{{ eentry.get('关联用例','') }}</span></div>
+                  <!-- 折叠区：默认隐藏 -->
+                  <div class="eg-kv entry-extra"><span class="eg-k">错误类型</span><span class="eg-v mono">{{ eentry.get('错误类型','') }}</span></div>
+                  <div class="eg-kv entry-extra"><span class="eg-k">错误ID</span><span class="eg-v mono">{{ eentry.get('错误ID','') }}</span></div>
+                  <div class="eg-kv full entry-extra"><span class="eg-k">关键描述关键词</span><span class="eg-v mono">{{ eentry.get('关键描述关键词','') }}</span></div>
+                  <div class="eg-kv entry-extra"><span class="eg-k">录入日期</span><span class="eg-v">{{ eentry.get('录入日期','') }}</span></div>
+                </div>
+                {% endfor %}
+
+                <!-- 补充录入表单（默认折叠） -->
+                <div id="suppform-{{ ri }}-{{ ei }}" class="supp-form" style="display:none">
+                  <div class="supp-title">补充录入新根因 / 解决方案</div>
+                  <div class="form-grid">
+                    <div class="fg-item">
+                      <label>关键描述关键词 <span class="hint">多个用逗号分隔</span></label>
+                      <input type="text" class="fi" id="suppkw-{{ ri }}-{{ ei }}"
+                             value="{{ err.description[:50] }}" placeholder="如：length mismatch,expected">
+                    </div>
+                    <div class="fg-item">
+                      <label>报错原因 <span class="req">*</span></label>
+                      <input type="text" class="fi" id="suppreason-{{ ri }}-{{ ei }}" placeholder="填写根因说明">
+                    </div>
+                    <div class="fg-item">
+                      <label>所属模块</label>
+                      <input type="text" class="fi" id="suppmodule-{{ ri }}-{{ ei }}"
+                             value="{{ err.location.split('(')[0].split('/')[-1] }}" placeholder="模块名">
+                    </div>
+                    <div class="fg-item">
+                      <label>根因分类 <span class="req">*</span></label>
+                      <select class="fi" id="suppcategory-{{ ri }}-{{ ei }}">
+                        <option>DUT Bug</option>
+                        <option>TB Bug</option>
+                        <option>用例问题</option>
+                        <option>工具问题</option>
+                        <option>其他问题</option>
+                      </select>
+                    </div>
+                    <div class="fg-item full">
+                      <label>解决方案</label>
+                      <input type="text" class="fi" id="suppsolution-{{ ri }}-{{ ei }}" placeholder="处理建议">
+                    </div>
+                    <div class="fg-item">
+                      <label>关联用例</label>
+                      <input type="text" class="fi" id="suppcase-{{ ri }}-{{ ei }}" placeholder="用例名称">
+                    </div>
+                    <div class="fg-item">
+                      <label>录入人</label>
+                      <input type="text" class="fi" id="suppauthor-{{ ri }}-{{ ei }}" placeholder="姓名">
+                    </div>
+                  </div>
+                  <button class="btn btn-primary mt8"
+                          onclick="writeBackSupp({{ ri }}, {{ ei }}, '{{ r.file }}',
+                                   '{{ elevel }}', '{{ err.error_id }}')">
+                    写回知识库
+                  </button>
+                  <span class="wb-msg" id="suppmsg-{{ ri }}-{{ ei }}"></span>
                 </div>
               </div>
 
@@ -160,7 +227,8 @@
                         <option>DUT Bug</option>
                         <option>TB Bug</option>
                         <option>用例问题</option>
-                        <option>环境问题</option>
+                        <option>工具问题</option>
+                        <option>其他问题</option>
                       </select>
                     </div>
                     <div class="fg-item full">
@@ -204,6 +272,65 @@
 </div>
 
 <script>
+  function toggleExtra(btn) {
+    const box = btn.closest('.match-box');
+    const show = !box.classList.contains('show-extra');
+    box.classList.toggle('show-extra', show);
+    btn.textContent = show ? '收起 ▴' : '显示全部 ▾';
+  }
+
+  function toggleSupp(id, btn) {
+    const el = document.getElementById(id);
+    const show = el.style.display === 'none' || el.style.display === '';
+    el.style.display = show ? 'block' : 'none';
+    btn.textContent = show ? '− 收起' : '+ 补充录入';
+  }
+
+  async function writeBackSupp(fileIdx, errorIdx, fileName, level, errorId) {
+    const key    = fileIdx + '-' + errorIdx;
+    const reason = document.getElementById('suppreason-' + key).value.trim();
+    if (!reason) {
+      const msg = document.getElementById('suppmsg-' + key);
+      msg.textContent = '请填写报错原因';
+      msg.style.color = '#C00000';
+      return;
+    }
+    const payload = {
+      file_name:    fileName,
+      error_idx:    errorIdx,
+      level:        level,
+      error_id:     errorId,
+      keywords:     document.getElementById('suppkw-'       + key).value,
+      reason:       reason,
+      module:       document.getElementById('suppmodule-'   + key).value,
+      category:     document.getElementById('suppcategory-' + key).value,
+      solution:     document.getElementById('suppsolution-' + key).value,
+      related_case: document.getElementById('suppcase-'     + key).value,
+      author:       document.getElementById('suppauthor-'   + key).value,
+    };
+    try {
+      const resp = await fetch('/writeback', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json();
+      const msg  = document.getElementById('suppmsg-' + key);
+      if (data.success) {
+        msg.textContent = '✅ 已补充写入知识库（刷新页面可见新条目）';
+        msg.style.color = '#2E7D32';
+        // 清空表单，允许继续补充
+        ['suppreason','suppkw','suppmodule','suppsolution','suppcase','suppauthor']
+          .forEach(f => { const el = document.getElementById(f + '-' + key); if (el) el.value = ''; });
+      } else {
+        msg.textContent = '写入失败：' + (data.error || '未知错误');
+        msg.style.color = '#C00000';
+      }
+    } catch(e) {
+      document.getElementById('suppmsg-' + key).textContent = '请求失败：' + e.message;
+    }
+  }
+
   function showPanel(idx, el) {
     document.querySelectorAll('.detail-panel').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));

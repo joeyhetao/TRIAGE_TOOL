@@ -114,14 +114,20 @@ def _write_log_sheet(ws, r: dict):
 
             ematch = err.get('match', {})
             if ematch.get('status') == 'matched':
-                eentry = ematch['entry']
-                w(['匹配状态', '✅ 命中知识库', '匹配方式',
-                   'ID精确匹配' if ematch.get('match_by') == 'error_id' else '关键词匹配'],
+                eentries = (ematch.get('entries') or
+                            ([ematch['entry']] if ematch.get('entry') else []))
+                match_by = ('ID精确匹配' if ematch.get('match_by') == 'error_id'
+                            else '关键词匹配')
+                count_str = f'（共 {len(eentries)} 条）' if len(eentries) > 1 else ''
+                w(['匹配状态', f'✅ 命中知识库{count_str}', '匹配方式', match_by],
                   fill_color='E2EFDA')
-                w(['报错原因', eentry.get('报错原因', ''), '根因分类', eentry.get('根因分类', '')])
-                w(['所属模块', eentry.get('所属模块', ''), '录入人',   eentry.get('录入人', '')])
-                w(['解决方案', eentry.get('解决方案', ''), '', ''])
-                w(['关联用例', eentry.get('关联用例', ''), '', ''])
+                for n, eentry in enumerate(eentries, 1):
+                    if len(eentries) > 1:
+                        w([f'— 根因 {n} —', '', '', ''], fill_color='EBF3E8')
+                    w(['报错原因', eentry.get('报错原因', ''), '根因分类', eentry.get('根因分类', '')])
+                    w(['所属模块', eentry.get('所属模块', ''), '录入人',   eentry.get('录入人', '')])
+                    w(['解决方案', eentry.get('解决方案', ''), '', ''])
+                    w(['关联用例', eentry.get('关联用例', ''), '', ''])
             elif ematch.get('status') == 'unmatched':
                 w(['匹配状态', '❌ 未匹配 — 建议将该报错条目添加至错误数据库', '', ''],
                   fill_color='F2F2F2')
@@ -190,15 +196,19 @@ def generate_html(results: list, output_path: str) -> str:
             level = err.get('level', '')
             level_color = LEVEL_HTML.get(level, '#CCCCCC')
             ematch = err.get('match', {})
-            eentry = ematch.get('entry') or {}
-
             if ematch.get('status') == 'matched':
+                eentries = (ematch.get('entries') or
+                            ([ematch.get('entry')] if ematch.get('entry') else []))
                 by = ('ID精确匹配' if ematch.get('match_by') == 'error_id'
                       else ('关键词匹配' if ematch.get('match_by') == 'keywords'
                             else '手动录入'))
-                match_html = f'''
-              <div class="match-box matched">
-                <div class="match-title">✅ 命中知识库 <span class="match-by">（{h(by)}）</span></div>
+                count_str = (f' <span class="entry-count">共 {len(eentries)} 条</span>'
+                             if len(eentries) > 1 else '')
+                entries_html = ''
+                for n, eentry in enumerate(eentries, 1):
+                    sep = (f'<div class="entry-sep">— 根因 {n} —</div>'
+                           if len(eentries) > 1 else '')
+                    entries_html += f'''{sep}
                 <table class="info-table">
                   <tr><td>报错原因</td><td>{h(str(eentry.get("报错原因","")))}</td>
                       <td>根因分类</td><td>{h(str(eentry.get("根因分类","")))}</td></tr>
@@ -206,7 +216,11 @@ def generate_html(results: list, output_path: str) -> str:
                       <td>录入人</td><td>{h(str(eentry.get("录入人","")))}</td></tr>
                   <tr><td>解决方案</td><td colspan="3">{h(str(eentry.get("解决方案","")))}</td></tr>
                   <tr><td>关联用例</td><td colspan="3">{h(str(eentry.get("关联用例","")))}</td></tr>
-                </table>
+                </table>'''
+                match_html = f'''
+              <div class="match-box matched">
+                <div class="match-title">✅ 命中知识库 <span class="match-by">（{h(by)}）{count_str}</span></div>
+                {entries_html}
               </div>'''
             elif ematch.get('status') == 'unmatched':
                 match_html = '''
@@ -297,6 +311,8 @@ def generate_html(results: list, output_path: str) -> str:
     .match-box.unmatched{{background:#F5F5F5;border-left:4px solid #A6A6A6;color:#666}}
     .match-title{{font-weight:bold;color:#2E7D32;margin-bottom:8px}}
     .match-by{{font-weight:normal;color:#888;font-size:12px}}
+    .entry-sep{{font-size:12px;color:#888;margin:6px 0 4px;border-top:1px dashed #DDD;padding-top:6px}}
+    .entry-count{{background:#2E74B5;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:6px}}
   </style>
 </head>
 <body>

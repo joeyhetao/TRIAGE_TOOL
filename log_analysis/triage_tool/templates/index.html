@@ -23,6 +23,9 @@
       <button class="mode-tab" id="tabPath" onclick="switchMode('path')">
         📂 指定路径
       </button>
+      <button class="mode-tab" id="tabQuery" onclick="switchMode('query')">
+        🔎 查询知识库
+      </button>
     </div>
 
     <!-- ── 上传文件模式 ─────────────────────────────── -->
@@ -41,10 +44,32 @@
       <textarea id="logPaths" class="path-textarea"
                 placeholder="输入日志文件路径或 glob 表达式，每行一个，例如：
 /home/proj/sim_results/sim.log
-/home/proj/regression/**/*.log
+/home/proj/regression/**/test/tc_*.log
 D:\sim\run1\*.log"></textarea>
       <div class="drop-hint" style="margin-top:6px">
-        支持 <code>*</code> 和 <code>**</code> 通配符，多路径每行一个或逗号分隔，最多 100 个文件
+        支持 <code>*</code> 和 <code>**</code> 通配符，多路径每行一个或逗号分隔，最多 5000 个文件
+      </div>
+    </div>
+
+    <!-- ── 查询知识库模式 ──────────────────────────── -->
+    <div id="modeQuery" style="display:none">
+      <div class="query-form-grid">
+        <div class="qf-item">
+          <label class="qf-label">错误类型</label>
+          <select id="qLevel" class="fi">
+            <option value="">不限</option>
+            <option value="UVM_FATAL">UVM_FATAL</option>
+            <option value="UVM_ERROR">UVM_ERROR</option>
+          </select>
+        </div>
+        <div class="qf-item">
+          <label class="qf-label">错误 ID <span class="hint">支持部分匹配</span></label>
+          <input type="text" id="qErrorId" class="fi" placeholder="如：CNTR_OVERFLOW">
+        </div>
+        <div class="qf-item qf-full">
+          <label class="qf-label">描述 / 关键词 <span class="hint">空格或逗号分隔，任意词命中即显示</span></label>
+          <input type="text" id="qText" class="fi" placeholder="如：assertion failed timeout expected">
+        </div>
       </div>
     </div>
 
@@ -57,14 +82,29 @@ D:\sim\run1\*.log"></textarea>
     </div>
 
     <!-- 提交按钮 -->
-    <div class="btn-row">
+    <div class="btn-row" id="analyzeBtnRow">
       <button class="btn btn-primary" id="analyzeBtn" onclick="startAnalyze()">
         <span id="btnText">开始分析</span>
         <span id="btnSpinner" class="spinner" style="display:none"></span>
       </button>
     </div>
+    <div class="btn-row" id="queryBtnRow" style="display:none">
+      <button class="btn btn-primary" id="queryBtn" onclick="runQuery()">
+        <span id="qBtnText">查询</span>
+        <span id="qBtnSpinner" class="spinner" style="display:none"></span>
+      </button>
+    </div>
     <div id="errMsg" class="err-msg"></div>
   </div>
+
+  <!-- 查询结果区 -->
+  <div id="queryResultsWrap" style="display:none">
+    <div class="card" style="margin-top:16px">
+      <div class="card-title" id="queryResultTitle"></div>
+      <div id="queryResults"></div>
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -79,11 +119,16 @@ D:\sim\run1\*.log"></textarea>
   // ── 模式切换 ──────────────────────────────────────
   function switchMode(mode) {
     currentMode = mode;
-    document.getElementById('tabUpload').classList.toggle('active', mode === 'upload');
-    document.getElementById('tabPath').classList.toggle('active', mode === 'path');
-    document.getElementById('modeUpload').style.display = mode === 'upload' ? '' : 'none';
-    document.getElementById('modePath').style.display   = mode === 'path'   ? '' : 'none';
+    ['upload','path','query'].forEach(m => {
+      document.getElementById('tab' + m.charAt(0).toUpperCase() + m.slice(1))
+              .classList.toggle('active', m === mode);
+      document.getElementById('mode' + m.charAt(0).toUpperCase() + m.slice(1))
+              .style.display = m === mode ? '' : 'none';
+    });
+    document.getElementById('analyzeBtnRow').style.display = mode !== 'query' ? '' : 'none';
+    document.getElementById('queryBtnRow').style.display   = mode === 'query' ? '' : 'none';
     document.getElementById('errMsg').textContent = '';
+    if (mode !== 'query') document.getElementById('queryResultsWrap').style.display = 'none';
   }
 
   // ── 上传模式：拖拽 & 文件选择 ─────────────────────
@@ -176,6 +221,84 @@ D:\sim\run1\*.log"></textarea>
       document.getElementById('btnSpinner').style.display = 'none';
       document.getElementById('analyzeBtn').disabled = false;
     }
+  }
+
+  // ── 知识库查询 ────────────────────────────────────
+  async function runQuery() {
+    document.getElementById('errMsg').textContent = '';
+    const level   = document.getElementById('qLevel').value;
+    const errorId = document.getElementById('qErrorId').value.trim();
+    const text    = document.getElementById('qText').value.trim();
+
+    if (!level && !errorId && !text) {
+      document.getElementById('errMsg').textContent = '请至少填写一个查询条件';
+      return;
+    }
+
+    document.getElementById('qBtnText').textContent = '查询中...';
+    document.getElementById('qBtnSpinner').style.display = 'inline-block';
+    document.getElementById('queryBtn').disabled = true;
+
+    try {
+      const resp = await fetch('/query', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ db_path: dbPath.value, level, error_id: errorId, text }),
+      });
+      const data = await resp.json();
+      if (data.error) {
+        document.getElementById('errMsg').textContent = '查询失败：' + data.error;
+        return;
+      }
+      renderQueryResults(data.entries, data.total);
+    } catch(e) {
+      document.getElementById('errMsg').textContent = '请求失败：' + e.message;
+    } finally {
+      document.getElementById('qBtnText').textContent = '查询';
+      document.getElementById('qBtnSpinner').style.display = 'none';
+      document.getElementById('queryBtn').disabled = false;
+    }
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function renderQueryResults(entries, total) {
+    const wrap = document.getElementById('queryResultsWrap');
+    const title = document.getElementById('queryResultTitle');
+    const container = document.getElementById('queryResults');
+
+    if (!entries || entries.length === 0) {
+      title.textContent = '未找到匹配条目';
+      container.innerHTML = '<div class="empty-box" style="margin:16px 0">知识库中暂无符合条件的记录</div>';
+      wrap.style.display = '';
+      return;
+    }
+
+    const shown = entries.length;
+    title.textContent = `查询结果（${total > shown ? '显示前 ' + shown + ' / 共 ' + total : '共 ' + total} 条）`;
+
+    container.innerHTML = entries.map((e, i) => `
+      <div class="qr-card">
+        <div class="qr-hdr">
+          <span class="badge badge-${(e['错误类型']||'').toLowerCase()}">${esc(e['错误类型']||'')}</span>
+          <span class="qr-id mono">${esc(e['错误ID']||'—')}</span>
+          <span class="qr-module">${esc(e['所属模块']||'')}</span>
+          <span class="qr-cat">${esc(e['根因分类']||'')}</span>
+        </div>
+        <div class="entry-grid" style="margin-top:8px">
+          <div class="eg-kv full"><span class="eg-k">关键描述关键词</span><span class="eg-v mono">${esc(e['关键描述关键词']||'')}</span></div>
+          <div class="eg-kv full"><span class="eg-k">报错原因</span><span class="eg-v">${esc(e['报错原因']||'')}</span></div>
+          <div class="eg-kv full"><span class="eg-k">解决方案</span><span class="eg-v">${esc(e['解决方案']||'')}</span></div>
+          <div class="eg-kv"><span class="eg-k">关联用例</span><span class="eg-v mono">${esc(e['关联用例']||'')}</span></div>
+          <div class="eg-kv"><span class="eg-k">录入人 / 日期</span><span class="eg-v">${esc(e['录入人']||'')} ${esc(e['录入日期']||'')}</span></div>
+        </div>
+      </div>`
+    ).join('');
+
+    wrap.style.display = '';
+    wrap.scrollIntoView({behavior: 'smooth', block: 'start'});
   }
 </script>
 </body>
