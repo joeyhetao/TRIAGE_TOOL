@@ -26,6 +26,9 @@
       <button class="mode-tab" id="tabQuery" onclick="switchMode('query')">
         🔎 查询知识库
       </button>
+      <button class="mode-tab" id="tabAdd" onclick="switchMode('add')">
+        ➕ 添加条目
+      </button>
     </div>
 
     <!-- ── 上传文件模式 ─────────────────────────────── -->
@@ -73,6 +76,58 @@ D:\sim\run1\*.log"></textarea>
       </div>
     </div>
 
+    <!-- ── 添加条目模式 ──────────────────────────────── -->
+    <div id="modeAdd" style="display:none">
+      <div class="form-grid" style="margin-top:4px">
+        <div class="fg-item">
+          <label>错误类型 <span class="req">*</span></label>
+          <select class="fi" id="addType">
+            <option value="UVM_ERROR">UVM_ERROR</option>
+            <option value="UVM_FATAL">UVM_FATAL</option>
+            <option value="UVM_WARNING">UVM_WARNING</option>
+          </select>
+        </div>
+        <div class="fg-item">
+          <label>错误ID</label>
+          <input class="fi" id="addErrId" placeholder="如：DATA_MISMATCH">
+        </div>
+        <div class="fg-item full">
+          <label>关键描述关键词 <span class="hint">多个用逗号分隔</span></label>
+          <input class="fi" id="addKw" placeholder="如：length mismatch,expected">
+        </div>
+        <div class="fg-item full">
+          <label>报错原因 <span class="req">*</span></label>
+          <input class="fi" id="addReason" placeholder="填写根因说明">
+        </div>
+        <div class="fg-item">
+          <label>所属模块</label>
+          <input class="fi" id="addModule" placeholder="如：axi_scoreboard">
+        </div>
+        <div class="fg-item">
+          <label>根因分类 <span class="req">*</span></label>
+          <select class="fi" id="addCat">
+            <option>DUT Bug</option>
+            <option>TB Bug</option>
+            <option>用例问题</option>
+            <option>工具问题</option>
+            <option>其他问题</option>
+          </select>
+        </div>
+        <div class="fg-item full">
+          <label>解决方案</label>
+          <input class="fi" id="addSolution" placeholder="处理建议">
+        </div>
+        <div class="fg-item">
+          <label>关联用例</label>
+          <input class="fi" id="addCase" placeholder="用例名称">
+        </div>
+        <div class="fg-item">
+          <label>录入人</label>
+          <input class="fi" id="addAuthor" placeholder="姓名">
+        </div>
+      </div>
+    </div>
+
     <!-- 知识库路径 -->
     <div class="form-row">
       <label class="form-label">📋 知识库路径</label>
@@ -93,6 +148,13 @@ D:\sim\run1\*.log"></textarea>
         <span id="qBtnText">查询</span>
         <span id="qBtnSpinner" class="spinner" style="display:none"></span>
       </button>
+    </div>
+    <div class="btn-row" id="addBtnRow" style="display:none">
+      <button class="btn btn-primary" id="addBtn" onclick="submitAdd()">
+        <span id="addBtnText">写入知识库</span>
+        <span id="addBtnSpinner" class="spinner" style="display:none"></span>
+      </button>
+      <button class="btn btn-secondary" onclick="clearAddForm()" style="margin-left:8px">清空</button>
     </div>
     <div id="errMsg" class="err-msg"></div>
   </div>
@@ -119,14 +181,16 @@ D:\sim\run1\*.log"></textarea>
   // ── 模式切换 ──────────────────────────────────────
   function switchMode(mode) {
     currentMode = mode;
-    ['upload','path','query'].forEach(m => {
+    ['upload','path','query','add'].forEach(m => {
       document.getElementById('tab' + m.charAt(0).toUpperCase() + m.slice(1))
               .classList.toggle('active', m === mode);
       document.getElementById('mode' + m.charAt(0).toUpperCase() + m.slice(1))
               .style.display = m === mode ? '' : 'none';
     });
-    document.getElementById('analyzeBtnRow').style.display = mode !== 'query' ? '' : 'none';
+    document.getElementById('analyzeBtnRow').style.display = (mode === 'upload' || mode === 'path') ? '' : 'none';
     document.getElementById('queryBtnRow').style.display   = mode === 'query' ? '' : 'none';
+    document.getElementById('addBtnRow').style.display     = mode === 'add'   ? '' : 'none';
+    // 知识库路径选择框在「添加条目」模式仍需显示
     document.getElementById('errMsg').textContent = '';
     if (mode !== 'query') document.getElementById('queryResultsWrap').style.display = 'none';
   }
@@ -258,6 +322,79 @@ D:\sim\run1\*.log"></textarea>
       document.getElementById('qBtnSpinner').style.display = 'none';
       document.getElementById('queryBtn').disabled = false;
     }
+  }
+
+  // ── 直接添加知识库条目 ────────────────────────────
+  async function submitAdd(force) {
+    document.getElementById('errMsg').textContent = '';
+    document.getElementById('errMsg').style.color = '';
+    const reason = document.getElementById('addReason').value.trim();
+    if (!reason) {
+      document.getElementById('errMsg').textContent = '请填写报错原因';
+      document.getElementById('errMsg').style.color = '#C00000';
+      return;
+    }
+    const payload = {
+      db_path:       dbPath.value,
+      '错误类型':    document.getElementById('addType').value,
+      '错误ID':      document.getElementById('addErrId').value.trim(),
+      '关键描述关键词': document.getElementById('addKw').value.trim(),
+      '报错原因':    reason,
+      '所属模块':    document.getElementById('addModule').value.trim(),
+      '根因分类':    document.getElementById('addCat').value,
+      '解决方案':    document.getElementById('addSolution').value.trim(),
+      '关联用例':    document.getElementById('addCase').value.trim(),
+      '录入人':      document.getElementById('addAuthor').value.trim(),
+    };
+    if (force) payload.force = true;
+    document.getElementById('addBtnText').textContent = '写入中...';
+    document.getElementById('addBtnSpinner').style.display = 'inline-block';
+    document.getElementById('addBtn').disabled = true;
+    try {
+      const resp = await fetch('/kb/add', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json();
+      const errEl = document.getElementById('errMsg');
+      if (data.success) {
+        errEl.textContent = '✅ 条目已成功写入知识库';
+        errEl.style.color = '#2E7D32';
+        clearAddForm();
+      } else if (data.duplicate) {
+        showDuplicateWarning(errEl, data.conflicts, () => submitAdd(true));
+      } else {
+        errEl.textContent = '写入失败：' + (data.error || '未知错误');
+        errEl.style.color = '#C00000';
+      }
+    } catch(e) {
+      document.getElementById('errMsg').textContent = '请求失败：' + e.message;
+      document.getElementById('errMsg').style.color = '#C00000';
+    } finally {
+      document.getElementById('addBtnText').textContent = '写入知识库';
+      document.getElementById('addBtnSpinner').style.display = 'none';
+      document.getElementById('addBtn').disabled = false;
+    }
+  }
+
+  function showDuplicateWarning(container, conflicts, onForce) {
+    const c = conflicts[0] || {};
+    const more = conflicts.length > 1 ? `（共 ${conflicts.length} 条相似）` : '';
+    container.innerHTML =
+      `<div class="dup-warn">⚠ 知识库中已存在相似条目${more}：` +
+      `<span class="dup-field">${esc(c['错误类型']||'')} / ${esc(c['错误ID']||'—')} / ${esc(c['报错原因']||'').slice(0,40)}</span>` +
+      `<button class="btn-force" onclick="(${onForce.toString()})()">仍要写入</button>` +
+      `<button class="btn-cancel-dup" onclick="this.closest('.dup-warn').parentNode.textContent=''">取消</button>` +
+      `</div>`;
+    container.style.color = '';
+  }
+
+  function clearAddForm() {
+    ['addErrId','addKw','addReason','addModule','addSolution','addCase','addAuthor']
+      .forEach(id => { document.getElementById(id).value = ''; });
+    document.getElementById('addType').value = 'UVM_ERROR';
+    document.getElementById('addCat').value  = 'DUT Bug';
   }
 
   function esc(s) {

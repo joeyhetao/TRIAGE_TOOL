@@ -23,7 +23,7 @@ if hasattr(sys.stderr, 'buffer'):
 
 from core.log_parser import parse_logs
 from core.matcher    import run_match
-from core.db_manager import append_entry, ensure_db
+from core.db_manager import append_entry, ensure_db, update_entry, delete_entry, find_duplicates
 from core.reporter   import generate_excel, generate_html
 
 # ── 初始化路径 ────────────────────────────────────────────
@@ -64,6 +64,12 @@ else:
 
 # ── M4: 带 TTL 的会话数据存储 ────────────────────────────
 _STORE_TTL = 2 * 3600   # 2小时后自动过期
+
+_CONFLICT_FIELDS = ['错误类型', '错误ID', '关键描述关键词', '报错原因', '所属模块', '录入日期', '_row_idx']
+
+def _conflict_summary(conflicts: list) -> list:
+    """返回冲突条目的摘要字段列表，用于前端展示。"""
+    return [{f: str(e.get(f, '') or '') for f in _CONFLICT_FIELDS} for e in conflicts]
 _store: dict = {}        # sid -> {'results': list, 'db_path': str, 'ts': float}
 
 
@@ -235,6 +241,11 @@ def writeback():
         '录入人':        data.get('author',        '')[:MAX_LEN],
     }
     try:
+        if not data.get('force'):
+            conflicts = find_duplicates(db_path, entry)
+            if conflicts:
+                return jsonify({'success': False, 'duplicate': True,
+                                'conflicts': _conflict_summary(conflicts)})
         append_entry(db_path, entry)
 
         file_name = data.get('file_name', '')
@@ -317,6 +328,88 @@ def query_kb():
     return jsonify({'entries': entries, 'total': len(scored)})
 
 
+@app.route('/kb/add', methods=['POST'])
+def kb_add():
+    """直接向知识库追加一条新记录，不依赖会话。
+    JSON: {db_path?, 错误类型, 错误ID, 关键描述关键词, 报错原因(必填), 所属模块,
+           根因分类(必填), 解决方案, 关联用例, 录入人}
+    """
+    data = request.get_json() or {}
+    db_path = data.get('db_path', '').strip() or DB_DEFAULT
+    VALID_LEVELS = {'UVM_FATAL', 'UVM_ERROR', 'UVM_WARNING'}
+    MAX_LEN = 500
+
+    level = data.get('错误类型', '').strip().upper()
+    if level not in VALID_LEVELS:
+        return jsonify({'success': False, 'error': '错误类型无效，须为 UVM_FATAL / UVM_ERROR / UVM_WARNING'}), 400
+    reason = data.get('报错原因', '').strip()
+    if not reason:
+        return jsonify({'success': False, 'error': '报错原因不能为空'}), 400
+
+    entry = {
+        '错误类型':       level,
+        '错误ID':         data.get('错误ID',         '')[:MAX_LEN],
+        '关键描述关键词':  data.get('关键描述关键词', '')[:MAX_LEN],
+        '报错原因':        reason[:MAX_LEN],
+        '所属模块':        data.get('所属模块',       '')[:MAX_LEN],
+        '根因分类':        data.get('根因分类',       '')[:MAX_LEN],
+        '解决方案':        data.get('解决方案',       '')[:MAX_LEN],
+        '关联用例':        data.get('关联用例',       '')[:MAX_LEN],
+        '录入人':          data.get('录入人',         '')[:MAX_LEN],
+    }
+    try:
+        if not data.get('force'):
+            conflicts = find_duplicates(db_path, entry)
+            if conflicts:
+                return jsonify({'success': False, 'duplicate': True,
+                                'conflicts': _conflict_summary(conflicts)})
+        append_entry(db_path, entry)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/kb/update', methods=['POST'])
+def kb_update():
+    """编辑知识库中指定行。JSON: {row_idx, db_path?, 字段名: 值, ...}"""
+    data = request.get_json() or {}
+    row_idx = data.get('row_idx')
+    if not isinstance(row_idx, int) or row_idx < 2:
+        return jsonify({'success': False, 'error': '无效的行号'})
+    db_path = data.get('db_path', '').strip() or DB_DEFAULT
+    # 允许更新的字段（排除内部字段）
+    allowed = {'错误类型', '错误ID', '关键描述关键词', '报错原因',
+               '所属模块', '根因分类', '解决方案', '关联用例', '录入人'}
+    new_data = {k: str(v)[:500] for k, v in data.items() if k in allowed}
+    if not new_data:
+        return jsonify({'success': False, 'error': '无有效字段'})
+    try:
+        if not data.get('force'):
+            conflicts = find_duplicates(db_path, new_data, exclude_row_idx=row_idx)
+            if conflicts:
+                return jsonify({'success': False, 'duplicate': True,
+                                'conflicts': _conflict_summary(conflicts)})
+        update_entry(db_path, row_idx, new_data)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/kb/delete', methods=['POST'])
+def kb_delete():
+    """删除知识库中指定行。JSON: {row_idx, db_path?}"""
+    data = request.get_json() or {}
+    row_idx = data.get('row_idx')
+    if not isinstance(row_idx, int) or row_idx < 2:
+        return jsonify({'success': False, 'error': '无效的行号'})
+    db_path = data.get('db_path', '').strip() or DB_DEFAULT
+    try:
+        delete_entry(db_path, row_idx)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
 @app.route('/export/excel')
 def export_excel():
     sid = _sid()
@@ -365,4 +458,21 @@ if __name__ == '__main__':
             pass
 
     threading.Timer(1.0, _open_browser).start()
-    app.run(host=args.host, port=args.port, debug=False)
+    try:
+        app.run(host=args.host, port=args.port, debug=False)
+    except OSError as e:
+        if 'Address already in use' in str(e) or getattr(e, 'errno', None) in (98, 10048):
+            print('\n[错误] 端口 {} 已被占用，无法启动。'.format(args.port))
+            print('\n解决方法：')
+            print('  1. 换一个端口启动：')
+            print('       python3 app.py --port 8080')
+            print('  2. 找出并终止占用进程（Linux）：')
+            print('       ss -tlnp | grep :{}'.format(args.port))
+            print('       kill -9 <PID>')
+            print('  3. 一键释放端口（Linux）：')
+            print('       fuser -k {}/tcp'.format(args.port))
+            print('  4. 找出并终止占用进程（Windows）：')
+            print('       netstat -ano | findstr :{}'.format(args.port))
+            print('       taskkill /PID <PID> /F')
+            sys.exit(1)
+        raise

@@ -132,21 +132,93 @@
                 </div>
 
                 {% for eentry in eentries %}
+                {% set row_idx = eentry.get('_row_idx', 0) %}
+                {% set ek = ri|string + '-' + ei|string + '-' + loop.index0|string %}
                 {% if eentries|length > 1 %}
-                <div class="entry-sep">— 根因 {{ loop.index }} —</div>
+                <div class="entry-sep">— 根因 {{ loop.index }} —
+                  {% if row_idx %}
+                  <span class="entry-actions">
+                    <button class="btn-entry-edit" onclick="toggleEntryEdit('editform-{{ ek }}', this)">✏ 编辑</button>
+                    <button class="btn-entry-del"  onclick="deleteKbEntry({{ row_idx }}, '{{ db_path }}', 'entrycard-{{ ek }}', 'matchbox-{{ ri }}-{{ ei }}')">🗑 删除</button>
+                  </span>
+                  {% endif %}
+                </div>
                 {% endif %}
-                <div class="entry-grid">
-                  <div class="eg-kv"><span class="eg-k">报错原因</span><span class="eg-v">{{ eentry.get('报错原因','') }}</span></div>
-                  <div class="eg-kv"><span class="eg-k">根因分类</span><span class="eg-v">{{ eentry.get('根因分类','') }}</span></div>
-                  <div class="eg-kv"><span class="eg-k">所属模块</span><span class="eg-v">{{ eentry.get('所属模块','') }}</span></div>
-                  <div class="eg-kv"><span class="eg-k">录入人</span><span class="eg-v">{{ eentry.get('录入人','') }}</span></div>
-                  <div class="eg-kv full"><span class="eg-k">解决方案</span><span class="eg-v">{{ eentry.get('解决方案','') }}</span></div>
-                  <div class="eg-kv full"><span class="eg-k">关联用例</span><span class="eg-v mono">{{ eentry.get('关联用例','') }}</span></div>
-                  <!-- 折叠区：默认隐藏 -->
-                  <div class="eg-kv entry-extra"><span class="eg-k">错误类型</span><span class="eg-v mono">{{ eentry.get('错误类型','') }}</span></div>
-                  <div class="eg-kv entry-extra"><span class="eg-k">错误ID</span><span class="eg-v mono">{{ eentry.get('错误ID','') }}</span></div>
-                  <div class="eg-kv full entry-extra"><span class="eg-k">关键描述关键词</span><span class="eg-v mono">{{ eentry.get('关键描述关键词','') }}</span></div>
-                  <div class="eg-kv entry-extra"><span class="eg-k">录入日期</span><span class="eg-v">{{ eentry.get('录入日期','') }}</span></div>
+                <div class="entry-card" id="entrycard-{{ ek }}">
+                  {% if eentries|length == 1 and row_idx %}
+                  <div class="entry-single-actions">
+                    <button class="btn-entry-edit" onclick="toggleEntryEdit('editform-{{ ek }}', this)">✏ 编辑</button>
+                    <button class="btn-entry-del"  onclick="deleteKbEntry({{ row_idx }}, '{{ db_path }}', 'entrycard-{{ ek }}', 'matchbox-{{ ri }}-{{ ei }}')">🗑 删除</button>
+                  </div>
+                  {% endif %}
+                  <div class="entry-grid">
+                    <div class="eg-kv"><span class="eg-k">报错原因</span><span class="eg-v">{{ eentry.get('报错原因','') }}</span></div>
+                    <div class="eg-kv"><span class="eg-k">根因分类</span><span class="eg-v">{{ eentry.get('根因分类','') }}</span></div>
+                    <div class="eg-kv"><span class="eg-k">所属模块</span><span class="eg-v">{{ eentry.get('所属模块','') }}</span></div>
+                    <div class="eg-kv"><span class="eg-k">录入人</span><span class="eg-v">{{ eentry.get('录入人','') }}</span></div>
+                    <div class="eg-kv full"><span class="eg-k">解决方案</span><span class="eg-v">{{ eentry.get('解决方案','') }}</span></div>
+                    <div class="eg-kv full"><span class="eg-k">关联用例</span><span class="eg-v mono">{{ eentry.get('关联用例','') }}</span></div>
+                    <!-- 折叠区：默认隐藏 -->
+                    <div class="eg-kv entry-extra"><span class="eg-k">错误类型</span><span class="eg-v mono">{{ eentry.get('错误类型','') }}</span></div>
+                    <div class="eg-kv entry-extra"><span class="eg-k">错误ID</span><span class="eg-v mono">{{ eentry.get('错误ID','') }}</span></div>
+                    <div class="eg-kv full entry-extra"><span class="eg-k">关键描述关键词</span><span class="eg-v mono">{{ eentry.get('关键描述关键词','') }}</span></div>
+                    <div class="eg-kv entry-extra"><span class="eg-k">录入日期</span><span class="eg-v">{{ eentry.get('录入日期','') }}</span></div>
+                  </div>
+                  <!-- 内联编辑表单 -->
+                  {% if row_idx %}
+                  <div id="editform-{{ ek }}" class="entry-edit-form" style="display:none">
+                    <div class="supp-title">编辑知识库条目</div>
+                    <div class="form-grid">
+                      <div class="fg-item">
+                        <label>错误类型</label>
+                        <select class="fi" id="ed-type-{{ ek }}">
+                          <option {% if eentry.get('错误类型')=='UVM_FATAL' %}selected{% endif %}>UVM_FATAL</option>
+                          <option {% if eentry.get('错误类型')=='UVM_ERROR' %}selected{% endif %}>UVM_ERROR</option>
+                          <option {% if eentry.get('错误类型')=='UVM_WARNING' %}selected{% endif %}>UVM_WARNING</option>
+                        </select>
+                      </div>
+                      <div class="fg-item">
+                        <label>错误ID</label>
+                        <input class="fi" id="ed-id-{{ ek }}" value="{{ eentry.get('错误ID','') }}">
+                      </div>
+                      <div class="fg-item full">
+                        <label>关键描述关键词</label>
+                        <input class="fi" id="ed-kw-{{ ek }}" value="{{ eentry.get('关键描述关键词','') }}">
+                      </div>
+                      <div class="fg-item full">
+                        <label>报错原因 <span class="req">*</span></label>
+                        <input class="fi" id="ed-reason-{{ ek }}" value="{{ eentry.get('报错原因','') }}">
+                      </div>
+                      <div class="fg-item">
+                        <label>所属模块</label>
+                        <input class="fi" id="ed-module-{{ ek }}" value="{{ eentry.get('所属模块','') }}">
+                      </div>
+                      <div class="fg-item">
+                        <label>根因分类</label>
+                        <select class="fi" id="ed-cat-{{ ek }}">
+                          {% for opt in ['DUT Bug','TB Bug','用例问题','工具问题','其他问题'] %}
+                          <option {% if eentry.get('根因分类')==opt %}selected{% endif %}>{{ opt }}</option>
+                          {% endfor %}
+                        </select>
+                      </div>
+                      <div class="fg-item full">
+                        <label>解决方案</label>
+                        <input class="fi" id="ed-sol-{{ ek }}" value="{{ eentry.get('解决方案','') }}">
+                      </div>
+                      <div class="fg-item">
+                        <label>关联用例</label>
+                        <input class="fi" id="ed-case-{{ ek }}" value="{{ eentry.get('关联用例','') }}">
+                      </div>
+                      <div class="fg-item">
+                        <label>录入人</label>
+                        <input class="fi" id="ed-author-{{ ek }}" value="{{ eentry.get('录入人','') }}">
+                      </div>
+                    </div>
+                    <button class="btn btn-primary mt8"
+                            onclick="saveKbEdit({{ row_idx }}, '{{ db_path }}', '{{ ek }}')">保存</button>
+                    <span class="wb-msg" id="edmsg-{{ ek }}"></span>
+                  </div>
+                  {% endif %}
                 </div>
                 {% endfor %}
 
@@ -286,7 +358,7 @@
     btn.textContent = show ? '− 收起' : '+ 补充录入';
   }
 
-  async function writeBackSupp(fileIdx, errorIdx, fileName, level, errorId) {
+  async function writeBackSupp(fileIdx, errorIdx, fileName, level, errorId, force) {
     const key    = fileIdx + '-' + errorIdx;
     const reason = document.getElementById('suppreason-' + key).value.trim();
     if (!reason) {
@@ -308,6 +380,7 @@
       related_case: document.getElementById('suppcase-'     + key).value,
       author:       document.getElementById('suppauthor-'   + key).value,
     };
+    if (force) payload.force = true;
     try {
       const resp = await fetch('/writeback', {
         method: 'POST',
@@ -319,15 +392,119 @@
       if (data.success) {
         msg.textContent = '✅ 已补充写入知识库（刷新页面可见新条目）';
         msg.style.color = '#2E7D32';
-        // 清空表单，允许继续补充
         ['suppreason','suppkw','suppmodule','suppsolution','suppcase','suppauthor']
           .forEach(f => { const el = document.getElementById(f + '-' + key); if (el) el.value = ''; });
+      } else if (data.duplicate) {
+        showDupWarn(msg, data.conflicts,
+          () => writeBackSupp(fileIdx, errorIdx, fileName, level, errorId, true));
       } else {
         msg.textContent = '写入失败：' + (data.error || '未知错误');
         msg.style.color = '#C00000';
       }
     } catch(e) {
       document.getElementById('suppmsg-' + key).textContent = '请求失败：' + e.message;
+    }
+  }
+
+  function toggleEntryEdit(formId, btn) {
+    const form = document.getElementById(formId);
+    const show = form.style.display === 'none' || form.style.display === '';
+    form.style.display = show ? 'block' : 'none';
+    btn.textContent = show ? '✏ 收起' : '✏ 编辑';
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function showDupWarn(msgEl, conflicts, onForce) {
+    const c = conflicts[0] || {};
+    const more = conflicts.length > 1 ? `（共 ${conflicts.length} 条相似）` : '';
+    msgEl.innerHTML =
+      `<span class="dup-warn">⚠ 已存在相似条目${more}：` +
+      `<b>${esc(c['错误类型']||'')} / ${esc(c['错误ID']||'—')} / ${esc((c['报错原因']||'').slice(0,40))}</b> ` +
+      `<button class="btn-force" onclick="(${onForce.toString()})()">仍要写入</button>` +
+      `<button class="btn-cancel-dup" onclick="this.closest('.dup-warn').remove()">取消</button>` +
+      `</span>`;
+    msgEl.style.color = '';
+  }
+
+  async function saveKbEdit(rowIdx, dbPath, ek, force) {
+    const reason = document.getElementById('ed-reason-' + ek).value.trim();
+    if (!reason) {
+      const msg = document.getElementById('edmsg-' + ek);
+      msg.textContent = '报错原因不能为空';
+      msg.style.color = '#C00000';
+      return;
+    }
+    const payload = {
+      row_idx:      rowIdx,
+      db_path:      dbPath,
+      '错误类型':   document.getElementById('ed-type-'   + ek).value,
+      '错误ID':     document.getElementById('ed-id-'     + ek).value,
+      '关键描述关键词': document.getElementById('ed-kw-' + ek).value,
+      '报错原因':   reason,
+      '所属模块':   document.getElementById('ed-module-' + ek).value,
+      '根因分类':   document.getElementById('ed-cat-'    + ek).value,
+      '解决方案':   document.getElementById('ed-sol-'    + ek).value,
+      '关联用例':   document.getElementById('ed-case-'   + ek).value,
+      '录入人':     document.getElementById('ed-author-' + ek).value,
+    };
+    if (force) payload.force = true;
+    try {
+      const resp = await fetch('/kb/update', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json();
+      const msg = document.getElementById('edmsg-' + ek);
+      if (data.success) {
+        msg.textContent = '✅ 已保存，刷新页面后生效';
+        msg.style.color = '#2E7D32';
+      } else if (data.duplicate) {
+        showDupWarn(msg, data.conflicts, () => saveKbEdit(rowIdx, dbPath, ek, true));
+      } else {
+        msg.textContent = '保存失败：' + (data.error || '未知错误');
+        msg.style.color = '#C00000';
+      }
+    } catch(e) {
+      document.getElementById('edmsg-' + ek).textContent = '请求失败：' + e.message;
+    }
+  }
+
+  async function deleteKbEntry(rowIdx, dbPath, cardId, boxId) {
+    if (!confirm('确认删除该知识库条目？此操作不可撤销。')) return;
+    try {
+      const resp = await fetch('/kb/delete', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({row_idx: rowIdx, db_path: dbPath}),
+      });
+      const data = await resp.json();
+      if (data.success) {
+        const card = document.getElementById(cardId);
+        if (card) card.remove();
+        // 更新「共 N 条」计数
+        const box = document.getElementById(boxId);
+        if (box) {
+          const remaining = box.querySelectorAll('.entry-card').length;
+          const badge = box.querySelector('.entry-count');
+          if (badge) {
+            if (remaining > 1) badge.textContent = '共 ' + remaining + ' 条';
+            else badge.remove();
+          }
+          // 删完所有条目时标记未命中
+          if (remaining === 0) {
+            box.className = 'match-box unmatched';
+            box.querySelector('.match-header').innerHTML = '❌ 知识库条目已全部删除';
+          }
+        }
+      } else {
+        alert('删除失败：' + (data.error || '未知错误'));
+      }
+    } catch(e) {
+      alert('请求失败：' + e.message);
     }
   }
 
@@ -338,7 +515,7 @@
     el.classList.add('active');
   }
 
-  async function writeBack(fileIdx, errorIdx, fileName, level, errorId) {
+  async function writeBack(fileIdx, errorIdx, fileName, level, errorId, force) {
     const key    = fileIdx + '-' + errorIdx;
     const reason = document.getElementById('reason-' + key).value.trim();
     if (!reason) {
@@ -360,6 +537,7 @@
       related_case: document.getElementById('case-'     + key).value,
       author:       document.getElementById('author-'   + key).value,
     };
+    if (force) payload.force = true;
     try {
       const resp = await fetch('/writeback', {
         method: 'POST',
@@ -372,18 +550,17 @@
         msg.textContent = '✅ 已成功写入知识库';
         msg.style.color = '#2E7D32';
         document.querySelector('#form-' + key + ' .btn').disabled = true;
-        // 若当前面板已无待写回条目，移除左侧导航未匹配徽章
         const panel = document.getElementById('panel-' + fileIdx);
         const activeUnmatched = Array.from(
           panel.querySelectorAll('.match-box.unmatched')
-        ).filter(box => {
-          const btn = box.querySelector('.btn');
-          return btn && !btn.disabled;
-        });
+        ).filter(box => { const btn = box.querySelector('.btn'); return btn && !btn.disabled; });
         if (activeUnmatched.length <= 1) {
           const badge = document.querySelector('#nav-' + fileIdx + ' .nav-badge');
           if (badge) badge.remove();
         }
+      } else if (data.duplicate) {
+        showDupWarn(msg, data.conflicts,
+          () => writeBack(fileIdx, errorIdx, fileName, level, errorId, true));
       } else {
         msg.textContent = '写入失败：' + (data.error || '未知错误');
         msg.style.color = '#C00000';

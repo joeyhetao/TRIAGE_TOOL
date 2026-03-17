@@ -17,6 +17,12 @@ def match_error(error: dict, db_entries: list) -> dict:
     error_id    = error.get('error_id', '').lower()
     description = error.get('description', '').lower()
 
+    def _sort_by_date(entries):
+        """按录入日期降序排列，日期格式 YYYY-MM-DD；缺失日期排最后。"""
+        return sorted(entries,
+                      key=lambda e: str(e.get('录入日期', '') or ''),
+                      reverse=True)
+
     # Step1: 收集所有 错误ID + 错误类型 均匹配的行
     id_matches = [
         e for e in db_entries
@@ -25,6 +31,7 @@ def match_error(error: dict, db_entries: list) -> dict:
         and str(e.get('错误类型', '')).strip().upper() == level
     ]
     if id_matches:
+        id_matches = _sort_by_date(id_matches)
         return {'status': 'matched', 'match_by': 'error_id',
                 'entry': id_matches[0], 'entries': id_matches}
 
@@ -39,6 +46,7 @@ def match_error(error: dict, db_entries: list) -> dict:
         if keywords and all(kw in description for kw in keywords):
             kw_matches.append(entry)
     if kw_matches:
+        kw_matches = _sort_by_date(kw_matches)
         return {'status': 'matched', 'match_by': 'keywords',
                 'entry': kw_matches[0], 'entries': kw_matches}
 

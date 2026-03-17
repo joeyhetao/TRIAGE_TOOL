@@ -245,3 +245,30 @@ body { font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
               min-width: 22px; }
 .error-id-sm { font-family: monospace; font-size: 12px; color: #555; }
 .error-ts   { font-size: 12px; color: #999; margin-left: auto; }
+
+/* ── 知识库条目编辑/删除 ──────────────────────────────── */
+.entry-card { position: relative; }
+.entry-single-actions { display: flex; gap: 6px; justify-content: flex-end;
+                        margin-bottom: 6px; }
+.entry-actions { float: right; display: flex; gap: 6px; }
+.btn-entry-edit,
+.btn-entry-del  { border: none; border-radius: 4px; padding: 2px 10px;
+                  font-size: 12px; cursor: pointer; transition: background .15s; }
+.btn-entry-edit { background: #E8F0FE; color: #2E74B5; }
+.btn-entry-edit:hover { background: #C5D8F8; }
+.btn-entry-del  { background: #FDE8E8; color: #C00000; }
+.btn-entry-del:hover  { background: #F8C5C5; }
+.entry-edit-form { margin-top: 10px; padding: 12px; background: #F5F8FF;
+                   border: 1px solid #C5D8F8; border-radius: 6px; }
+
+/* ── 去重警告 ─────────────────────────────────────── */
+.dup-warn  { display:inline-flex; align-items:center; flex-wrap:wrap; gap:6px;
+             background:#FFF8E1; border:1px solid #FFD54F; border-radius:6px;
+             padding:6px 10px; font-size:13px; color:#7B5E00; margin-top:4px; }
+.dup-warn .dup-field { font-style:italic; color:#555; }
+.btn-force { border:none; border-radius:4px; padding:3px 12px; font-size:12px;
+             cursor:pointer; background:#FF9800; color:#fff; }
+.btn-force:hover { background:#E65100; }
+.btn-cancel-dup { border:none; border-radius:4px; padding:3px 10px; font-size:12px;
+                  cursor:pointer; background:#EEE; color:#333; }
+.btn-cancel-dup:hover { background:#DDD; }

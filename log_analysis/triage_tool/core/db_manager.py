@@ -97,7 +97,8 @@ def ensure_db(db_path: str) -> None:
 
 
 def load_db(db_path: str) -> list:
-    """读取知识库，返回字典列表。读取失败时最多重试3次（防止写入期间的短暂竞争）。"""
+    """读取知识库，返回字典列表。每条记录含 _row_idx（Excel 行号，从2开始）。
+    读取失败时最多重试3次（防止写入期间的短暂竞争）。"""
     ensure_db(db_path)
     last_err = None
     for attempt in range(3):
@@ -109,17 +110,77 @@ def load_db(db_path: str) -> list:
                 return []
             headers = [str(h).strip() if h else '' for h in rows[0]]
             entries = []
-            for row in rows[1:]:
+            for excel_row, row in enumerate(rows[1:], start=2):
                 if all(cell is None for cell in row):
                     continue
                 entry = {headers[i]: (row[i] if row[i] is not None else '')
                          for i in range(len(headers))}
+                entry['_row_idx'] = excel_row
                 entries.append(entry)
             return entries
         except Exception as e:
             last_err = e
             time.sleep(0.1 * (attempt + 1))
     raise RuntimeError(f'读取知识库失败（重试3次）: {last_err}')
+
+
+def find_duplicates(db_path: str, entry: dict, exclude_row_idx: int = None) -> list:
+    """
+    检查 entry 是否与知识库中已有条目重复。
+    判断规则（满足其一即视为重复）：
+      - 错误类型相同 AND 错误ID相同（两者均非空，忽略大小写）
+      - 错误类型相同 AND 关键描述关键词相同（两者均非空，标准化逗号/空格后比较）
+    exclude_row_idx: 编辑时排除自身行，避免与自己重复。
+    返回所有冲突条目列表（含 _row_idx）。
+    """
+    import re as _re
+    def _norm_kw(s):
+        return _re.sub(r'\s*[,，]\s*', ',', str(s or '').strip().lower()).strip(',')
+
+    level    = str(entry.get('错误类型', '') or '').strip().upper()
+    error_id = str(entry.get('错误ID',   '') or '').strip().lower()
+    kw_norm  = _norm_kw(entry.get('关键描述关键词', ''))
+
+    conflicts = []
+    for e in load_db(db_path):
+        if exclude_row_idx and e.get('_row_idx') == exclude_row_idx:
+            continue
+        if str(e.get('错误类型', '') or '').strip().upper() != level:
+            continue
+        e_id   = str(e.get('错误ID',   '') or '').strip().lower()
+        e_kw   = _norm_kw(e.get('关键描述关键词', ''))
+        id_dup = bool(error_id and e_id and error_id == e_id)
+        kw_dup = bool(kw_norm  and e_kw  and kw_norm  == e_kw)
+        if id_dup or kw_dup:
+            conflicts.append(e)
+    return conflicts
+
+
+def update_entry(db_path: str, row_idx: int, new_data: dict) -> None:
+    """
+    更新知识库中指定行（row_idx 为 Excel 行号，从2开始）。
+    只更新 HEADERS 中定义的字段，忽略 _row_idx 等内部字段。
+    """
+    with _thread_lock:
+        with _FileLock(db_path):
+            wb = openpyxl.load_workbook(db_path)
+            ws = wb.active
+            headers = [str(ws.cell(1, c).value).strip() if ws.cell(1, c).value else ''
+                       for c in range(1, len(HEADERS) + 1)]
+            for col_idx, header in enumerate(headers, 1):
+                if header in new_data:
+                    ws.cell(row=row_idx, column=col_idx, value=new_data[header])
+            wb.save(db_path)
+
+
+def delete_entry(db_path: str, row_idx: int) -> None:
+    """删除知识库中指定行（row_idx 为 Excel 行号，从2开始）。"""
+    with _thread_lock:
+        with _FileLock(db_path):
+            wb = openpyxl.load_workbook(db_path)
+            ws = wb.active
+            ws.delete_rows(row_idx)
+            wb.save(db_path)
 
 
 def append_entry(db_path: str, entry: dict) -> None:
