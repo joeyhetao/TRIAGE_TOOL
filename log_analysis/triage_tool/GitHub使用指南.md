@@ -141,6 +141,57 @@ git remote set-url origin git@github-work:company/repo.git
 
 ---
 
+## 版本 Tag 管理
+
+Tag 用于标记发布版本（如 v1.0、v1.5），方便回溯和发布。
+
+### 打 Tag 步骤
+
+**第一步：先提交当前改动**
+
+```bash
+git add .
+git commit -m "v1.5: 功能描述"
+```
+
+**第二步：创建 Tag**
+
+```bash
+# 带注释的 Tag（推荐，记录版本说明）
+git tag -a v1.5 -m "v1.5: 编辑删除条目、直接添加、去重检测"
+
+# 轻量 Tag（简单标记，无注释）
+git tag v1.5
+```
+
+**第三步：推送 Tag 到 GitHub**
+
+```bash
+# 推送单个 Tag
+git push origin v1.5
+
+# 推送所有本地 Tag
+git push origin --tags
+```
+
+### 常用 Tag 命令
+
+```bash
+git tag                          # 列出所有 Tag
+git tag -l "v1.*"                # 按模式过滤
+git show v1.5                    # 查看 Tag 详情（含提交信息）
+git log --oneline --decorate     # 提交历史中显示 Tag 位置
+
+# 给历史提交补打 Tag
+git tag -a v1.0 <commit_hash> -m "初始版本"
+
+# 删除 Tag
+git tag -d v1.5                          # 删除本地 Tag
+git push origin :refs/tags/v1.5          # 删除远程 Tag
+```
+
+---
+
 ## 常用命令速查
 
 ```bash

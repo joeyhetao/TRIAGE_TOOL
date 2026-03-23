@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>{{ level }} 去重列表 — 仿真日志分类分诊工具</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="top-bar">
+  <span class="tool-title">🔍 仿真日志分类分诊工具</span>
+  <div class="top-actions">
+    <a href="/result" class="btn btn-secondary">← 返回结果</a>
+  </div>
+</div>
+
+<div class="page-wrap" style="max-width:960px">
+  <div class="card" style="margin-top:20px">
+    <div class="card-title" style="display:flex;align-items:center;gap:10px">
+      <span class="badge badge-{{ level | lower }}">{{ level }}</span>
+      去重错误列表
+      <span style="font-size:14px;font-weight:normal;color:#888;margin-left:4px">
+        共 {{ errors | length }} 条唯一错误
+      </span>
+    </div>
+
+    {% if errors %}
+    <div class="ed-list">
+      {% for err in errors %}
+      <div class="ed-item">
+        <div class="ed-hdr">
+          <span class="ed-idx">{{ loop.index }}</span>
+          <span class="ed-id mono">{{ err.error_id if err.error_id else '（无ID）' }}</span>
+          <span class="ed-filecnt">
+            出现在 <b>{{ err.files | length }}</b> 个文件
+          </span>
+        </div>
+        <div class="ed-desc">{{ err.description }}</div>
+        <div class="ed-loc mono">{{ err.location }}</div>
+        <div class="ed-files">
+          {% for f in err.files[:8] %}
+          <a class="ed-filetag" href="/result?focus={{ f | urlencode }}">{{ f }}</a>
+          {% endfor %}
+          {% if err.files | length > 8 %}
+          <span class="ed-filetag ed-filetag-more">…还有 {{ err.files | length - 8 }} 个</span>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-box">暂无 {{ level }} 错误记录</div>
+    {% endif %}
+  </div>
+</div>
+</body>
+</html>

@@ -53,16 +53,18 @@ def match_error(error: dict, db_entries: list) -> dict:
     return {'status': 'unmatched', 'entry': None, 'entries': []}
 
 
-def run_match(parse_results: list, db_path: str) -> list:
+def run_match(parse_results: list, db_path: str, progress_cb=None) -> list:
     """
     对每个日志的前 TOP_N 条错误逐一执行知识库匹配。
     r['match'] 为汇总状态：
       - 有任意未匹配 → unmatched
       - 全部命中     → matched（取第一条的匹配结果）
       - 无错误       → no_error
+    progress_cb(filename, matched, n_errors, done, total) — 每完成一个文件后调用。
     """
     db_entries = load_db(db_path)
-    for result in parse_results:
+    total = len(parse_results)
+    for i, result in enumerate(parse_results):
         top_errors = result.get('top_errors', [])
         for error in top_errors:
             error['match'] = match_error(error, db_entries)
@@ -73,5 +75,9 @@ def run_match(parse_results: list, db_path: str) -> list:
             result['match'] = {'status': 'unmatched', 'entry': None, 'entries': []}
         else:
             result['match'] = top_errors[0]['match']
+
+        if progress_cb:
+            matched = sum(1 for e in top_errors if e['match']['status'] == 'matched')
+            progress_cb(result.get('file', ''), matched, len(top_errors), i + 1, total)
 
     return parse_results

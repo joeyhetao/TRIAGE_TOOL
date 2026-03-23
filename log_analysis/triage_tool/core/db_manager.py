@@ -35,7 +35,7 @@ class _FileLock:
             try:
                 self._fd = os.open(
                     self.lock_path,
-                    os.O_CREAT | os.O_EXCL | os.O_WRONLY
+                    os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, 'O_BINARY', 0)
                 )
                 return self
             except FileExistsError:
@@ -126,10 +126,12 @@ def load_db(db_path: str) -> list:
 
 def find_duplicates(db_path: str, entry: dict, exclude_row_idx: int = None) -> list:
     """
-    检查 entry 是否与知识库中已有条目重复。
+    检查 entry 是否与知识库中已有条目重复（不检查录入人）。
     判断规则（满足其一即视为重复）：
       - 错误类型相同 AND 错误ID相同（两者均非空，忽略大小写）
       - 错误类型相同 AND 关键描述关键词相同（两者均非空，标准化逗号/空格后比较）
+      - 错误类型相同 AND 报错原因相同（两者均非空，忽略首尾空白）
+      - 错误类型相同 AND 解决方案相同（两者均非空，忽略首尾空白）
     exclude_row_idx: 编辑时排除自身行，避免与自己重复。
     返回所有冲突条目列表（含 _row_idx）。
     """
@@ -140,6 +142,8 @@ def find_duplicates(db_path: str, entry: dict, exclude_row_idx: int = None) -> l
     level    = str(entry.get('错误类型', '') or '').strip().upper()
     error_id = str(entry.get('错误ID',   '') or '').strip().lower()
     kw_norm  = _norm_kw(entry.get('关键描述关键词', ''))
+    reason   = str(entry.get('报错原因',  '') or '').strip()
+    solution = str(entry.get('解决方案',  '') or '').strip()
 
     conflicts = []
     for e in load_db(db_path):
@@ -147,11 +151,15 @@ def find_duplicates(db_path: str, entry: dict, exclude_row_idx: int = None) -> l
             continue
         if str(e.get('错误类型', '') or '').strip().upper() != level:
             continue
-        e_id   = str(e.get('错误ID',   '') or '').strip().lower()
-        e_kw   = _norm_kw(e.get('关键描述关键词', ''))
-        id_dup = bool(error_id and e_id and error_id == e_id)
-        kw_dup = bool(kw_norm  and e_kw  and kw_norm  == e_kw)
-        if id_dup or kw_dup:
+        e_id       = str(e.get('错误ID',   '') or '').strip().lower()
+        e_kw       = _norm_kw(e.get('关键描述关键词', ''))
+        e_reason   = str(e.get('报错原因',  '') or '').strip()
+        e_solution = str(e.get('解决方案',  '') or '').strip()
+        id_dup       = bool(error_id and e_id       and error_id == e_id)
+        kw_dup       = bool(kw_norm  and e_kw       and kw_norm  == e_kw)
+        reason_dup   = bool(reason   and e_reason   and reason   == e_reason)
+        solution_dup = bool(solution and e_solution and solution  == e_solution)
+        if id_dup or kw_dup or reason_dup or solution_dup:
             conflicts.append(e)
     return conflicts
 

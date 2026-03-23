@@ -10,6 +10,7 @@ The application lives entirely under `log_analysis/triage_tool/`. All paths belo
 log_analysis/triage_tool/
 ├── app.py              # Flask entry point and all routes
 ├── requirements.txt    # flask>=2.0, openpyxl>=3.0
+├── install_packages.py # Offline installer helper for Linux intranet deployment
 ├── triage_tool.spec    # PyInstaller build spec (auto-generated, do not edit)
 ├── error_db.xlsx       # Default knowledge base (Excel)
 ├── core/
@@ -60,6 +61,8 @@ pip install --no-index --find-links=./packages flask openpyxl
 
 Do not introduce new third-party dependencies. `core/log_parser.py` and `core/matcher.py` are intentionally stdlib-only.
 
+On Linux intranet machines, use `install_packages.py` instead of manual pip commands — it handles pre-checks, installs to `--user`, and verifies install paths.
+
 ## Architecture
 
 This is a Flask web app for triaging UVM simulation log files against an Excel knowledge base.
@@ -70,6 +73,14 @@ This is a Flask web app for triaging UVM simulation log files against an Excel k
 3. `core/matcher.py` runs two-stage KB matching on **each** of the `top_errors` entries: (1) exact error ID + type, (2) all keywords present in description (AND logic); Chinese full-width comma `，` treated same as `,`
 4. Results rendered in `result.html` with per-error match panels; unmatched errors can be written back via `/writeback` (requires `error_idx` to target a specific entry)
 5. Reports exported as Excel or HTML via `/export/excel` and `/export/html`
+
+**KB management routes** (independent of the analyze/result session flow):
+- `POST /query` — fuzzy search KB: exact `level` filter, partial `error_id` match, any-token scoring across 6 fields; returns top 100
+- `POST /kb/add` — add a new KB row directly (bypasses session); duplicate-checked via `find_duplicates` unless `force: true`
+- `POST /kb/update` — edit a KB row by `row_idx` (Excel row number ≥ 2); allowed fields are the 9 schema columns
+- `POST /kb/delete` — delete a KB row by `row_idx`
+
+All write endpoints share the same duplicate detection flow: call `find_duplicates`, return `{duplicate: true, conflicts: [...]}` for the frontend to confirm, then re-call with `force: true` to proceed. Dedup rules (any one match triggers conflict, `录入人` excluded): same `错误类型` + `错误ID`; same `错误类型` + `关键描述关键词`; same `错误类型` + `报错原因`; same `错误类型` + `解决方案`.
 
 **Dual input modes:**
 - *Upload mode*: files saved to `uploads/` with session-prefixed names, deleted immediately after parsing (result kept in `_store`)

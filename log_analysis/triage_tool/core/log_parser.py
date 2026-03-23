@@ -32,6 +32,8 @@ def parse_log(filepath: str) -> dict:
     top_errors = []
     pending = None    # 等待续行收集的当前条目（仅 top_errors 未满时使用）
     cont_lines = []   # 已收集的续行文本
+    all_errors  = []  # 全文去重错误列表（含 WARNING，每个唯一 error_id 只记一次）
+    _seen_keys  = set()
 
     with open(str(path), encoding='utf-8', errors='replace') as f:
         for raw_line in f:
@@ -65,6 +67,19 @@ def parse_log(filepath: str) -> dict:
             if level in statistics:
                 statistics[level] += 1
 
+            # 全量去重记录（含 WARNING）：相同 level+error_id 只保留首次出现
+            _err_id  = m.group(6).strip()
+            _dup_key = (level, _err_id.lower() if _err_id
+                        else m.group(7).strip()[:80].lower())
+            if _dup_key not in _seen_keys:
+                _seen_keys.add(_dup_key)
+                all_errors.append({
+                    'level':       level,
+                    'error_id':    _err_id,
+                    'description': m.group(7).strip(),
+                    'location':    f"{m.group(2)}({m.group(3)})",
+                })
+
             # WARNING 仅统计，不计入 top_errors；FATAL/ERROR 才参与匹配
             if level == 'UVM_WARNING':
                 continue
@@ -88,17 +103,40 @@ def parse_log(filepath: str) -> dict:
             ).strip()
         top_errors.append(pending)
 
+    # PASS: 无 UVM_ERROR 且无 UVM_FATAL；FAIL: 任意一条即为 FAIL
+    status = 'pass' if statistics['UVM_ERROR'] == 0 and statistics['UVM_FATAL'] == 0 else 'fail'
+
     return {
         'file':       path.name,
         'filepath':   str(filepath),
         'statistics': statistics,
+        'status':     status,
         'top_errors': top_errors,
+        'all_errors': all_errors,
     }
 
 
-def parse_logs(filepaths: list) -> list:
-    """并行解析多个日志文件，返回结果列表（顺序与输入一致）。"""
-    if len(filepaths) == 1:
-        return [parse_log(filepaths[0])]
+def parse_logs(filepaths: list, progress_cb=None) -> list:
+    """并行解析多个日志文件，返回结果列表（顺序与输入一致）。
+    progress_cb(filename, result, done, total) — 每完成一个文件后调用。
+    """
+    from concurrent.futures import as_completed
+    total = len(filepaths)
+    if total == 1:
+        result = parse_log(filepaths[0])
+        if progress_cb:
+            progress_cb(Path(filepaths[0]).name, result, 1, 1)
+        return [result]
+    results = {}
     with ThreadPoolExecutor() as executor:
-        return list(executor.map(parse_log, filepaths))
+        future_to = {executor.submit(parse_log, fp): (i, fp)
+                     for i, fp in enumerate(filepaths)}
+        done = 0
+        for future in as_completed(future_to):
+            i, fp = future_to[future]
+            r = future.result()
+            results[i] = r
+            done += 1
+            if progress_cb:
+                progress_cb(Path(fp).name, r, done, total)
+    return [results[i] for i in range(total)]

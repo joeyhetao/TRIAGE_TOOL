@@ -3,14 +3,16 @@ import os
 import re
 import sys
 import io
+import json
 import time
 import uuid
 import secrets
+import threading
 import glob as _glob
 from pathlib import Path
 from datetime import datetime
 from flask import (Flask, render_template, request,
-                   jsonify, send_file, session)
+                   jsonify, send_file, session, Response, redirect)
 from werkzeug.utils import secure_filename
 
 # ── Linux 终端编码修正 ────────────────────────────────────
@@ -50,6 +52,9 @@ app = Flask(__name__,
             template_folder=str(_BUNDLE_DIR / 'templates'),
             static_folder=str(_BUNDLE_DIR / 'static'))
 
+from urllib.parse import quote as _url_quote
+app.jinja_env.filters['urlencode'] = lambda s: _url_quote(str(s), safe='')
+
 # S2: 持久化随机 secret_key（重启后 session 仍有效）
 _key_file = BASE_DIR / '.secret_key'
 if _key_file.exists():
@@ -65,7 +70,27 @@ else:
 # ── M4: 带 TTL 的会话数据存储 ────────────────────────────
 _STORE_TTL = 2 * 3600   # 2小时后自动过期
 
+# ── 后台分析任务状态 ──────────────────────────────────
+_JOBS_TTL = 3600         # 任务状态保留 1 小时
+_jobs: dict = {}         # job_id -> {phase, parse_done, match_done, total, pct, logs, ...}
+
 _CONFLICT_FIELDS = ['错误类型', '错误ID', '关键描述关键词', '报错原因', '所属模块', '录入日期', '_row_idx']
+
+def _unique_error_counts(results: list) -> dict:
+    """跨所有文件对 all_errors 去重，返回各级别唯一错误数。"""
+    seen   = set()
+    counts = {'UVM_FATAL': 0, 'UVM_ERROR': 0, 'UVM_WARNING': 0}
+    for r in results:
+        for err in r.get('all_errors', []):
+            lvl = err.get('level', '')
+            eid = err.get('error_id', '').lower()
+            key = (lvl, eid if eid else err.get('description', '')[:80].lower())
+            if key not in seen:
+                seen.add(key)
+                if lvl in counts:
+                    counts[lvl] += 1
+    return counts
+
 
 def _conflict_summary(conflicts: list) -> list:
     """返回冲突条目的摘要字段列表，用于前端展示。"""
@@ -85,6 +110,71 @@ def _get_results(sid: str):
 
 def _set_results(sid: str, results: list, db_path: str):
     _store[sid] = {'results': results, 'db_path': db_path, 'ts': time.time()}
+
+
+def _run_analysis(job_id: str, sid: str, saved_paths: list,
+                  db_path: str, path_mode: bool) -> None:
+    """后台线程：解析日志 → 知识库匹配 → 存储结果，全程更新 _jobs[job_id]。"""
+    job   = _jobs[job_id]
+    total = len(saved_paths)
+
+    def _ts():
+        return datetime.now().strftime('%H:%M:%S')
+
+    def _parse_cb(filename, result, done, tot):
+        s = result['statistics']
+        job['parse_done'] = done
+        job['pct']        = done * 50 // max(tot, 1)
+        job['logs'].append(
+            f"[{_ts()}] 已解析: {filename}"
+            f"  (FATAL:{s['UVM_FATAL']}  ERROR:{s['UVM_ERROR']}  WARNING:{s['UVM_WARNING']})"
+        )
+
+    def _match_cb(filename, matched, n_errors, done, tot):
+        job['match_done'] = done
+        job['pct']        = 50 + done * 50 // max(tot, 1)
+        if n_errors == 0:
+            status_str = '无报错'
+        elif matched == n_errors:
+            status_str = f'全部命中 ({n_errors} 条)'
+        else:
+            status_str = f'命中 {matched}/{n_errors} 条'
+        job['logs'].append(f"[{_ts()}] 已匹配: {filename}  ({status_str})")
+
+    try:
+        job['phase'] = 'parsing'
+        job['logs'].append(f"[{_ts()}] 开始解析 {total} 个日志文件...")
+        results = parse_logs(saved_paths, progress_cb=_parse_cb)
+
+        # 上传模式：解析后立即删除临时文件
+        if not path_mode:
+            for fp in saved_paths:
+                try:
+                    Path(fp).unlink()
+                except OSError:
+                    pass
+
+        # 还原显示文件名
+        for r in results:
+            r['file'] = Path(r['file']).name
+            sid_prefix = f'{sid}_'
+            if r['file'].startswith(sid_prefix):
+                r['file'] = r['file'][len(sid_prefix):]
+
+        job['phase'] = 'matching'
+        job['logs'].append(f"[{_ts()}] 开始知识库匹配...")
+        results = run_match(results, db_path, progress_cb=_match_cb)
+
+        _set_results(sid, results, db_path)
+        job['pct']      = 100
+        job['logs'].append(f"[{_ts()}] 分析完成，共处理 {total} 个文件")
+        job['phase']    = 'done'
+        job['redirect'] = '/result'
+
+    except Exception as e:
+        job['phase'] = 'error'
+        job['error'] = str(e)
+        job['logs'].append(f"[{_ts()}] 分析失败: {e}")
 
 
 def _sid():
@@ -129,7 +219,6 @@ def analyze():
         if not raw:
             return jsonify({'error': '请输入日志文件路径'}), 400
 
-        # 支持换行或逗号分隔的多路径 / glob 表达式
         patterns = [p.strip()
                     for line in raw.splitlines()
                     for p in line.split(',')
@@ -184,33 +273,95 @@ def analyze():
         if not saved_paths:
             return jsonify({'error': '文件保存失败'}), 500
 
-    results = parse_logs(saved_paths)
-    results = run_match(results, db_path)
+    # 创建后台任务，立即返回 job_id 供前端轮询进度
+    job_id = str(uuid.uuid4())
+    _jobs[job_id] = {
+        'phase':       'pending',
+        'parse_done':  0,
+        'match_done':  0,
+        'total':       len(saved_paths),
+        'pct':         0,
+        'logs':        [],
+        'redirect':    None,
+        'error':       None,
+        'ts':          time.time(),
+    }
+    threading.Thread(
+        target=_run_analysis,
+        args=(job_id, sid, saved_paths, db_path, bool(path_mode)),
+        daemon=True,
+    ).start()
+    return jsonify({'job_id': job_id})
 
-    # 上传模式：解析完成后立即删除临时文件（结果已存入内存，文件不再需要）
-    if not path_mode:
-        for fp in saved_paths:
-            try:
-                Path(fp).unlink()
-            except OSError:
-                pass
 
-    # 还原显示文件名（去掉 sid 前缀；路径模式下直接使用 basename）
-    for r in results:
-        r['file'] = Path(r['file']).name
-        sid_prefix = f'{sid}_'
-        if r['file'].startswith(sid_prefix):
-            r['file'] = r['file'][len(sid_prefix):]
+@app.route('/progress/<job_id>')
+def progress_stream(job_id):
+    """SSE 端点：推送后台分析任务进度，直到 done / error。"""
+    def generate():
+        # 清理过期任务
+        now = time.time()
+        stale = [k for k, v in list(_jobs.items()) if now - v.get('ts', 0) > _JOBS_TTL]
+        for k in stale:
+            del _jobs[k]
 
-    _set_results(sid, results, db_path)
-    return jsonify({'redirect': '/result'})
+        while True:
+            job = _jobs.get(job_id)
+            if not job:
+                yield 'data: ' + json.dumps(
+                    {'phase': 'error', 'error': '任务不存在或已过期'},
+                    ensure_ascii=False) + '\n\n'
+                return
+            payload = {k: v for k, v in job.items() if k != 'ts'}
+            yield 'data: ' + json.dumps(payload, ensure_ascii=False) + '\n\n'
+            if job.get('phase') in ('done', 'error'):
+                return
+            time.sleep(0.3)
+
+    return Response(
+        generate(),
+        mimetype='text/event-stream',
+        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'},
+    )
 
 
 @app.route('/result')
 def result():
     sid = _sid()
     results, db_path = _get_results(sid)
-    return render_template('result.html', results=results, db_path=db_path)
+    unique_counts = _unique_error_counts(results)
+    return render_template('result.html', results=results, db_path=db_path,
+                           unique_counts=unique_counts)
+
+
+@app.route('/errors')
+def errors_view():
+    sid = _sid()
+    results, _ = _get_results(sid)
+    level = request.args.get('level', '').upper()
+    if level not in ('UVM_FATAL', 'UVM_ERROR', 'UVM_WARNING'):
+        return redirect('/result')
+
+    # 跨文件聚合：相同 (level, error_id) 合并，记录出现的文件列表
+    seen = {}
+    for r in results:
+        for err in r.get('all_errors', []):
+            if err.get('level') != level:
+                continue
+            eid = err.get('error_id', '').strip()
+            key = eid.lower() if eid else err.get('description', '')[:80].lower()
+            if key not in seen:
+                seen[key] = {
+                    'error_id':    eid,
+                    'description': err.get('description', ''),
+                    'location':    err.get('location', ''),
+                    'files':       [],
+                }
+            fname = r.get('file', '')
+            if fname not in seen[key]['files']:
+                seen[key]['files'].append(fname)
+
+    errors = sorted(seen.values(), key=lambda e: -len(e['files']))
+    return render_template('errors.html', errors=errors, level=level)
 
 
 @app.route('/writeback', methods=['POST'])

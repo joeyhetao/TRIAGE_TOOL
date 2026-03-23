@@ -19,15 +19,16 @@
   </div>
 
   <!-- 汇总条 -->
-  {% set total_fatal   = results | sum(attribute='statistics.UVM_FATAL') %}
-  {% set total_error   = results | sum(attribute='statistics.UVM_ERROR') %}
-  {% set total_warning = results | sum(attribute='statistics.UVM_WARNING') %}
   {% set total_unmatched = results | selectattr('match.status','equalto','unmatched') | list | length %}
+  {% set total_pass = results | selectattr('status','equalto','pass') | list | length %}
+  {% set total_fail = results | selectattr('status','equalto','fail') | list | length %}
   <div class="summary-bar">
     <div class="scard"><div class="num">{{ results|length }}</div><div class="slbl">日志总数</div></div>
-    <div class="scard"><div class="num c-fatal">{{ total_fatal }}</div><div class="slbl">UVM_FATAL</div></div>
-    <div class="scard"><div class="num c-error">{{ total_error }}</div><div class="slbl">UVM_ERROR</div></div>
-    <div class="scard"><div class="num c-warning">{{ total_warning }}</div><div class="slbl">UVM_WARNING</div></div>
+    <div class="scard scard-pass"><div class="num c-pass">{{ total_pass }}</div><div class="slbl">PASS</div></div>
+    <div class="scard scard-fail"><div class="num c-fail">{{ total_fail }}</div><div class="slbl">FAIL</div></div>
+    <a href="/errors?level=UVM_FATAL"   class="scard scard-link" title="点击查看去重错误列表"><div class="num c-fatal">{{ unique_counts['UVM_FATAL'] }}</div><div class="slbl">UVM_FATAL</div></a>
+    <a href="/errors?level=UVM_ERROR"   class="scard scard-link" title="点击查看去重错误列表"><div class="num c-error">{{ unique_counts['UVM_ERROR'] }}</div><div class="slbl">UVM_ERROR</div></a>
+    <a href="/errors?level=UVM_WARNING" class="scard scard-link" title="点击查看去重错误列表"><div class="num c-warning">{{ unique_counts['UVM_WARNING'] }}</div><div class="slbl">UVM_WARNING</div></a>
     <div class="scard"><div class="num c-grey">{{ total_unmatched }}</div><div class="slbl">未匹配</div></div>
   </div>
 
@@ -46,6 +47,7 @@
         <span class="nav-dot
           {% if has_fatal %}dot-fatal
           {% elif has_error %}dot-error
+          {% elif r.status == 'pass' %}dot-pass
           {% else %}dot-warning{% endif %}"></span>
         <span class="nav-name" title="{{ r.file }}">{{ r.file }}</span>
         {% if unmatched %}<span class="nav-badge">未匹配</span>{% endif %}
@@ -227,6 +229,14 @@
                   <div class="supp-title">补充录入新根因 / 解决方案</div>
                   <div class="form-grid">
                     <div class="fg-item">
+                      <label>错误类型 <span class="req">*</span></label>
+                      <select class="fi" id="supplevel-{{ ri }}-{{ ei }}">
+                        <option {% if elevel=='UVM_FATAL' %}selected{% endif %}>UVM_FATAL</option>
+                        <option {% if elevel=='UVM_ERROR' %}selected{% endif %}>UVM_ERROR</option>
+                        <option {% if elevel=='UVM_WARNING' %}selected{% endif %}>UVM_WARNING</option>
+                      </select>
+                    </div>
+                    <div class="fg-item">
                       <label>关键描述关键词 <span class="hint">多个用逗号分隔</span></label>
                       <input type="text" class="fi" id="suppkw-{{ ri }}-{{ ei }}"
                              value="{{ err.description[:50] }}" placeholder="如：length mismatch,expected">
@@ -278,6 +288,14 @@
                 <!-- 回写表单 -->
                 <div class="writeback-form" id="form-{{ ri }}-{{ ei }}">
                   <div class="form-grid">
+                    <div class="fg-item">
+                      <label>错误类型 <span class="req">*</span></label>
+                      <select class="fi" id="wblevel-{{ ri }}-{{ ei }}">
+                        <option {% if elevel=='UVM_FATAL' %}selected{% endif %}>UVM_FATAL</option>
+                        <option {% if elevel=='UVM_ERROR' %}selected{% endif %}>UVM_ERROR</option>
+                        <option {% if elevel=='UVM_WARNING' %}selected{% endif %}>UVM_WARNING</option>
+                      </select>
+                    </div>
                     <div class="fg-item">
                       <label>关键描述关键词 <span class="hint">多个用逗号分隔</span></label>
                       <input type="text" class="fi" id="kw-{{ ri }}-{{ ei }}"
@@ -367,10 +385,11 @@
       msg.style.color = '#C00000';
       return;
     }
+    const levelSel = document.getElementById('supplevel-' + key);
     const payload = {
       file_name:    fileName,
       error_idx:    errorIdx,
-      level:        level,
+      level:        levelSel ? levelSel.value : level,
       error_id:     errorId,
       keywords:     document.getElementById('suppkw-'       + key).value,
       reason:       reason,
@@ -515,6 +534,21 @@
     el.classList.add('active');
   }
 
+  // 从 errors 页点击文件标签跳转时，自动激活对应面板
+  (function () {
+    const focus = new URLSearchParams(window.location.search).get('focus');
+    if (!focus) return;
+    const items = document.querySelectorAll('.nav-item');
+    for (let i = 0; i < items.length; i++) {
+      const name = items[i].querySelector('.nav-name');
+      if (name && (name.title === focus || name.textContent.trim() === focus)) {
+        showPanel(i, items[i]);
+        items[i].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        break;
+      }
+    }
+  })();
+
   async function writeBack(fileIdx, errorIdx, fileName, level, errorId, force) {
     const key    = fileIdx + '-' + errorIdx;
     const reason = document.getElementById('reason-' + key).value.trim();
@@ -524,10 +558,11 @@
       msg.style.color  = '#C00000';
       return;
     }
+    const levelSel = document.getElementById('wblevel-' + key);
     const payload = {
       file_name:    fileName,
       error_idx:    errorIdx,
-      level:        level,
+      level:        levelSel ? levelSel.value : level,
       error_id:     errorId,
       keywords:     document.getElementById('kw-'       + key).value,
       reason:       reason,

@@ -159,6 +159,23 @@ D:\sim\run1\*.log"></textarea>
     <div id="errMsg" class="err-msg"></div>
   </div>
 
+  <!-- 进度区 -->
+  <div id="progressWrap" style="display:none; margin-top:16px">
+    <div class="card">
+      <div class="prog-header">
+        <span class="prog-icon" id="progIcon">⏳</span>
+        <span class="prog-text" id="progText">正在准备...</span>
+        <span class="prog-pct"  id="progPct">0%</span>
+      </div>
+      <div class="prog-bar-wrap">
+        <div class="prog-bar" id="progBar"></div>
+      </div>
+      <div class="prog-logs" id="progLogs">
+        <div class="prog-log-item" style="color:#999">等待任务启动...</div>
+      </div>
+    </div>
+  </div>
+
   <!-- 查询结果区 -->
   <div id="queryResultsWrap" style="display:none">
     <div class="card" style="margin-top:16px">
@@ -269,21 +286,77 @@ D:\sim\run1\*.log"></textarea>
     document.getElementById('btnText').textContent = '分析中...';
     document.getElementById('btnSpinner').style.display = 'inline-block';
     document.getElementById('analyzeBtn').disabled = true;
+    document.getElementById('progressWrap').style.display = '';
 
     try {
       const resp = await fetch('/analyze', { method: 'POST', body: formData });
       const data = await resp.json();
-      if (data.redirect) {
-        window.location.href = data.redirect;
-      } else {
+      if (data.error) {
         document.getElementById('errMsg').textContent = data.error || '分析失败';
+        _resetAnalyzeBtn();
+        document.getElementById('progressWrap').style.display = 'none';
+        return;
       }
+      _connectProgressStream(data.job_id);
     } catch(e) {
       document.getElementById('errMsg').textContent = '请求失败：' + e.message;
-    } finally {
-      document.getElementById('btnText').textContent = '开始分析';
-      document.getElementById('btnSpinner').style.display = 'none';
-      document.getElementById('analyzeBtn').disabled = false;
+      _resetAnalyzeBtn();
+      document.getElementById('progressWrap').style.display = 'none';
+    }
+  }
+
+  function _resetAnalyzeBtn() {
+    document.getElementById('btnText').textContent = '开始分析';
+    document.getElementById('btnSpinner').style.display = 'none';
+    document.getElementById('analyzeBtn').disabled = false;
+  }
+
+  function _connectProgressStream(jobId) {
+    const es = new EventSource('/progress/' + jobId);
+    es.onmessage = function(event) {
+      try {
+        const d = JSON.parse(event.data);
+        _updateProgressUI(d);
+        if (d.phase === 'done') {
+          es.close();
+          setTimeout(() => { window.location.href = d.redirect; }, 600);
+        } else if (d.phase === 'error') {
+          es.close();
+          document.getElementById('errMsg').textContent = '分析失败：' + (d.error || '未知错误');
+          _resetAnalyzeBtn();
+        }
+      } catch(_) {}
+    };
+    es.onerror = function() { es.close(); };
+  }
+
+  function _updateProgressUI(d) {
+    const pct  = d.pct || 0;
+    const bar  = document.getElementById('progBar');
+    bar.style.width = pct + '%';
+    bar.className   = 'prog-bar'
+      + (d.phase === 'done'  ? ' done'  : '')
+      + (d.phase === 'error' ? ' error' : '');
+
+    document.getElementById('progPct').textContent = pct + '%';
+
+    const icons = { pending:'⏳', parsing:'📋', matching:'🔍', done:'✅', error:'❌' };
+    const texts = {
+      pending:  '正在准备...',
+      parsing:  `解析日志 (${d.parse_done || 0} / ${d.total || 0})`,
+      matching: `知识库匹配 (${d.match_done || 0} / ${d.total || 0})`,
+      done:     '分析完成，正在跳转...',
+      error:    '分析失败',
+    };
+    document.getElementById('progIcon').textContent = icons[d.phase] || '⏳';
+    document.getElementById('progText').textContent = texts[d.phase] || d.phase;
+
+    if (d.logs && d.logs.length) {
+      const logEl = document.getElementById('progLogs');
+      logEl.innerHTML = d.logs.map(l =>
+        `<div class="prog-log-item">${esc(l)}</div>`
+      ).join('');
+      logEl.scrollTop = logEl.scrollHeight;
     }
   }
 

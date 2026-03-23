@@ -1,7 +1,7 @@
 # 仿真日志分类分诊工具 — 产品需求文档（PRD）
 
-**文档版本**：v1.5
-**基准代码版本**：2026-03-17
+**文档版本**：v1.6
+**基准代码版本**：2026-03-23
 **适用范围**：功能增改、需求评审、开发参考
 
 ---
@@ -28,7 +28,7 @@
 
 ---
 
-## 3. 当前功能（v1.5）
+## 3. 当前功能（v1.6）
 
 ### 3.1 日志输入
 
@@ -62,9 +62,11 @@ UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
 - **前5条错误**（`top_errors`）：从 `UVM_FATAL` / `UVM_ERROR` 中按出现顺序提取最多5条
 - 每条错误记录包含：级别、时间戳、错误ID、文件位置、描述
 - 描述提取：取本行描述，并最多向后追加3行续行（遇到 UVM 条目、空行或**非缩进行**停止）
-- 多文件**并行解析**（`ThreadPoolExecutor`），批量场景性能优化
+- 多文件**并行解析**（`ThreadPoolExecutor`，`as_completed` 实时回调），批量场景性能优化
 - 全量统计（FATAL/ERROR/WARNING 计数）基于全文所有错误行（即使 top_errors 已满仍继续扫描）
 - **内存模式**：逐行流式读取（`pending` 状态机），内存占用与文件大小无关
+- **`all_errors`**（v1.6 新增）：全文扫描所有 FATAL/ERROR/WARNING 的唯一 `(level, error_id)` 对，用于跨文件去重统计；仅存每种 ID 的首次出现记录，内存开销极低
+- **`status`**（v1.6 新增）：单文件 PASS/FAIL 状态，`'pass'`（`UVM_ERROR==0 and UVM_FATAL==0`）或 `'fail'`
 
 ### 3.3 知识库匹配
 
@@ -82,8 +84,8 @@ UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
 
 ### 3.4 结果展示
 
-- 顶部汇总栏：日志总数、FATAL/ERROR/WARNING 总计、含未匹配错误的日志数
-- 左侧文件导航列表，带彩色圆点标示严重程度，含未匹配错误的日志显示"未匹配"徽章
+- 顶部汇总栏：日志总数、**PASS/FAIL 数量**（v1.6 新增，见 3.12）、**去重后的** FATAL/ERROR/WARNING 数（v1.6 新增，点击可跳转到去重详情页，见 3.13）、含未匹配错误的日志数
+- 左侧文件导航列表，带彩色圆点标示严重程度（**绿色**：pass；橙色：有 WARNING；红色：有 FATAL/ERROR），含未匹配错误的日志显示"未匹配"徽章
 - 右侧详情面板：错误统计、**前5条 FATAL/ERROR 列表**（每条独立展示匹配结果）
 - 命中条目显示：默认展示 报错原因/根因分类/所属模块/录入人/解决方案/关联用例；点击「**显示全部 ▾**」展开 错误类型/错误ID/关键描述关键词/录入日期
 - 多条命中：同一错误命中多个知识库条目时，显示「共 N 条」徽章，各条目以「— 根因 N —」分隔线展示，**按录入日期从新到旧排列**（v1.4 新增）
@@ -107,7 +109,7 @@ UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
-| 错误类型 | **是**（添加/编辑） | UVM_FATAL / UVM_ERROR / UVM_WARNING |
+| 错误类型 | **是**（添加/编辑） | UVM_FATAL / UVM_ERROR / UVM_WARNING；**回写表单中显示为下拉选择框**（v1.6 新增），用户可自行修正解析到的级别 |
 | 关键描述关键词 | 否 | 逗号分隔，默认预填该条错误描述前50字符 |
 | 报错原因 | **是** | 根因说明，不能为空，服务端校验 |
 | 所属模块 | 否 | 默认预填错误位置文件名 |
@@ -165,6 +167,10 @@ UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
 **重复判定规则**（满足其一即视为重复）：
 - `错误类型` 相同 **AND** `错误ID` 相同（两者均非空，忽略大小写）
 - `错误类型` 相同 **AND** `关键描述关键词` 相同（两者均非空，标准化逗号/空格后比较）
+- `错误类型` 相同 **AND** `报错原因` 相同（两者均非空）（v1.6 新增）
+- `错误类型` 相同 **AND** `解决方案` 相同（两者均非空）（v1.6 新增）
+
+**不检查字段**：`录入人` 不参与去重比较。
 
 **编辑时排除自身**：`/kb/update` 检测时自动排除当前被编辑行，避免与自身误报重复。
 
@@ -172,6 +178,45 @@ UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
 - 检测到重复时，在操作区显示黄色警告框，摘要展示第一条冲突条目（错误类型 / 错误ID / 报错原因前40字符）
 - 提供「仍要写入」按钮：携带 `force: true` 强制写入，跳过去重检查
 - 提供「取消」按钮：关闭警告，不执行写入
+
+### 3.11 分析进度条与处理日志（v1.6 新增）
+
+提交分析请求后，页面不再跳转，首页底部出现进度卡片，实时展示分析进度：
+
+- **进度条**：水平进度条，0→50% 为解析阶段，50→100% 为匹配阶段；完成后变绿，出错后变红
+- **进度文字**：每处理完一个文件后更新，显示"解析中：`<filename>`（done/total）"或"匹配中：`<filename>`"
+- **处理日志区**：可滚动日志列表，每行显示一条处理事件（包含时间戳、文件名、FATAL/ERROR/WARNING 计数或命中/未命中数量）
+- 进度数据通过 **SSE（Server-Sent Events）** 传输，无需 WebSocket，兼容内网部署
+
+**技术实现**：
+- `/analyze` 立即返回 `{job_id}`，实际解析在后台线程（`threading.Thread`）执行
+- 前端用 `EventSource` 连接 `/progress/<job_id>`，每 0.3 秒轮询一次 `_jobs[job_id]`
+- 后台线程完成后将 `phase` 设置为 `'done'` 或 `'error'`，前端收到后关闭 SSE 并跳转到 `/result`
+
+### 3.12 PASS/FAIL 统计（v1.6 新增）
+
+顶部汇总栏新增 PASS/FAIL 统计卡：
+
+- **PASS**：未检测到任何 `UVM_ERROR` 或 `UVM_FATAL` 的日志文件数量（绿色）
+- **FAIL**：检测到至少一条 `UVM_ERROR` 或 `UVM_FATAL` 的日志文件数量（红色）
+- 左侧文件导航列表的圆点新增**绿色（dot-pass）**，用于标示 PASS 文件
+
+### 3.13 错误去重统计与跳转（v1.6 新增）
+
+顶部汇总栏的 FATAL/ERROR/WARNING 数量显示**去重后的唯一错误数**：
+
+- 通过 `all_errors` 跨文件聚合，按 `(level, error_id)` 去重（相同 ID 在多个文件中只计1次）
+- 数字可点击（链接样式），跳转到独立的去重详情页 `/errors?level=UVM_FATAL`（或 ERROR/WARNING）
+
+**去重详情页（`/errors`）**：
+- 展示该级别所有唯一错误，按出现文件数量降序排列
+- 每条错误显示：序号、错误ID、描述、位置、出现文件数
+- 文件标签（最多8个，超出显示"…还有 N 个"）为超链接，点击跳转到 `/result?focus=<filename>`（高亮该文件面板），支持右键在新标签页打开
+- 提供「← 返回结果」按钮
+
+### 3.14 文件链接右键打开（v1.6 新增）
+
+去重详情页（`errors.html`）中的文件标签渲染为 `<a>` 超链接而非纯文本标签，支持浏览器原生右键菜单（"在新标签页中打开"等）。
 
 ---
 
@@ -194,13 +239,14 @@ UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
 
 同一错误可在知识库中存在**多行**（不同根因/解决方案），每行均为独立记录，匹配时全部返回。
 
-### 4.2 内存数据结构（单次分析会话，v1.3）
+### 4.2 内存数据结构（单次分析会话，v1.6）
 
 ```python
 {
   'file':       str,          # 显示文件名（basename）
   'filepath':   str,          # 服务器上的完整路径
   'statistics': {'UVM_FATAL': int, 'UVM_ERROR': int, 'UVM_WARNING': int},
+  'status':     str,          # 'pass'（无 ERROR/FATAL）或 'fail'（v1.6 新增）
   'top_errors': [             # 按出现顺序的前5条 FATAL/ERROR（WARNING 不在此列表）
     {
       'level':       str,     # UVM_FATAL / UVM_ERROR
@@ -217,6 +263,15 @@ UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
     },
     ...                       # 最多5条
   ],
+  'all_errors': [             # 全文去重唯一错误（含 WARNING）（v1.6 新增）
+    {
+      'level':       str,     # UVM_FATAL / UVM_ERROR / UVM_WARNING
+      'error_id':    str,
+      'description': str,
+      'location':    str,
+    },
+    ...
+  ],
   'match': {                  # 汇总状态：有任意 unmatched → unmatched；全部命中 → matched
     'status':   str,
     'match_by': str,
@@ -227,6 +282,18 @@ UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
 ```
 
 会话数据存于模块级 `_store` dict，TTL 为 2 小时，过期后自动清理。
+
+后台任务状态存于模块级 `_jobs` dict，TTL 为 1 小时（`_JOBS_TTL = 3600`）：
+
+```python
+_jobs[job_id] = {
+  'phase': str,   # 'pending' | 'parsing' | 'matching' | 'done' | 'error'
+  'pct':   int,   # 0~100
+  'msg':   str,   # 当前进度描述
+  'logs':  list,  # 处理日志条目列表（每条含 time/msg）
+  'error': str,   # 仅 phase=='error' 时
+}
+```
 
 ---
 
@@ -242,6 +309,7 @@ UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
 | 上传文件清理 | 上传模式：解析完成后**立即删除**临时文件（结果已存入内存，文件不再需要）；启动时额外清理 `uploads/` 和 `reports/` 下超过24小时的文件作为兜底 |
 | 安全 | `secure_filename` 防路径穿越；随机持久化 `secret_key`；HTML 报告全字段 `html.escape`；writeback 服务端输入校验 |
 | 标准库优先 | 并发锁、报告 HTML、glob 展开均使用标准库；新功能开发优先评估标准库可行性 |
+| SSE / 后台线程 | 进度推送使用 Flask SSE（`text/event-stream`），无需额外依赖；后台解析使用 `threading.Thread`，`_jobs` dict 在主线程与后台线程间共享（GIL 保护简单读写）；`sid`（session ID）在后台线程启动前提取，避免跨线程访问 Flask session |
 
 ---
 
@@ -250,8 +318,10 @@ UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/` | 首页（上传/路径/查询/添加四模式界面） |
-| POST | `/analyze` | 接收日志（上传或路径），返回 `{redirect: '/result'}`。表单字段：`db_path`、`logs[]`（上传模式）或 `path_mode=1` + `log_paths`（路径模式） |
+| POST | `/analyze` | 接收日志（上传或路径），启动后台线程，立即返回 `{job_id: str}`。表单字段：`db_path`、`logs[]`（上传模式）或 `path_mode=1` + `log_paths`（路径模式） |
+| GET | `/progress/<job_id>` | SSE 进度流。每 0.3 秒推送一条 `data: {phase, pct, msg, logs, error?}\n\n`；`phase=='done'` 或 `'error'` 后关闭流（v1.6 新增） |
 | GET | `/result` | 分析结果页 |
+| GET | `/errors` | 去重错误详情页。查询参数 `level=UVM_FATAL\|UVM_ERROR\|UVM_WARNING`，展示该级别所有唯一错误及所在文件列表（v1.6 新增） |
 | POST | `/writeback` | 写回一条知识库记录（含未匹配首次录入和已匹配补充录入）。JSON 字段含 `file_name`、`error_idx`、`level`、`reason`（必填）、`force`（可选，跳过去重）等。返回 `{success, duplicate?, conflicts?, error?}` |
 | POST | `/query` | 知识库模糊查询。JSON 字段：`db_path`（可选）、`level`（可选）、`error_id`（可选，部分匹配）、`text`（可选，任意词模糊）。返回 `{entries: list, total: int}` |
 | POST | `/kb/add` | 直接追加知识库条目（不依赖会话）。JSON 字段：`db_path`（可选）、`错误类型`（必填）、`报错原因`（必填）及其余知识库字段、`force`（可选）。返回 `{success, duplicate?, conflicts?, error?}` |
@@ -311,3 +381,9 @@ UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
 | v1.5 | 2026-03-17 | **删除知识库条目**：结果页命中条目提供「🗑 删除」按钮，确认后调用 `/kb/delete` 删除 Excel 行，同步更新页面（移除条目卡片、更新「共 N 条」计数） | `core/db_manager.py`, `app.py`, `templates/result.html` |
 | v1.5 | 2026-03-17 | **直接添加条目**：首页新增第四 Tab「➕ 添加条目」，提供完整录入表单，提交至 `/kb/add` 直接写入知识库（不依赖会话），成功后自动清空表单 | `app.py`, `templates/index.html` |
 | v1.5 | 2026-03-17 | **写入去重检测**：`find_duplicates` 在 `/kb/add`、`/kb/update`、`/writeback` 写入前检查重复（同错误类型+错误ID 或 同错误类型+关键描述关键词），发现冲突返回 `duplicate:true` 及冲突摘要；前端展示黄色警告框，提供「仍要写入」（`force:true`）和「取消」 | `core/db_manager.py`, `app.py`, `templates/index.html`, `templates/result.html`, `static/style.css` |
+| v1.6 | 2026-03-23 | **去重规则扩展**：`find_duplicates` 新增 `报错原因` 和 `解决方案` 作为去重字段（均非空时相同即视为重复）；`录入人` 明确不参与去重比较 | `core/db_manager.py` |
+| v1.6 | 2026-03-23 | **回写表单错误类型下拉**：未匹配首次录入和已命中补充录入两类回写表单中，`错误类型` 改为 `<select>` 下拉（预选解析到的级别），用户可手动修正 | `templates/result.html` |
+| v1.6 | 2026-03-23 | **实时分析进度条**：`/analyze` 改为异步，立即返回 `{job_id}`；后台线程执行解析+匹配，通过 `/progress/<job_id>` SSE 推送阶段/百分比/日志；首页进度卡片实时展示，完成后自动跳转 `/result` | `app.py`, `core/log_parser.py`, `core/matcher.py`, `templates/index.html`, `static/style.css` |
+| v1.6 | 2026-03-23 | **PASS/FAIL 统计**：`parse_log` 新增 `status` 字段；结果页汇总栏新增 PASS（绿）/FAIL（红）卡片；左侧导航圆点新增绿色 `dot-pass` | `core/log_parser.py`, `app.py`, `templates/result.html`, `static/style.css` |
+| v1.6 | 2026-03-23 | **去重错误统计与跳转**：`parse_log` 新增 `all_errors` 字段；`/result` 路由计算跨文件去重唯一计数；汇总栏 FATAL/ERROR/WARNING 显示去重数并可点击跳转 `/errors` 详情页；详情页按出现文件数降序列出唯一错误 | `core/log_parser.py`, `app.py`, `templates/result.html`, `templates/errors.html`, `static/style.css` |
+| v1.6 | 2026-03-23 | **文件标签超链接**：`errors.html` 文件标签改为 `<a href="/result?focus=...">` 超链接，支持右键在新标签页打开；Jinja2 注册 `urlencode` 自定义过滤器用于 URL 安全编码文件名 | `templates/errors.html`, `app.py` |
