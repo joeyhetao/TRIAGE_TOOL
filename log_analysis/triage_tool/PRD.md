@@ -1,7 +1,7 @@
 # 仿真日志分类分诊工具 — 产品需求文档（PRD）
 
-**文档版本**：v1.6
-**基准代码版本**：2026-03-23
+**文档版本**：v1.7
+**基准代码版本**：2026-03-26
 **适用范围**：功能增改、需求评审、开发参考
 
 ---
@@ -116,7 +116,7 @@ UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
 | 根因分类 | **是** | 枚举：DUT Bug / TB Bug / 用例问题 / 工具问题 / 其他问题 |
 | 解决方案 | 否 | 处理建议 |
 | 关联用例 | 否 | 用例名称 |
-| 录入人 | 否 | 姓名 |
+| 录入人 | 否 | 默认预填操作系统当前用户名（`getpass.getuser()`，Windows/Linux 均支持），可手动修改 |
 
 服务端输入校验：`错误类型` 必须为合法 UVM 级别，`报错原因` 不能为空，所有字段截断至 500 字符。写入时自动追加 `录入日期`。写操作通过双层锁保证并发安全。
 
@@ -387,3 +387,4 @@ _jobs[job_id] = {
 | v1.6 | 2026-03-23 | **PASS/FAIL 统计**：`parse_log` 新增 `status` 字段；结果页汇总栏新增 PASS（绿）/FAIL（红）卡片；左侧导航圆点新增绿色 `dot-pass` | `core/log_parser.py`, `app.py`, `templates/result.html`, `static/style.css` |
 | v1.6 | 2026-03-23 | **去重错误统计与跳转**：`parse_log` 新增 `all_errors` 字段；`/result` 路由计算跨文件去重唯一计数；汇总栏 FATAL/ERROR/WARNING 显示去重数并可点击跳转 `/errors` 详情页；详情页按出现文件数降序列出唯一错误 | `core/log_parser.py`, `app.py`, `templates/result.html`, `templates/errors.html`, `static/style.css` |
 | v1.6 | 2026-03-23 | **文件标签超链接**：`errors.html` 文件标签改为 `<a href="/result?focus=...">` 超链接，支持右键在新标签页打开；Jinja2 注册 `urlencode` 自定义过滤器用于 URL 安全编码文件名 | `templates/errors.html`, `app.py` |
+| v1.7 | 2026-03-26 | **录入人自动预填**：启动时通过 `getpass.getuser()` 获取操作系统当前用户名（Windows 读 `USERNAME` 环境变量，Linux 读 `USER`/`LOGNAME` 或 `pwd` 模块），注入全局变量 `OS_USERNAME`；未匹配回写表单、已命中补充录入表单、首页「添加条目」Tab 三处「录入人」输入框自动预填，用户可手动修改；获取失败时降级为空字符串不影响功能 | `app.py`, `templates/result.html`, `templates/index.html` |

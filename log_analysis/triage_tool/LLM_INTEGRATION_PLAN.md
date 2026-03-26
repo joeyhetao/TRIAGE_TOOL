@@ -1,7 +1,7 @@
 # triage_tool — LLM 集成方案 v2.0
 
 > **声明**：本方案为功能分析和架构设计，不含代码实现。
-> **版本说明**：v2.0 在 v1.0 基础上新增 P2.5（多条匹配智能推荐）和 P2.6（自定义提取），并细化了所有场景的 Prompt 设计。
+> **版本说明**：v2.0 在 v1.0 基础上新增 P2（多条匹配智能推荐）和 P3（自定义提取），并细化了所有场景的 Prompt 设计。
 
 ---
 
@@ -27,13 +27,12 @@ triage_tool 当前是一个基于规则的 UVM 仿真日志分类分诊工具。
 | 功能模块 | 基础版（无 LLM） | 高配版（含 LLM） |
 |---------|-------------------|-------------------|
 | **未匹配错误** | 手动填写回写表单 | P1：一键 AI 分析 + 自动预填 |
-| **多条匹配** | 按录入日期降序展示 | P2.5：LLM 按相关性重排 + 推荐理由 |
-| **自定义提取** | 不支持 | P2.6：自然语言查询 + 行号范围提取（Path 模式） |
-| **相似错误** | 无 | P3：语义相似 KB 条目推荐，辅助写回 |
-| **错误描述** | 显示原始多行文本 | P_摘要：AI 20 字摘要（折叠/展开） |
-| **批量分析** | 人工扫描统计 | P4：AI 自动归纳 3~7 个失败模式 |
-| **知识库查询** | 关键词/ID 模糊匹配 | P5：语义搜索（自动规则+LLM 两步合并一步） |
-| **知识库维护** | 基于字符串规则去重 | P6：AI 语义重复检测（滑动窗口分批） |
+| **多条匹配** | 按录入日期降序展示 | P2：LLM 按相关性重排 + 推荐理由 + 重点关注用例列表 |
+| **自定义提取** | 不支持 | P3：自然语言查询 + 行号范围提取（Path 模式） |
+| **相似错误** | 无 | P4：语义相似 KB 条目推荐，辅助写回 |
+| **批量分析** | 人工扫描统计 | P5：AI 自动归纳 3~7 个失败模式 |
+| **知识库查询** | 关键词/ID 模糊匹配 | P6：语义搜索（自动规则+LLM 两步合并一步） |
+| **知识库维护** | 基于字符串规则去重 | P7：AI 语义重复检测（滑动窗口分批） |
 
 ---
 
@@ -57,9 +56,12 @@ triage_tool 当前是一个基于规则的 UVM 仿真日志分类分诊工具。
   "endpoint": "http://your-llm-server/v1/chat/completions",
   "api_key": "sk-xxx",
   "model": "qwen2.5-7b",
-  "timeout": 30
+  "timeout": 30,
+  "context_window": 8192
 }
 ```
+
+> `context_window`：目标 LLM 的最大 token 数（默认 8192）。P3 自定义提取用此值动态计算日志采样上限，避免单次调用超限。
 
 **配置优先级**：**环境变量 > 文件**
 
@@ -69,6 +71,7 @@ triage_tool 当前是一个基于规则的 UVM 仿真日志分类分诊工具。
 | `LLM_API_KEY` | api_key |
 | `LLM_MODEL` | model |
 | `LLM_TIMEOUT` | timeout（整数秒） |
+| `LLM_CONTEXT_WINDOW` | context_window（整数） |
 
 **降级策略**：
 - 优先使用 `requests`（Flask 已依赖）
@@ -92,7 +95,7 @@ app.register_blueprint(llm_bp)
 
 # 4. /query 路由：改用 matcher.score_query()（内联打分逻辑提取到 matcher.py）
 
-# 5. /analyze 路由（Path 模式时）：将原始文件路径存入 session（P2.6 需要）
+# 5. /analyze 路由（Path 模式时）：将原始文件路径存入 session（P3 需要）
 # set_results(sid, results, db_path, file_paths=[str(p) for p in matched_paths])
 ```
 
@@ -108,7 +111,7 @@ app.register_blueprint(llm_bp)
 core/
   session_store.py  ← 【新增】_store + get/set_results（从 app.py 迁移）
   llm_client.py     ← 【新增】LLM API 客户端（无 Flask 依赖）
-  llm_routes.py     ← 【新增】Flask Blueprint，9 条 LLM 路由
+  llm_routes.py     ← 【新增】Flask Blueprint，8 条 LLM 路由
   matcher.py        ← 【修改】新增 score_query() 函数
   log_parser.py     ← 不变
   db_manager.py     ← 不变
@@ -132,7 +135,7 @@ _STORE_TTL = 7200
 def set_results(sid, results, db_path, file_paths=None):
     _store[sid] = {'results': results, 'db_path': db_path, 'ts': time.time()}
     if file_paths:
-        _store[sid]['file_paths'] = file_paths  # P2.6 Path 模式需要
+        _store[sid]['file_paths'] = file_paths  # P3 Path 模式需要
 
 def get_results(sid):
     # 清理过期条目，返回当前 sid 的数据（逻辑不变）
@@ -141,7 +144,7 @@ def get_results(sid):
 
 **`core/matcher.py`（新增 score_query）**
 
-将现有 `/query` 路由内联的 token 重叠打分逻辑提取为独立函数，供 `/query` 路由和 P3 `/llm/similar_errors` 共同复用。
+将现有 `/query` 路由内联的 token 重叠打分逻辑提取为独立函数，供 `/query` 路由和 P4 `/llm/similar_errors` 共同复用。
 
 ```python
 def score_query(entries, text, level=None) -> list:
@@ -184,8 +187,8 @@ app.py
   ├── core/llm_routes.py (Blueprint)
   │     ├── core/session_store.py  ← get_results
   │     ├── core/llm_client.py     ← call_llm
-  │     ├── core/matcher.py        ← score_query（P3 预筛选候选）
-  │     └── core/db_manager.py     ← load_db（P3/P5/P6）
+  │     ├── core/matcher.py        ← score_query（P4 预筛选候选）
+  │     └── core/db_manager.py     ← load_db（P4/P6/P7）
   ├── core/log_parser.py     ← 不变
   ├── core/matcher.py        ← 不变（新增 score_query）
   ├── core/db_manager.py     ← 不变
@@ -222,7 +225,7 @@ async function aiAnalyze(idx, level, errorId, location) {
 }
 ```
 
-**模态框（P2.6、P4）**：预渲染 HTML，CSS class 控制显隐：
+**模态框（P3、P5）**：预渲染 HTML，CSS class 控制显隐：
 ```html
 <div id="aiPatternModal" class="ai-modal" style="display:none">
   <div class="ai-modal-backdrop" onclick="closeAiModal('aiPatternModal')"></div>
@@ -233,7 +236,7 @@ async function aiAnalyze(idx, level, errorId, location) {
 </div>
 ```
 
-**P2.5 DOM 重排**（`container.appendChild`，按 ranked 顺序移动节点）：
+**P2 DOM 重排**（`container.appendChild`，按 ranked 顺序移动节点）：
 ```javascript
 const container = document.getElementById(`entriesContainer_${errIdx}`);
 const nodes = Array.from(container.querySelectorAll('.entry-item'));
@@ -243,7 +246,7 @@ data.ranked.forEach((origIdx, newPos) => {
 });
 ```
 
-**P5 串行调用**（用户一键，前端自动链式调用）：
+**P6 串行调用**（用户一键，前端自动链式调用）：
 ```javascript
 async function semanticSearch() {
   const candidates = await runQueryGetCandidates();  // 先执行规则查询
@@ -338,7 +341,7 @@ data = json.loads(m.group()) if m else {}
 
 ---
 
-### P2.5 - 多条匹配智能推荐
+### P2 - 多条匹配智能推荐
 
 **痛点**：当错误命中多条 KB 条目时，按"录入日期降序"可能不是最相关的
 **位置**：`templates/result.html` → 已匹配错误卡片（entries.length > 1 时显示）
@@ -352,9 +355,13 @@ data = json.loads(m.group()) if m else {}
 │   点击"智能推荐"后：
 │       → 显示 loading 状态
 │       → POST /llm/rank_entries
-│       → 成功：按 LLM 评分重新排列条目，每条显示推荐理由标签
-│       → 按钮变为「✅ 已推荐」 + [恢复默认] 按钮
-│       → 失败：静默保持原顺序
+│       → 成功：
+│           ① 条目按 LLM 评分重新排列，每条显示推荐理由标签
+│           ② 匹配框顶部新增「🎯 重点关注用例」面板（.ai-focus-cases）：
+│               - focus_cases 非空：以徽章列表形式展示用例名
+│               - focus_cases 为空：显示灰色提示「暂无关联用例」
+│       → 按钮变为「✅ 已推荐」 + [恢复默认] 按钮（恢复时同步隐藏用例面板）
+│       → 失败：静默保持原顺序，不显示用例面板
 └── 推荐条目高亮（绿色边框 .ai-ranked-entry）
 ```
 
@@ -363,7 +370,12 @@ data = json.loads(m.group()) if m else {}
 POST /llm/rank_entries
 请求：{ entries:[{...}], current_error:{level, error_id, location, description} }
 响应：
-  成功：{ ok:true, ranked:[0,2,1,...], reasons:["推荐理由","...",...] }
+  成功：{
+    ok: true,
+    ranked: [0,2,1,...],
+    reasons: ["推荐理由",...],
+    focus_cases: ["tc_xxx", "tc_yyy"]   ← 新增，LLM 筛选的优先验证用例，去重，≤5条，无则 []
+  }
   失败：{ ok:false, reason:"..." }
 ```
 
@@ -379,26 +391,33 @@ User:   根据以下当前错误，对候选知识库条目按相关性从高到
         描述：{description[:500]}
 
         候选条目（共{N}条）：
-        [0] ID:{错误ID} | 模块:{所属模块} | 原因:{报错原因[:80]} | 关键词:{关键描述关键词}
+        [0] ID:{错误ID} | 模块:{所属模块} | 原因:{报错原因[:80]} | 关键词:{关键描述关键词} | 用例:{关联用例}
         [1] ...
 
         返回JSON：
         {
           "ranked": [2, 0, 1, ...],
-          "reasons": ["条目[2]推荐原因（≤30字）", "条目[0]推荐原因", ...]
+          "reasons": ["条目[2]推荐原因（≤30字）", "条目[0]推荐原因", ...],
+          "focus_cases": ["tc_xxx", "tc_yyy"]
         }
 
-temperature=0.2, max_tokens=500
+        focus_cases：从上述所有候选条目的「关联用例」中，挑选出与当前错误最相关、
+        最值得优先回归验证的用例名（去重，按重要性排序，最多5条）。
+        若所有候选条目的关联用例均为空，返回空列表 []。
+
+temperature=0.2, max_tokens=600
 ```
 
 #### 实现要点
 - 服务端保持日期降序不变；前端收集 entries + 当前错误后调用 LLM
 - LLM 失败时静默保持原顺序
 - `reasons` 顺序与 `ranked` 对应，展示在对应条目卡片上
+- 前端将 `focus_cases` 渲染到 `.ai-focus-cases` 面板；点击「恢复默认」时同步隐藏该面板
+- `focus_cases` 为 `[]` 时渲染"暂无关联用例"灰色提示，而非隐藏面板（保证用户感知到已分析）
 
 ---
 
-### P2.6 - 自定义提取功能
+### P3 - 自定义提取功能
 
 **痛点**：需要从大文件中按自然语言描述或行号范围提取特定内容
 **位置**：`templates/result.html` → 顶部 `.top-actions` 按钮区
@@ -410,34 +429,69 @@ temperature=0.2, max_tokens=500
 [← 重新上传] [⬇ Excel] [⬇ HTML]  [📋 自定义提取] ← {% if llm_enabled and is_path_mode and is_single_file %}
 
 点击"自定义提取"：
-→ 弹出模态框，包含单个表单：
+→ 弹出模态框（.ai-extract-modal）：
 
-  自然语言描述：[用户输入查询，如"找 DMA 相关错误"]（必填）
-  行号范围：    [起始] ~ [结束]  （可选）
-  UVM 级别过滤：○ ALL  ○ FATAL  ○ ERROR  ○ WARNING  （可选）
-  [开始提取]
+    ┌─────────────────────────────────────────┐
+    │ 📋 自定义提取  [第N轮]  [清空对话]  ✕  │
+    ├─────────────────────────────────────────┤
+    │ [对话历史区] 用户消息/AI结果交替展示     │
+    │   [历史已压缩，保留最近2轮] ← 压缩时显示 │
+    ├─────────────────────────────────────────┤
+    │ 行号范围：[起始]~[结束]  级别：○ALL     │
+    │ 查询：[________________________] [发送] │
+    └─────────────────────────────────────────┘
 
 → 后端读取 _store[sid]['file_paths'][0]
+→ 首轮：按 context_window 自适应采样日志，嵌入 messages[0]
+→ 后续轮：只发用户查询，不重传日志，历史消息列表延续
 → LLM 返回内容：
   - 含合法 JSON → 渲染为表格 + [导出] 按钮
   - 否则 → 显示纯文本 + [复制] 按钮
+→ [清空对话]：重置 p3_history，下次查询等效首轮
 ```
 
 #### 新增路由
 ```
 POST /llm/custom_extract
-请求：{ query:str, line_start:int|null, line_end:int|null, level_filter:str|null }
+请求：{
+  query: str,
+  line_start: int|null,
+  line_end: int|null,
+  level_filter: str|null,
+  clear: bool             ← 新增，true 时重置 p3_history
+}
   - file_path 不传，后端从 _store[sid]['file_paths'][0] 取
 响应：
-  成功：{ ok:true, format:"json"|"text", data:..., lines_processed:int }
+  成功：{
+    ok: true,
+    format: "json"|"text",
+    data: ...,
+    lines_processed: int,
+    turns: int,           ← 当前轮次数
+    trimmed: bool         ← 新增，true 表示历史已压缩
+  }
   失败：{ ok:false, reason:"..." }
 ```
 
 #### 数据源与采样策略
 - **Path 模式分析时**，`app.py` 将原始文件路径列表存入 `_store[sid]['file_paths']`
-- 有行号范围：只读该范围（上限 3000 行）
-- 无行号范围：均匀采样 1000 行（含行号注释）
+- 采样上限由 `context_window` 动态决定：
+  ```
+  RESERVED       = 1500 tokens（Prompt 模板 + max_tokens 响应预留）
+  MAX_LOG_TOKENS = context_window - RESERVED
+  MAX_LOG_CHARS  = MAX_LOG_TOKENS × 4  （1 token ≈ 4 字符，保守估算）
+  ```
+  | context_window | 可用日志字符 | 约等行数（@150 chars/行）|
+  |---|---|---|
+  | 4096 | ~10k | ~66 行 |
+  | 8192（默认）| ~26k | ~173 行 |
+  | 32768 | ~124k | ~826 行 |
+  | 128000 | ~506k | ~3373 行 |
+- 无行号范围：均匀采样，累计字符达到 MAX_LOG_CHARS 停止
+- 有行号范围：读取指定范围，超过字符预算则从起始行截断，response 中注明实际行数
 - `level_filter` 在 Python 侧预过滤后再送 LLM
+- **多轮对话**：`_store[sid]['p3_history']` 存储消息列表；仅首轮嵌入日志，后续轮只追加用户查询
+  - 历史字符总量超过 MAX_LOG_CHARS × 1.8 时：保留 messages[0:2]（首轮）+ messages[-4:]（最近2轮），response 带 `trimmed:true`
 
 #### 输出自动判断（后端）
 ```python
@@ -453,7 +507,7 @@ return {"ok": True, "format": "text", "data": llm_response, ...}
 
 ---
 
-### P3 - 相似错误推荐（写回辅助）
+### P4 - 相似错误推荐（写回辅助）
 
 **痛点**：规则匹配为空，但 KB 中可能存在同根因但 ID/关键词不同的条目
 **位置**：`templates/result.html` → 未匹配回写表单内，折叠面板
@@ -508,42 +562,7 @@ temperature=0.2, max_tokens=400
 
 ---
 
-### P_摘要 - 错误描述智能摘要
-
-**痛点**：多行续行描述含大量十六进制转储/路径，扫描效率低
-**位置**：`templates/result.html` → 每条错误的描述行末尾
-
-#### 交互设计
-```
-错误描述行：
-├── [完整描述文本...]
-└── [📝 AI 摘要] ← {% if llm_enabled %}
-    点击后：
-        → 原描述折叠（display:none）
-        → 蓝色徽章（.ai-summary）显示 20 字以内摘要
-        → 按钮变为"展开" → 点击恢复原描述
-```
-
-#### 新增路由
-```
-POST /llm/summarize
-请求：{ level, error_id, description }  ← description 截断至 1000 字符
-响应：
-  成功：{ ok:true, summary:"≤20字摘要" }
-  失败：{ ok:false }
-```
-
-#### Prompt
-```
-用一句话（20字以内）总结以下 UVM {level} 错误 {error_id} 的核心问题：
-{description}
-
-temperature=0.1, max_tokens=60
-```
-
----
-
-### P4 - 批量错误模式分析
+### P5 - 批量错误模式分析
 
 **痛点**：回归测试数十个 log 失败时，需人工归纳主要失败模式
 **位置**：`templates/result.html` → 顶部 `.top-actions` 按钮区
@@ -614,7 +633,7 @@ temperature=0.3, max_tokens=800
 
 ---
 
-### P5 - 语义知识库查询增强
+### P6 - 语义知识库查询增强
 
 **痛点**：现有 `/query` token 重叠算法无法识别同义词和中文近义表达
 **位置**：`templates/index.html` → 查询 Tab 的按钮区
@@ -662,7 +681,7 @@ temperature=0.1, max_tokens=300
 
 ---
 
-### P6 - 知识库语义去重质量检查
+### P7 - 知识库语义去重质量检查
 
 **痛点**：规则去重基于精确字符串，无法识别措辞不同的同义条目
 **位置**：`templates/index.html` → "添加条目" Tab 底部
@@ -721,38 +740,37 @@ temperature=0.1, max_tokens=500
 |------|----------|------|
 | `core/session_store.py` | 新增 | `_store` + `get/set_results`（从 app.py 迁移，解决 Blueprint 循环依赖） |
 | `core/llm_client.py` | 新增 | LLM API 客户端，无 Flask 依赖（约 120 行） |
-| `core/llm_routes.py` | 新增 | Flask Blueprint，9 条 LLM 路由（约 350 行） |
-| `core/matcher.py` | 修改 | 新增 `score_query()` 函数（从 `/query` 路由提取，P3 共用） |
+| `core/llm_routes.py` | 新增 | Flask Blueprint，8 条 LLM 路由（约 320 行） |
+| `core/matcher.py` | 修改 | 新增 `score_query()` 函数（从 `/query` 路由提取，P4 共用） |
 | `app.py` | 修改 | 5~6 处最小改动：session_store 导入、Blueprint 注册、llm_enabled 注入、file_paths 存储、score_query 替换 |
-| `templates/result.html` | 修改 | P1/P2.5/P2.6/P3/P_摘要/P4 按钮 + JS（inline，`{% if llm_enabled %}` 块） |
-| `templates/index.html` | 修改 | P5/P6 按钮 + JS（inline，`{% if llm_enabled %}` 块） |
+| `templates/result.html` | 修改 | P1/P2/P3/P4/P5 按钮 + JS（inline，`{% if llm_enabled %}` 块） |
+| `templates/index.html` | 修改 | P6/P7 按钮 + JS（inline，`{% if llm_enabled %}` 块） |
 | `static/style.css` | 修改 | 新增 AI 相关 CSS 类 |
 
 ### 新增 CSS 类
 | 类名 | 用途 |
 |------|------|
-| `.ai-summary` | P_摘要 描述摘要徽章（蓝色） |
 | `.ai-hint` | P1 AI建议提示条（浅黄色） |
-| `.ai-suggest-card` | P3 相似错误卡片 |
-| `.ai-similar-section` | P3 折叠容器 |
-| `.ai-pattern-card` | P4 批量模式分析卡片 |
-| `.ai-pattern-modal` | P4 模态框 |
-| `.ai-rank-btn` | P2.5 智能推荐按钮 |
-| `.ai-ranked-entry` | P2.5 推荐条目高亮（绿色边框） |
-| `.ai-extract-modal` | P2.6 自定义提取模态框 |
+| `.ai-suggest-card` | P4 相似错误卡片 |
+| `.ai-similar-section` | P4 折叠容器 |
+| `.ai-pattern-card` | P5 批量模式分析卡片 |
+| `.ai-pattern-modal` | P5 模态框 |
+| `.ai-rank-btn` | P2 智能推荐按钮 |
+| `.ai-ranked-entry` | P2 推荐条目高亮（绿色边框） |
+| `.ai-focus-cases` | P2 重点关注用例面板（蓝色边框徽章列表） |
+| `.ai-extract-modal` | P3 自定义提取模态框 |
 | `.btn-ai`, `.btn-ai-sm` | AI 操作按钮（带特色样式） |
 
-### 新增路由汇总（共 9 条）
+### 新增路由汇总（共 8 条）
 | 路由 | 对应功能 |
 |------|---------|
 | `POST /llm/analyze_error` | P1 未匹配自动分析 |
-| `POST /llm/rank_entries` | P2.5 多条匹配智能推荐 |
-| `POST /llm/custom_extract` | P2.6 自定义提取 |
-| `POST /llm/similar_errors` | P3 相似错误推荐 |
-| `POST /llm/summarize` | P_摘要 描述一句话摘要 |
-| `POST /llm/batch_patterns` | P4 批量模式分析 |
-| `POST /llm/semantic_query` | P5 语义知识库查询 |
-| `POST /llm/kb_review` | P6 知识库语义去重 |
+| `POST /llm/rank_entries` | P2 多条匹配智能推荐 |
+| `POST /llm/custom_extract` | P3 自定义提取 |
+| `POST /llm/similar_errors` | P4 相似错误推荐 |
+| `POST /llm/batch_patterns` | P5 批量模式分析 |
+| `POST /llm/semantic_query` | P6 语义知识库查询 |
+| `POST /llm/kb_review` | P7 知识库语义去重 |
 
 ---
 
@@ -764,12 +782,15 @@ temperature=0.1, max_tokens=500
 | LLM 接口超时 | 路由返回 `{ok:false}`，前端按钮恢复可用，不影响手工流程 |
 | LLM 返回非 JSON | 正则提取 `{...}` 块，失败则返回 `{ok:false}` |
 | LLM 返回非法 category（P1） | 从枚举中模糊匹配，无匹配则默认「其他问题」 |
-| KB 为空（P3/P6） | 直接返回 `{ok:true, similar:[]}` 或 `{ok:true, suspect_pairs:[]}` |
-| entries.length <= 1（P2.5） | 不显示「智能推荐」按钮 |
-| Upload 模式（P2.6） | 不显示「自定义提取」按钮 |
-| 多文件模式（P2.6） | 不显示「自定义提取」按钮 |
-| 单文件模式（P4） | 不显示「AI 模式分析」按钮 |
-| 语义查询候选 ≤1（P5） | toast 提示，不调 LLM |
+| KB 为空（P4/P7） | 直接返回 `{ok:true, similar:[]}` 或 `{ok:true, suspect_pairs:[]}` |
+| entries.length <= 1（P2） | 不显示「智能推荐」按钮 |
+| 所有条目关联用例均为空（P2） | LLM 返回 focus_cases:[]，面板显示「暂无关联用例」 |
+| context_window 未配置（P3） | 默认 8192，采样约 173 行（@150 chars/行）|
+| 历史轮次超 token 预算（P3） | 丢弃中间轮次，保留首轮（含日志）+ 最近 2 轮，response 带 trimmed:true |
+| Upload 模式（P3） | 不显示「自定义提取」按钮 |
+| 多文件模式（P3） | 不显示「自定义提取」按钮 |
+| 单文件模式（P5） | 不显示「AI 模式分析」按钮 |
+| 语义查询候选 ≤1（P6） | toast 提示，不调 LLM |
 
 ---
 
@@ -780,10 +801,10 @@ temperature=0.1, max_tokens=500
 | 1 | `core/session_store.py` — 迁移 `_store`（同步修改 app.py 导入） | 无 |
 | 2 | `core/matcher.py` — 提取 `score_query()` 函数 | 无 |
 | 3 | `core/llm_client.py` — LLM API 客户端 | 无 |
-| 4 | `core/llm_routes.py` — Blueprint + 9 条路由 | 步骤 1/2/3 |
+| 4 | `core/llm_routes.py` — Blueprint + 8 条路由 | 步骤 1/2/3 |
 | 5 | `app.py` — 注册 Blueprint + init + Jinja 全局 + file_paths | 步骤 1/3/4 |
-| 6 | `templates/result.html` — P1/P2.5/P2.6/P3/P_摘要/P4 | 步骤 4/5 |
-| 7 | `templates/index.html` — P5/P6 | 步骤 4/5 |
+| 6 | `templates/result.html` — P1/P2/P3/P4/P5 | 步骤 4/5 |
+| 7 | `templates/index.html` — P6/P7 | 步骤 4/5 |
 | 8 | `static/style.css` — AI 相关 CSS 类 | 步骤 6/7 |
 
 步骤 1~3 无互相依赖，可并行实施。
@@ -794,7 +815,15 @@ temperature=0.1, max_tokens=500
 
 1. **基础版验证**：无 `llm_config.json` 时，启动工具，所有页面不显示 `AI` 字样按钮
 2. **P1 验证**：有效配置时，未匹配错误一键分析，5 个字段正确预填（空字段不预填）
-3. **P2.5 验证**：命中多条时，智能推荐重排顺序，每条显示推荐理由
-4. **P2.6 验证**：Path 模式单文件时显示按钮，Upload 模式不显示
+3. **P2 验证**：
+   - 命中多条且有关联用例：智能推荐后条目重排，用例面板显示 LLM 筛选的用例名
+   - 命中多条但关联用例均为空：用例面板显示「暂无关联用例」
+   - 点击「恢复默认」：条目顺序恢复，用例面板隐藏
+4. **P3 验证**：
+   - Path 模式单文件时显示按钮，Upload 模式不显示
+   - 首轮查询：实际采样行数随 context_window 变化（小模型行数少）
+   - 多轮追问：第 2+ 轮不重传日志，历史正确追加
+   - 历史压缩：超过预算时保留首轮+最近2轮，响应 trimmed:true
+   - 清空对话：点击后重置历史，下次查询等效首轮
 5. **降级验证**：LLM 超时/失败时，不影响现有手工流程
 6. **回归验证**：现有 `test_all_features.py` 全部通过（9条新路由不影响现有路由）

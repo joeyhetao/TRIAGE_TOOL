@@ -43,6 +43,7 @@
       {% set unmatched = r.match.status == 'unmatched' %}
       <div class="nav-item {% if loop.first %}active{% endif %}"
            onclick="showPanel({{ loop.index0 }}, this)"
+           data-filepath="{{ r.file_path | default('') }}"
            id="nav-{{ loop.index0 }}">
         <span class="nav-dot
           {% if has_fatal %}dot-fatal
@@ -270,7 +271,7 @@
                     </div>
                     <div class="fg-item">
                       <label>录入人</label>
-                      <input type="text" class="fi" id="suppauthor-{{ ri }}-{{ ei }}" placeholder="姓名">
+                      <input type="text" class="fi" id="suppauthor-{{ ri }}-{{ ei }}" placeholder="姓名" value="{{ os_username }}">
                     </div>
                   </div>
                   <button class="btn btn-primary mt8"
@@ -331,7 +332,7 @@
                     </div>
                     <div class="fg-item">
                       <label>录入人</label>
-                      <input type="text" class="fi" id="author-{{ ri }}-{{ ei }}" placeholder="姓名">
+                      <input type="text" class="fi" id="author-{{ ri }}-{{ ei }}" placeholder="姓名" value="{{ os_username }}">
                     </div>
                   </div>
                   <button class="btn btn-primary mt8"
@@ -359,6 +360,16 @@
       {% endfor %}
     </div>
   </div>
+</div>
+
+<!-- 右键菜单 -->
+<div id="ctxMenu" style="display:none;position:fixed;z-index:9999;
+     background:#fff;border:1px solid #d0d0d0;border-radius:6px;
+     box-shadow:2px 4px 12px rgba(0,0,0,.15);min-width:160px;overflow:hidden">
+  <div id="ctxOpenLog"
+       style="padding:9px 16px;cursor:pointer;font-size:13px;white-space:nowrap"
+       onmouseenter="this.style.background='#EBF3FB'"
+       onmouseleave="this.style.background=''">📄 在新标签页中查看日志</div>
 </div>
 
 <script>
@@ -526,6 +537,36 @@
       alert('请求失败：' + e.message);
     }
   }
+
+  // ── 右键菜单 ──────────────────────────────────────────
+  (function () {
+    const menu = document.getElementById('ctxMenu');
+    let _ctxPath = '';
+
+    document.getElementById('fileNav').addEventListener('contextmenu', function (e) {
+      const item = e.target.closest('.nav-item');
+      if (!item) return;
+      const fp = item.dataset.filepath;
+      if (!fp) return;   // 上传模式无路径，不弹菜单
+      e.preventDefault();
+      _ctxPath = fp;
+      menu.style.display = 'block';
+      // 防止菜单超出视口右/下边界
+      const mw = menu.offsetWidth || 170, mh = menu.offsetHeight || 40;
+      menu.style.left = Math.min(e.clientX, window.innerWidth  - mw - 4) + 'px';
+      menu.style.top  = Math.min(e.clientY, window.innerHeight - mh - 4) + 'px';
+    });
+
+    document.addEventListener('click',       () => { menu.style.display = 'none'; });
+    document.addEventListener('contextmenu', (e) => {
+      if (!e.target.closest('#ctxMenu')) menu.style.display = 'none';
+    });
+
+    document.getElementById('ctxOpenLog').addEventListener('click', function () {
+      if (_ctxPath) window.open('/view_log?path=' + encodeURIComponent(_ctxPath), '_blank');
+      menu.style.display = 'none';
+    });
+  })();
 
   function showPanel(idx, el) {
     document.querySelectorAll('.detail-panel').forEach(p => p.classList.remove('active'));

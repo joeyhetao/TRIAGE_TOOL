@@ -4,6 +4,79 @@
 
 ---
 
+## BUG-013 指定路径模式批量扫描完成后，按钮 Spinner 持续转动不停
+
+**发现日期**：2026-03-26
+**状态**：已修复
+
+### 现象
+
+使用"指定路径"模式批量扫描日志，分析完成后页面不跳转，"开始分析"按钮的加载动画（Spinner）持续转动，用户需手动刷新页面才能查看结果。
+
+### 根因分析
+
+存在两处独立缺陷叠加触发。
+
+**缺陷一：后台线程竞态导致前端收到 `redirect: null`**
+
+`_run_analysis` 后台线程在标记任务完成时，`phase` 与 `redirect` 赋值顺序有误：
+
+```python
+# 修复前（错误顺序）
+job['phase']    = 'done'       # ← 先写 phase
+job['redirect'] = '/result'   # ← 后写 redirect
+```
+
+SSE 生成器在 Flask 主线程中每 0.3 s 轮询 `_jobs`。若在两条赋值之间读到 job，会推送 `{"phase": "done", "redirect": null}`。前端收到后执行：
+
+```javascript
+setTimeout(() => { window.location.href = null; }, 600);
+```
+
+`window.location.href = null` 在部分浏览器中静默失败，页面留在原地，Spinner 永远不停。
+
+**缺陷二：`es.onerror` 未重置按钮**
+
+```javascript
+// 修复前
+es.onerror = function() { es.close(); };
+```
+
+SSE 连接因任何原因断开（包括服务端正常关闭流）时，浏览器触发 `onerror`，此处只关闭了 EventSource，未调用 `_resetAnalyzeBtn()`，Spinner 同样持续转动。
+
+### 修复方案
+
+**`app.py`**，交换赋值顺序，确保 `redirect` 在 `phase` 之前写入，消除竞态窗口：
+
+```python
+# 修复后（正确顺序）
+job['redirect'] = '/result'   # 先写 redirect
+job['phase']    = 'done'      # 再写 phase
+```
+
+**`templates/index.html`**，两处修改：
+
+```javascript
+// 修复一：不依赖 payload 中的 redirect 字段，改用硬编码路径
+// 修复前
+setTimeout(() => { window.location.href = d.redirect; }, 600);
+// 修复后
+setTimeout(() => { window.location.href = '/result'; }, 600);
+
+// 修复二：onerror 补充重置按钮，防止连接异常时 Spinner 卡死
+// 修复前
+es.onerror = function() { es.close(); };
+// 修复后
+es.onerror = function() { es.close(); _resetAnalyzeBtn(); };
+```
+
+### 涉及文件
+
+- `app.py`
+- `templates/index.html`
+
+---
+
 ## BUG-012 上传临时文件运行期间持续累积，磁盘空间无限增长
 
 **发现日期**：2026-03-12

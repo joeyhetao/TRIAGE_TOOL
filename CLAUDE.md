@@ -18,7 +18,7 @@ log_analysis/triage_tool/
 │   ├── matcher.py      # Two-stage KB matching (per top_errors entry)
 │   ├── db_manager.py   # Excel KB read/write with concurrent locking
 │   └── reporter.py     # Excel and HTML report generation
-├── templates/          # Jinja2 templates (index.html, result.html)
+├── templates/          # Jinja2 templates (index.html, result.html, errors.html)
 ├── static/style.css    # All UI styling
 └── packages/           # Offline wheels for intranet deployment
 ```
@@ -69,7 +69,7 @@ This is a Flask web app for triaging UVM simulation log files against an Excel k
 
 **Request flow:**
 1. User uploads `.log` files **or** specifies server-local glob patterns → `/analyze`
-2. `core/log_parser.py` streams each file line-by-line (constant memory regardless of file size, per-file limit 10 GB), extracts up to `TOP_N=5` `UVM_FATAL/ERROR/WARNING` entries with up to 3 continuation lines each; files are parsed in parallel via `ThreadPoolExecutor`; scanning continues to end-of-file to produce accurate FATAL/ERROR/WARNING totals
+2. `core/log_parser.py` streams each file line-by-line (constant memory regardless of file size, per-file limit 10 GB), extracts up to `TOP_N=5` `UVM_FATAL/ERROR` entries (`UVM_WARNING` is counted but not matched) with up to 3 continuation lines each; files are parsed in parallel via `ThreadPoolExecutor`; scanning continues to end-of-file to produce accurate totals. Each parse result includes `all_errors` (unique `(level, error_id)` pairs across all files, first occurrence only) and per-file `status` (`'pass'` if zero FATAL+ERROR, else `'fail'`)
 3. `core/matcher.py` runs two-stage KB matching on **each** of the `top_errors` entries: (1) exact error ID + type, (2) all keywords present in description (AND logic); Chinese full-width comma `，` treated same as `,`
 4. Results rendered in `result.html` with per-error match panels; unmatched errors can be written back via `/writeback` (requires `error_idx` to target a specific entry)
 5. Reports exported as Excel or HTML via `/export/excel` and `/export/html`
@@ -129,3 +129,5 @@ _FileLock       →  serializes across processes/machines (stdlib only)
 
 - [log_analysis/triage_tool/PRD.md](log_analysis/triage_tool/PRD.md) — Full product requirements; update when adding or changing features
 - [log_analysis/triage_tool/BUGLOG.md](log_analysis/triage_tool/BUGLOG.md) — Historical bug fixes with root cause analysis
+- [log_analysis/triage_tool/LLM_INTEGRATION_PLAN.md](log_analysis/triage_tool/LLM_INTEGRATION_PLAN.md) — Design spec (v2.0) for optional LLM enhancement layer; **not yet implemented**. Covers `core/llm_client.py` interface, 6 AI injection points (P1–P6), prompt strategies, and graceful degradation when `llm_config.json` is absent
+- [log_analysis/triage_tool/velvety-wishing-dewdrop.md](log_analysis/triage_tool/velvety-wishing-dewdrop.md) — Earlier LLM design draft (v1.0); superseded by `LLM_INTEGRATION_PLAN.md`

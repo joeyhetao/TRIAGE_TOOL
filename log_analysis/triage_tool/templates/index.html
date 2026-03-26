@@ -123,7 +123,7 @@ D:\sim\run1\*.log"></textarea>
         </div>
         <div class="fg-item">
           <label>录入人</label>
-          <input class="fi" id="addAuthor" placeholder="姓名">
+          <input class="fi" id="addAuthor" placeholder="姓名" value="{{ os_username }}">
         </div>
       </div>
     </div>
@@ -319,7 +319,7 @@ D:\sim\run1\*.log"></textarea>
         _updateProgressUI(d);
         if (d.phase === 'done') {
           es.close();
-          setTimeout(() => { window.location.href = d.redirect; }, 600);
+          setTimeout(() => { window.location.href = '/result'; }, 600);
         } else if (d.phase === 'error') {
           es.close();
           document.getElementById('errMsg').textContent = '分析失败：' + (d.error || '未知错误');
@@ -327,7 +327,7 @@ D:\sim\run1\*.log"></textarea>
         }
       } catch(_) {}
     };
-    es.onerror = function() { es.close(); };
+    es.onerror = function() { es.close(); _resetAnalyzeBtn(); };
   }
 
   function _updateProgressUI(d) {

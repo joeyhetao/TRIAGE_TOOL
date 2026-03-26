@@ -7,6 +7,7 @@ import json
 import time
 import uuid
 import secrets
+import getpass
 import threading
 import glob as _glob
 from pathlib import Path
@@ -35,6 +36,11 @@ if getattr(sys, 'frozen', False):
 else:
     BASE_DIR    = Path(__file__).parent
     _BUNDLE_DIR = BASE_DIR
+
+try:
+    OS_USERNAME = getpass.getuser()
+except Exception:
+    OS_USERNAME = ''
 
 UPLOAD_DIR = BASE_DIR / 'uploads'
 REPORT_DIR = BASE_DIR / 'reports'
@@ -154,8 +160,9 @@ def _run_analysis(job_id: str, sid: str, saved_paths: list,
                 except OSError:
                     pass
 
-        # 还原显示文件名
+        # 还原显示文件名，path_mode 下同时保存完整路径供查看功能使用
         for r in results:
+            r['file_path'] = r['file'] if path_mode else ''
             r['file'] = Path(r['file']).name
             sid_prefix = f'{sid}_'
             if r['file'].startswith(sid_prefix):
@@ -168,8 +175,8 @@ def _run_analysis(job_id: str, sid: str, saved_paths: list,
         _set_results(sid, results, db_path)
         job['pct']      = 100
         job['logs'].append(f"[{_ts()}] 分析完成，共处理 {total} 个文件")
+        job['redirect'] = '/result'   # 必须在 phase='done' 之前赋值，避免 SSE 轮询读到 redirect=None
         job['phase']    = 'done'
-        job['redirect'] = '/result'
 
     except Exception as e:
         job['phase'] = 'error'
@@ -201,7 +208,7 @@ _cleanup_old_files()
 # ── 路由 ─────────────────────────────────────────────────
 @app.route('/')
 def index():
-    return render_template('index.html', db_default=DB_DEFAULT)
+    return render_template('index.html', db_default=DB_DEFAULT, os_username=OS_USERNAME)
 
 
 @app.route('/analyze', methods=['POST'])
@@ -330,7 +337,7 @@ def result():
     results, db_path = _get_results(sid)
     unique_counts = _unique_error_counts(results)
     return render_template('result.html', results=results, db_path=db_path,
-                           unique_counts=unique_counts)
+                           unique_counts=unique_counts, os_username=OS_USERNAME)
 
 
 @app.route('/errors')
@@ -362,6 +369,25 @@ def errors_view():
 
     errors = sorted(seen.values(), key=lambda e: -len(e['files']))
     return render_template('errors.html', errors=errors, level=level)
+
+
+@app.route('/view_log')
+def view_log():
+    """在浏览器中查看原始日志文件（仅 path_mode 可用）。
+    安全校验：只允许查看本次会话分析结果中出现过的路径。
+    """
+    sid = _sid()
+    results, _ = _get_results(sid)
+    req_path = request.args.get('path', '').strip()
+    if not req_path:
+        return '未指定文件路径', 400
+    allowed = {r.get('file_path', '') for r in results} - {''}
+    if req_path not in allowed:
+        return '无权限访问该文件（仅限本次分析的路径模式日志）', 403
+    p = Path(req_path)
+    if not p.is_file():
+        return '文件不存在或已被移动', 404
+    return send_file(str(p), mimetype='text/plain; charset=utf-8')
 
 
 @app.route('/writeback', methods=['POST'])
