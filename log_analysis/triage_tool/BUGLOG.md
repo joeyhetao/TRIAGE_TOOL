@@ -4,6 +4,42 @@
 
 ---
 
+## BUG-014 Linux 路径模式多用例扫描：启动慢 + 完成后圆圈持续转动
+
+**发现日期**：2026-03-29
+**状态**：已修复
+
+### 现象
+
+在 Linux 系统下，使用"指定路径"模式扫描大量日志用例时出现两个问题：
+1. 点击"开始分析"后，有明显等待（无进度条），才开始显示扫描进度
+2. 分析完成后，页面不跳转，进度圈持续转动，用户卡在分析页
+
+### 根因分析
+
+**缺陷一：glob 展开阻塞请求处理线程（导致启动慢）**
+
+`/analyze` 路由在返回 `job_id` 之前，同步执行 `glob.glob()` + `Path.is_file()` 遍历所有匹配文件。文件数量多时，这一步本身需要几十秒，期间前端只能看到按钮 Spinner，进度条无法显示，体验上形同卡死。
+
+**缺陷二：Linux TCP close-before-delivery 导致 SSE 最终事件丢失（导致圆圈不停）**
+
+SSE 生成器发出 `phase='done'` 数据后立即 `return`，服务端随即关闭 TCP 连接。Linux TCP 栈会将数据帧和 FIN 打包在同一或相邻帧发出。浏览器 EventSource 实现可能先处理 TCP 关闭事件（触发 `onerror`），再处理缓冲区中的数据（触发 `onmessage`）。`onerror` 先调 `es.close()`，之后 `onmessage` 不再触发，导致 `phase='done'` 的重定向逻辑永远不执行，圆圈持续转动。
+
+### 修复方案
+
+**缺陷一修复**：将 glob 展开移入后台线程。`/analyze` 路由仅做格式校验，立即创建 job（`phase='scanning'`）并返回 `job_id`。后台线程依次完成：扫描文件（scanning）→ 解析日志（parsing）→ 知识库匹配（matching）。前端新增 `scanning` 状态显示"正在扫描文件..."。
+
+**缺陷二修复（双保险）**：
+- 后端：SSE 生成器发出 done/error 事件后 `time.sleep(1)` 再关连接，给客户端留足处理时间
+- 前端：`onerror` 不再直接 `_resetAnalyzeBtn()`，改为 fetch `/progress_status/<job_id>` 单次轮询真实状态；若状态为 done 则重定向，为 error 则显示错误，否则重置按钮
+
+### 涉及文件
+
+- `app.py`：`_run_analysis` 加 scanning 阶段；`/analyze` 路由不再 glob；SSE 生成器加 1s 延迟；新增 `/progress_status/<job_id>` 路由
+- `templates/index.html`：`onerror` 改为 fallback 轮询；`_updateProgressUI` 增加 scanning 状态
+
+---
+
 ## BUG-013 指定路径模式批量扫描完成后，按钮 Spinner 持续转动不停
 
 **发现日期**：2026-03-26

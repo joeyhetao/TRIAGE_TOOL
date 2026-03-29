@@ -29,6 +29,9 @@
       <button class="mode-tab" id="tabAdd" onclick="switchMode('add')">
         ➕ 添加条目
       </button>
+      <button class="mode-tab" id="tabKeywords" onclick="switchMode('keywords')">
+        ⚙ 解析配置
+      </button>
     </div>
 
     <!-- ── 上传文件模式 ─────────────────────────────── -->
@@ -137,6 +140,44 @@ D:\sim\run1\*.log"></textarea>
     </div>
 
     <!-- 提交按钮 -->
+    <!-- ── 解析配置模式 ──────────────────────────────── -->
+    <div id="modeKeywords" style="display:none">
+
+      <!-- 额外错误关键词 -->
+      <div class="cfg-section">
+        <div class="cfg-section-title">🏷 额外错误关键词</div>
+        <div class="cfg-section-desc">
+          匹配格式：行首 <code>关键词: 描述内容</code>（不区分大小写）。
+          与 UVM_ERROR/FATAL 等价，参与知识库匹配和 pass/fail 判断。
+        </div>
+        <div id="kwList" class="kw-list"></div>
+        <div class="kw-add-row">
+          <input type="text" id="kwNewInput" class="fi kw-new-input"
+                 placeholder="新关键词（如 ERROR、VIRL_MEM_WARNING）" maxlength="64">
+          <button class="btn btn-primary" onclick="kwAdd()">+ 添加</button>
+        </div>
+        <div id="kwMsg" class="err-msg" style="margin-top:6px"></div>
+      </div>
+
+      <!-- 通过标记 -->
+      <div class="cfg-section" style="margin-top:18px">
+        <div class="cfg-section-title">✅ 通过标记</div>
+        <div class="cfg-section-desc">
+          log 中出现以下任意字符串即视为"有通过标记"。<br>
+          <b>PASS 判定</b>：无错误 <b>且</b> 找到通过标记；否则为 FAIL。<br>
+          列表为空时退化为旧逻辑（只看有无错误）。
+        </div>
+        <div id="ppList" class="kw-list"></div>
+        <div class="kw-add-row">
+          <input type="text" id="ppNewInput" class="fi kw-new-input"
+                 placeholder="通过标记字符串（如 JVP TEST PASSED）" maxlength="128">
+          <button class="btn btn-primary" onclick="ppAdd()">+ 添加</button>
+        </div>
+        <div id="ppMsg" class="err-msg" style="margin-top:6px"></div>
+      </div>
+
+    </div>
+
     <div class="btn-row" id="analyzeBtnRow">
       <button class="btn btn-primary" id="analyzeBtn" onclick="startAnalyze()">
         <span id="btnText">开始分析</span>
@@ -198,18 +239,19 @@ D:\sim\run1\*.log"></textarea>
   // ── 模式切换 ──────────────────────────────────────
   function switchMode(mode) {
     currentMode = mode;
-    ['upload','path','query','add'].forEach(m => {
+    ['upload','path','query','add','keywords'].forEach(m => {
       document.getElementById('tab' + m.charAt(0).toUpperCase() + m.slice(1))
               .classList.toggle('active', m === mode);
       document.getElementById('mode' + m.charAt(0).toUpperCase() + m.slice(1))
               .style.display = m === mode ? '' : 'none';
     });
     document.getElementById('analyzeBtnRow').style.display = (mode === 'upload' || mode === 'path') ? '' : 'none';
-    document.getElementById('queryBtnRow').style.display   = mode === 'query' ? '' : 'none';
-    document.getElementById('addBtnRow').style.display     = mode === 'add'   ? '' : 'none';
+    document.getElementById('queryBtnRow').style.display   = mode === 'query'    ? '' : 'none';
+    document.getElementById('addBtnRow').style.display     = mode === 'add'      ? '' : 'none';
     // 知识库路径选择框在「添加条目」模式仍需显示
     document.getElementById('errMsg').textContent = '';
     if (mode !== 'query') document.getElementById('queryResultsWrap').style.display = 'none';
+    if (mode === 'keywords') kwLoadList();
   }
 
   // ── 上传模式：拖拽 & 文件选择 ─────────────────────
@@ -327,7 +369,24 @@ D:\sim\run1\*.log"></textarea>
         }
       } catch(_) {}
     };
-    es.onerror = function() { es.close(); _resetAnalyzeBtn(); };
+    // SSE 连接中断（Linux 上服务端关连接时可能先于最终消息触发 onerror），
+    // 回退到单次轮询确认真实状态，避免进度圈卡住或错过重定向。
+    es.onerror = function() {
+      es.close();
+      fetch('/progress_status/' + jobId)
+        .then(r => r.json())
+        .then(d => {
+          if (d.phase === 'done') {
+            window.location.href = '/result';
+          } else if (d.phase === 'error') {
+            document.getElementById('errMsg').textContent = '分析失败：' + (d.error || '未知错误');
+            _resetAnalyzeBtn();
+          } else {
+            _resetAnalyzeBtn();
+          }
+        })
+        .catch(() => _resetAnalyzeBtn());
+    };
   }
 
   function _updateProgressUI(d) {
@@ -340,11 +399,13 @@ D:\sim\run1\*.log"></textarea>
 
     document.getElementById('progPct').textContent = pct + '%';
 
-    const icons = { pending:'⏳', parsing:'📋', matching:'🔍', done:'✅', error:'❌' };
+    const icons = { pending:'⏳', scanning:'🔍', parsing:'📋', matching:'🔎', done:'✅', error:'❌' };
+    const total = d.total || 0;
     const texts = {
       pending:  '正在准备...',
-      parsing:  `解析日志 (${d.parse_done || 0} / ${d.total || 0})`,
-      matching: `知识库匹配 (${d.match_done || 0} / ${d.total || 0})`,
+      scanning: '正在扫描文件...',
+      parsing:  total ? `解析日志 (${d.parse_done || 0} / ${total})` : '正在解析日志...',
+      matching: total ? `知识库匹配 (${d.match_done || 0} / ${total})` : '正在匹配知识库...',
       done:     '分析完成，正在跳转...',
       error:    '分析失败',
     };
@@ -509,6 +570,162 @@ D:\sim\run1\*.log"></textarea>
 
     wrap.style.display = '';
     wrap.scrollIntoView({behavior: 'smooth', block: 'start'});
+  }
+
+  // ── 解析配置：加载全部 ─────────────────────────────
+  function kwLoadList() {
+    fetch('/extra_patterns')
+      .then(r => r.json())
+      .then(d => kwRender(d.patterns || []))
+      .catch(() => { document.getElementById('kwMsg').textContent = '加载失败'; });
+    fetch('/pass_patterns')
+      .then(r => r.json())
+      .then(d => ppRender(d.patterns || []))
+      .catch(() => { document.getElementById('ppMsg').textContent = '加载失败'; });
+  }
+
+  function kwRender(patterns) {
+    const list = document.getElementById('kwList');
+    if (!patterns.length) {
+      list.innerHTML = '<div class="kw-empty">暂无关键词，请在下方添加</div>';
+      return;
+    }
+    list.innerHTML = patterns.map(kw => `
+      <div class="kw-row" id="kwrow-${esc(kw)}">
+        <span class="kw-name" id="kwname-${esc(kw)}">${esc(kw)}</span>
+        <input class="fi kw-edit-input" id="kwedit-${esc(kw)}" value="${esc(kw)}"
+               style="display:none" maxlength="64">
+        <div class="kw-actions">
+          <button class="btn-entry-edit" onclick="kwStartEdit('${esc(kw)}')">✏ 编辑</button>
+          <button class="btn-entry-del"  onclick="kwDelete('${esc(kw)}')">🗑 删除</button>
+        </div>
+        <div class="kw-save-actions" id="kwsave-${esc(kw)}" style="display:none">
+          <button class="btn btn-primary btn-sm" onclick="kwSaveEdit('${esc(kw)}')">保存</button>
+          <button class="btn btn-secondary btn-sm" onclick="kwCancelEdit('${esc(kw)}', '${esc(kw)}')">取消</button>
+        </div>
+      </div>`).join('');
+  }
+
+  function kwStartEdit(kw) {
+    document.getElementById('kwname-'  + kw).style.display = 'none';
+    document.getElementById('kwedit-'  + kw).style.display = '';
+    document.getElementById('kwedit-'  + kw).focus();
+    const actions = document.querySelector('#kwrow-' + kw + ' .kw-actions');
+    if (actions) actions.style.display = 'none';
+    document.getElementById('kwsave-' + kw).style.display = '';
+  }
+
+  function kwCancelEdit(kw) {
+    document.getElementById('kwname-'  + kw).style.display = '';
+    document.getElementById('kwedit-'  + kw).style.display = 'none';
+    const actions = document.querySelector('#kwrow-' + kw + ' .kw-actions');
+    if (actions) actions.style.display = '';
+    document.getElementById('kwsave-' + kw).style.display = 'none';
+  }
+
+  async function kwSaveEdit(oldKw) {
+    const newKw = document.getElementById('kwedit-' + oldKw).value.trim().toUpperCase();
+    if (!newKw) return;
+    const d = await fetch('/extra_patterns/update',
+      {method:'POST', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({old: oldKw, new: newKw})}).then(r => r.json());
+    document.getElementById('kwMsg').textContent = d.success ? '' : (d.error || '更新失败');
+    if (d.success) kwRender(d.patterns);
+  }
+
+  async function kwDelete(kw) {
+    const d = await fetch('/extra_patterns/delete',
+      {method:'POST', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({keyword: kw})}).then(r => r.json());
+    document.getElementById('kwMsg').textContent = d.success ? '' : (d.error || '删除失败');
+    if (d.success) kwRender(d.patterns);
+  }
+
+  async function kwAdd() {
+    const kw = document.getElementById('kwNewInput').value.trim().toUpperCase();
+    if (!kw) return;
+    const d = await fetch('/extra_patterns/add',
+      {method:'POST', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({keyword: kw})}).then(r => r.json());
+    document.getElementById('kwMsg').textContent = d.success ? '' : (d.error || '添加失败');
+    if (d.success) {
+      document.getElementById('kwNewInput').value = '';
+      kwRender(d.patterns);
+    }
+  }
+
+  // ── 通过标记管理 ────────────────────────────────────
+  function ppRender(patterns) {
+    const list = document.getElementById('ppList');
+    if (!patterns.length) {
+      list.innerHTML = '<div class="kw-empty">暂无通过标记（将退化为只检查错误）</div>';
+      return;
+    }
+    list.innerHTML = patterns.map(pt => `
+      <div class="kw-row" id="pprow-${esc(pt)}">
+        <span class="kw-name pp-name" id="ppname-${esc(pt)}">${esc(pt)}</span>
+        <input class="fi kw-edit-input" id="ppedit-${esc(pt)}" value="${esc(pt)}"
+               style="display:none" maxlength="128">
+        <div class="kw-actions">
+          <button class="btn-entry-edit" onclick="ppStartEdit('${esc(pt).replace(/'/g,"\\'")}')">✏ 编辑</button>
+          <button class="btn-entry-del"  onclick="ppDelete('${esc(pt).replace(/'/g,"\\'")}')">🗑 删除</button>
+        </div>
+        <div class="kw-save-actions" id="ppsave-${esc(pt)}" style="display:none">
+          <button class="btn btn-primary btn-sm" onclick="ppSaveEdit('${esc(pt).replace(/'/g,"\\'")}')">保存</button>
+          <button class="btn btn-secondary btn-sm" onclick="ppCancelEdit('${esc(pt).replace(/'/g,"\\'")}')">取消</button>
+        </div>
+      </div>`).join('');
+  }
+
+  function _ppId(pt) { return CSS.escape(pt); }
+
+  function ppStartEdit(pt) {
+    const id = _ppId(pt);
+    document.getElementById('ppname-'  + id).style.display = 'none';
+    document.getElementById('ppedit-'  + id).style.display = '';
+    document.getElementById('ppedit-'  + id).focus();
+    document.querySelector('#pprow-' + id + ' .kw-actions').style.display = 'none';
+    document.getElementById('ppsave-' + id).style.display = '';
+  }
+
+  function ppCancelEdit(pt) {
+    const id = _ppId(pt);
+    document.getElementById('ppname-'  + id).style.display = '';
+    document.getElementById('ppedit-'  + id).style.display = 'none';
+    document.querySelector('#pprow-' + id + ' .kw-actions').style.display = '';
+    document.getElementById('ppsave-' + id).style.display = 'none';
+  }
+
+  async function ppSaveEdit(oldPt) {
+    const id   = _ppId(oldPt);
+    const newPt = document.getElementById('ppedit-' + id).value.trim();
+    if (!newPt) return;
+    const d = await fetch('/pass_patterns/update',
+      {method:'POST', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({old: oldPt, new: newPt})}).then(r => r.json());
+    document.getElementById('ppMsg').textContent = d.success ? '' : (d.error || '更新失败');
+    if (d.success) ppRender(d.patterns);
+  }
+
+  async function ppDelete(pt) {
+    const d = await fetch('/pass_patterns/delete',
+      {method:'POST', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({pattern: pt})}).then(r => r.json());
+    document.getElementById('ppMsg').textContent = d.success ? '' : (d.error || '删除失败');
+    if (d.success) ppRender(d.patterns);
+  }
+
+  async function ppAdd() {
+    const pt = document.getElementById('ppNewInput').value.trim();
+    if (!pt) return;
+    const d = await fetch('/pass_patterns/add',
+      {method:'POST', headers:{'Content-Type':'application/json'},
+       body: JSON.stringify({pattern: pt})}).then(r => r.json());
+    document.getElementById('ppMsg').textContent = d.success ? '' : (d.error || '添加失败');
+    if (d.success) {
+      document.getElementById('ppNewInput').value = '';
+      ppRender(d.patterns);
+    }
   }
 </script>
 </body>

@@ -1,7 +1,7 @@
 # 仿真日志分类分诊工具 — 产品需求文档（PRD）
 
-**文档版本**：v1.7
-**基准代码版本**：2026-03-26
+**文档版本**：v1.8
+**基准代码版本**：2026-03-29
 **适用范围**：功能增改、需求评审、开发参考
 
 ---
@@ -28,7 +28,7 @@
 
 ---
 
-## 3. 当前功能（v1.6）
+## 3. 当前功能（v1.8）
 
 ### 3.1 日志输入
 
@@ -50,6 +50,8 @@
 
 **模式四：添加条目**（v1.5 新增，见 3.9）
 
+**模式五：解析配置**（v1.8 新增，见 3.15/3.16）
+
 ### 3.2 日志解析
 
 **UVM 日志格式**：
@@ -57,16 +59,18 @@
 UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
 ```
 
-- 解析每个日志文件，提取所有 `UVM_FATAL` / `UVM_ERROR` / `UVM_WARNING` 条目
+- 解析每个日志文件，提取所有 `UVM_FATAL` / `UVM_ERROR` / `UVM_WARNING` 以及**额外错误关键词**（见 3.15）条目
 - **`UVM_WARNING` 仅统计计数，不进入 `top_errors` 列表，不参与知识库匹配**（v1.3 变更）
-- **前5条错误**（`top_errors`）：从 `UVM_FATAL` / `UVM_ERROR` 中按出现顺序提取最多5条
+- **额外错误关键词**：匹配 `^关键词: 描述内容` 格式（行首+冒号），与 UVM_ERROR/FATAL 等价，进入 top_errors 并参与知识库匹配和 pass/fail 判断（v1.8 新增）
+- **前5条错误**（`top_errors`）：从 `UVM_FATAL` / `UVM_ERROR` / 额外关键词错误中按出现顺序提取最多5条
 - 每条错误记录包含：级别、时间戳、错误ID、文件位置、描述
 - 描述提取：取本行描述，并最多向后追加3行续行（遇到 UVM 条目、空行或**非缩进行**停止）
 - 多文件**并行解析**（`ThreadPoolExecutor`，`as_completed` 实时回调），批量场景性能优化
 - 全量统计（FATAL/ERROR/WARNING 计数）基于全文所有错误行（即使 top_errors 已满仍继续扫描）
 - **内存模式**：逐行流式读取（`pending` 状态机），内存占用与文件大小无关
 - **`all_errors`**（v1.6 新增）：全文扫描所有 FATAL/ERROR/WARNING 的唯一 `(level, error_id)` 对，用于跨文件去重统计；仅存每种 ID 的首次出现记录，内存开销极低
-- **`status`**（v1.6 新增）：单文件 PASS/FAIL 状态，`'pass'`（`UVM_ERROR==0 and UVM_FATAL==0`）或 `'fail'`
+- **`status`**（v1.6 新增，v1.8 重设计）：单文件 PASS/FAIL 状态；新逻辑见 3.12
+- **`pass_found`**（v1.8 新增）：布尔值，文件中是否找到任意通过标记字符串（见 3.16）
 
 ### 3.3 知识库匹配
 
@@ -84,9 +88,10 @@ UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
 
 ### 3.4 结果展示
 
-- 顶部汇总栏：日志总数、**PASS/FAIL 数量**（v1.6 新增，见 3.12）、**去重后的** FATAL/ERROR/WARNING 数（v1.6 新增，点击可跳转到去重详情页，见 3.13）、含未匹配错误的日志数
-- 左侧文件导航列表，带彩色圆点标示严重程度（**绿色**：pass；橙色：有 WARNING；红色：有 FATAL/ERROR），含未匹配错误的日志显示"未匹配"徽章
-- 右侧详情面板：错误统计、**前5条 FATAL/ERROR 列表**（每条独立展示匹配结果）
+- 顶部汇总栏：日志总数、**PASS/FAIL 数量**（v1.6，v1.8 重设计）、**去重后的** FATAL/ERROR/WARNING/额外关键词错误数（点击跳转去重详情页，见 3.13）、含未匹配错误的日志数
+- **左侧文件导航**（v1.8 重设计）：**FAIL 日志在上**（始终展开），**PASS 日志在下**（默认折叠，以「▶ PASS (N)」分组头折叠；点击展开/收起）；默认高亮第一个 FAIL 文件（全 PASS 时高亮第一个 PASS）
+- 左侧导航圆点颜色：🔴 有 FATAL；🟠 有 ERROR/额外关键词错误；🟡 仅 WARNING；🟢 PASS
+- 右侧详情面板：错误统计（含额外关键词类型的统计卡）、**前5条 FATAL/ERROR/额外关键词错误列表**（每条独立展示匹配结果）
 - 命中条目显示：默认展示 报错原因/根因分类/所属模块/录入人/解决方案/关联用例；点击「**显示全部 ▾**」展开 错误类型/错误ID/关键描述关键词/录入日期
 - 多条命中：同一错误命中多个知识库条目时，显示「共 N 条」徽章，各条目以「— 根因 N —」分隔线展示，**按录入日期从新到旧排列**（v1.4 新增）
 
@@ -109,7 +114,7 @@ UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
-| 错误类型 | **是**（添加/编辑） | UVM_FATAL / UVM_ERROR / UVM_WARNING；**回写表单中显示为下拉选择框**（v1.6 新增），用户可自行修正解析到的级别 |
+| 错误类型 | **是**（添加/编辑） | UVM_FATAL / UVM_ERROR / UVM_WARNING / **额外关键词**（v1.8：下拉选项动态包含当前 `extra_patterns.json` 中的全部关键词）；回写表单中显示为下拉选择框（v1.6 新增） |
 | 关键描述关键词 | 否 | 逗号分隔，默认预填该条错误描述前50字符 |
 | 报错原因 | **是** | 根因说明，不能为空，服务端校验 |
 | 所属模块 | 否 | 默认预填错误位置文件名 |
@@ -118,7 +123,7 @@ UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
 | 关联用例 | 否 | 用例名称 |
 | 录入人 | 否 | 默认预填操作系统当前用户名（`getpass.getuser()`，Windows/Linux 均支持），可手动修改 |
 
-服务端输入校验：`错误类型` 必须为合法 UVM 级别，`报错原因` 不能为空，所有字段截断至 500 字符。写入时自动追加 `录入日期`。写操作通过双层锁保证并发安全。
+服务端输入校验：`错误类型` 必须为合法级别（UVM 三项 + 当前 `extra_patterns`），`报错原因` 不能为空，所有字段截断至 500 字符。写入时自动追加 `录入日期`。写操作通过双层锁保证并发安全。
 
 **去重检测**（v1.5 新增，见 3.10）：所有写入路径（新增/编辑/回写）均在执行前检查重复，发现冲突时展示警告并提供「仍要写入」强制选项。
 
@@ -187,19 +192,25 @@ UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
 - **进度文字**：每处理完一个文件后更新，显示"解析中：`<filename>`（done/total）"或"匹配中：`<filename>`"
 - **处理日志区**：可滚动日志列表，每行显示一条处理事件（包含时间戳、文件名、FATAL/ERROR/WARNING 计数或命中/未命中数量）
 - 进度数据通过 **SSE（Server-Sent Events）** 传输，无需 WebSocket，兼容内网部署
+- **路径模式**新增 `scanning` 阶段（v1.8）：glob 展开在后台线程执行，`/analyze` 立即返回 `{job_id}`，前端显示"正在扫描文件..."
 
 **技术实现**：
 - `/analyze` 立即返回 `{job_id}`，实际解析在后台线程（`threading.Thread`）执行
-- 前端用 `EventSource` 连接 `/progress/<job_id>`，每 0.3 秒轮询一次 `_jobs[job_id]`
-- 后台线程完成后将 `phase` 设置为 `'done'` 或 `'error'`，前端收到后关闭 SSE 并跳转到 `/result`
+- 前端用 `EventSource` 连接 `/progress/<job_id>`，每 0.3 秒推送一次 `_jobs[job_id]`
+- 后台线程完成后将 `phase` 设置为 `'done'` 或 `'error'`；服务端在推送最终事件后 **`sleep(1)`** 再关闭连接，避免 Linux TCP FIN 提前到达
+- 前端 `onerror` 回退到 **`/progress_status/<job_id>`** 单次 JSON 轮询（v1.8 新增），防止 SSE 连接中断时进度圈卡住
 
-### 3.12 PASS/FAIL 统计（v1.6 新增）
+### 3.12 PASS/FAIL 判断逻辑（v1.6 新增，v1.8 重设计）
 
-顶部汇总栏新增 PASS/FAIL 统计卡：
+**配置了通过标记**（`pass_patterns.json` 非空，见 3.16）时：
+- **PASS**：无任何非 WARNING 类型的错误（UVM_FATAL / UVM_ERROR / 额外关键词均为 0） **且** 文件中找到至少一条通过标记字符串
+- **FAIL**：有任意错误 **或** 无错误但未找到通过标记
 
-- **PASS**：未检测到任何 `UVM_ERROR` 或 `UVM_FATAL` 的日志文件数量（绿色）
-- **FAIL**：检测到至少一条 `UVM_ERROR` 或 `UVM_FATAL` 的日志文件数量（红色）
-- 左侧文件导航列表的圆点新增**绿色（dot-pass）**，用于标示 PASS 文件
+**未配置通过标记**（列表为空）时（退化为旧逻辑）：
+- **PASS**：无任何非 WARNING 类型的错误
+- **FAIL**：有任意错误
+
+顶部汇总栏 PASS（绿）/ FAIL（红）卡片；导航圆点绿色（`dot-pass`）标示 PASS 文件。
 
 ### 3.13 错误去重统计与跳转（v1.6 新增）
 
@@ -217,6 +228,27 @@ UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
 ### 3.14 文件链接右键打开（v1.6 新增）
 
 去重详情页（`errors.html`）中的文件标签渲染为 `<a>` 超链接而非纯文本标签，支持浏览器原生右键菜单（"在新标签页中打开"等）。
+
+### 3.15 额外错误关键词管理（v1.8 新增）
+
+首页「⚙ 解析配置」Tab，支持管理任意「行首关键词 + 冒号」格式的额外错误类型：
+
+- **匹配格式**：`^关键词: 描述内容`（行首 + 冒号，不区分大小写，UVM 正则优先，generic 正则兜底）
+- **与 UVM 等价**：计入错误统计、进入 top_errors、参与知识库匹配、影响 pass/fail 判断
+- **默认关键词**：`ERROR`、`FATAL`、`FAILED`（首次运行时无配置文件时使用）
+- **配置文件**：`extra_patterns.json`（与 exe 同目录），自动创建，JSON 字符串数组
+- **UI 管理**：支持增删改，即时生效（下次分析时使用新列表）；关键词仅允许大写字母、数字和下划线
+- **动态化影响**：结果页统计卡、错误类型下拉框、`_valid_levels()` 校验集合均动态包含当前关键词列表
+
+### 3.16 通过标记配置（v1.8 新增）
+
+「⚙ 解析配置」Tab 第二节，支持管理任意字符串作为 PASS 判定标记：
+
+- **检测方式**：全文扫描（内联于解析循环），任意行包含任意一条标记字符串即视为 `pass_found=True`
+- **默认标记**：`JVP TEST PASSED`（首次运行时无配置文件时使用）
+- **配置文件**：`pass_patterns.json`（与 exe 同目录），自动创建，JSON 字符串数组
+- **UI 管理**：支持增删改，即时生效；标记字符串无格式限制，可包含空格和特殊字符
+- **空列表行为**：退化为旧逻辑（只看有无错误，忽略 pass_found）
 
 ---
 
@@ -245,12 +277,15 @@ UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
 {
   'file':       str,          # 显示文件名（basename）
   'filepath':   str,          # 服务器上的完整路径
-  'statistics': {'UVM_FATAL': int, 'UVM_ERROR': int, 'UVM_WARNING': int},
-  'status':     str,          # 'pass'（无 ERROR/FATAL）或 'fail'（v1.6 新增）
+  'statistics': {'UVM_FATAL': int, 'UVM_ERROR': int, 'UVM_WARNING': int,
+                 # v1.8：动态包含 extra_patterns 中的关键词
+                 '<KEYWORD>': int, ...},
+  'status':     str,          # 'pass' 或 'fail'（v1.8 重设计，见 3.12）
+  'pass_found': bool,         # 是否找到通过标记字符串（v1.8 新增）
   'top_errors': [             # 按出现顺序的前5条 FATAL/ERROR（WARNING 不在此列表）
     {
-      'level':       str,     # UVM_FATAL / UVM_ERROR
-      'timestamp':   str,
+      'level':       str,     # UVM_FATAL / UVM_ERROR / 额外关键词（v1.8）
+      'timestamp':   str,     # 额外关键词错误时为空字符串
       'error_id':    str,
       'location':    str,
       'description': str,
@@ -287,10 +322,10 @@ UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
 
 ```python
 _jobs[job_id] = {
-  'phase': str,   # 'pending' | 'parsing' | 'matching' | 'done' | 'error'
+  'phase': str,   # 'scanning'（v1.8 路径模式 glob 展开中）| 'pending' | 'parsing' | 'matching' | 'done' | 'error'
   'pct':   int,   # 0~100
-  'msg':   str,   # 当前进度描述
-  'logs':  list,  # 处理日志条目列表（每条含 time/msg）
+  'total': int,   # 文件总数（路径模式扫描完成前为 0）
+  'logs':  list,  # 处理日志条目列表
   'error': str,   # 仅 phase=='error' 时
 }
 ```
@@ -317,11 +352,12 @@ _jobs[job_id] = {
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/` | 首页（上传/路径/查询/添加四模式界面） |
-| POST | `/analyze` | 接收日志（上传或路径），启动后台线程，立即返回 `{job_id: str}`。表单字段：`db_path`、`logs[]`（上传模式）或 `path_mode=1` + `log_paths`（路径模式） |
-| GET | `/progress/<job_id>` | SSE 进度流。每 0.3 秒推送一条 `data: {phase, pct, msg, logs, error?}\n\n`；`phase=='done'` 或 `'error'` 后关闭流（v1.6 新增） |
+| GET | `/` | 首页（上传/路径/查询/添加/解析配置五模式界面） |
+| POST | `/analyze` | 接收日志（上传或路径），启动后台线程，立即返回 `{job_id: str}`。路径模式 glob 展开在后台进行（v1.8）。表单字段：`db_path`、`logs[]`（上传模式）或 `path_mode=1` + `log_paths`（路径模式） |
+| GET | `/progress/<job_id>` | SSE 进度流。每 0.3 秒推送一条 `data: {phase, pct, logs, error?}\n\n`；`phase=='done'` 或 `'error'` 后 sleep(1) 再关闭流（v1.6 新增，v1.8 加 sleep 防 Linux 竞争） |
+| GET | `/progress_status/<job_id>` | 单次 JSON 轮询任务最终状态，供 SSE onerror 兜底使用（v1.8 新增） |
 | GET | `/result` | 分析结果页 |
-| GET | `/errors` | 去重错误详情页。查询参数 `level=UVM_FATAL\|UVM_ERROR\|UVM_WARNING`，展示该级别所有唯一错误及所在文件列表（v1.6 新增） |
+| GET | `/errors` | 去重错误详情页。查询参数 `level=<任意 level 字符串>`，展示该级别所有唯一错误及所在文件列表（v1.6 新增，v1.8 扩展支持额外关键词 level） |
 | POST | `/writeback` | 写回一条知识库记录（含未匹配首次录入和已匹配补充录入）。JSON 字段含 `file_name`、`error_idx`、`level`、`reason`（必填）、`force`（可选，跳过去重）等。返回 `{success, duplicate?, conflicts?, error?}` |
 | POST | `/query` | 知识库模糊查询。JSON 字段：`db_path`（可选）、`level`（可选）、`error_id`（可选，部分匹配）、`text`（可选，任意词模糊）。返回 `{entries: list, total: int}` |
 | POST | `/kb/add` | 直接追加知识库条目（不依赖会话）。JSON 字段：`db_path`（可选）、`错误类型`（必填）、`报错原因`（必填）及其余知识库字段、`force`（可选）。返回 `{success, duplicate?, conflicts?, error?}` |
@@ -329,6 +365,14 @@ _jobs[job_id] = {
 | POST | `/kb/delete` | 删除知识库指定行。JSON 字段：`row_idx`、`db_path`（可选）。返回 `{success, error?}` |
 | GET | `/export/excel` | 下载 Excel 报告 |
 | GET | `/export/html` | 下载 HTML 报告 |
+| GET | `/extra_patterns` | 返回当前额外错误关键词列表 `{patterns: list}` （v1.8 新增） |
+| POST | `/extra_patterns/add` | 添加关键词 `{keyword: str}`（v1.8 新增） |
+| POST | `/extra_patterns/delete` | 删除关键词 `{keyword: str}`（v1.8 新增） |
+| POST | `/extra_patterns/update` | 重命名关键词 `{old: str, new: str}`（v1.8 新增） |
+| GET | `/pass_patterns` | 返回当前通过标记列表 `{patterns: list}`（v1.8 新增） |
+| POST | `/pass_patterns/add` | 添加通过标记 `{pattern: str}`（v1.8 新增） |
+| POST | `/pass_patterns/delete` | 删除通过标记 `{pattern: str}`（v1.8 新增） |
+| POST | `/pass_patterns/update` | 修改通过标记 `{old: str, new: str}`（v1.8 新增） |
 
 ---
 
@@ -388,3 +432,11 @@ _jobs[job_id] = {
 | v1.6 | 2026-03-23 | **去重错误统计与跳转**：`parse_log` 新增 `all_errors` 字段；`/result` 路由计算跨文件去重唯一计数；汇总栏 FATAL/ERROR/WARNING 显示去重数并可点击跳转 `/errors` 详情页；详情页按出现文件数降序列出唯一错误 | `core/log_parser.py`, `app.py`, `templates/result.html`, `templates/errors.html`, `static/style.css` |
 | v1.6 | 2026-03-23 | **文件标签超链接**：`errors.html` 文件标签改为 `<a href="/result?focus=...">` 超链接，支持右键在新标签页打开；Jinja2 注册 `urlencode` 自定义过滤器用于 URL 安全编码文件名 | `templates/errors.html`, `app.py` |
 | v1.7 | 2026-03-26 | **录入人自动预填**：启动时通过 `getpass.getuser()` 获取操作系统当前用户名（Windows 读 `USERNAME` 环境变量，Linux 读 `USER`/`LOGNAME` 或 `pwd` 模块），注入全局变量 `OS_USERNAME`；未匹配回写表单、已命中补充录入表单、首页「添加条目」Tab 三处「录入人」输入框自动预填，用户可手动修改；获取失败时降级为空字符串不影响功能 | `app.py`, `templates/result.html`, `templates/index.html` |
+| v1.8 | 2026-03-29 | **BUG-014 修复（Linux 路径模式）**：glob 展开从请求处理线程移至后台分析线程（job 立即创建，phase='scanning'），消除请求阻塞和启动延迟；新增 `scanning` 阶段进度文字"正在扫描文件..." | `app.py`, `templates/index.html` |
+| v1.8 | 2026-03-29 | **BUG-014 修复（Linux SSE TCP 竞争）**：后台线程推送 done/error 后新增 `sleep(1)` 再关闭连接，避免 Linux TCP FIN 先于数据被 EventSource 接收；前端 `onerror` 改为回退轮询 `/progress_status/<job_id>` 单次 JSON 接口，任务完成时直接跳转 `/result` | `app.py`, `templates/index.html` |
+| v1.8 | 2026-03-29 | **BUG 修复（Linux 右键菜单）**：`fileNav` contextmenu 监听器加 `e.stopPropagation()`，阻止事件冒泡到 document 层导致菜单被立即关闭 | `templates/result.html` |
+| v1.8 | 2026-03-29 | **额外错误关键词支持**：`log_parser` 新增 `_build_gen_pattern()` 和 `extra_keywords` 参数，支持任意行首关键词+冒号格式的错误行（UVM 优先，generic 兜底）；`statistics` 动态扩展；错误条目进入 top_errors 参与 KB 匹配和 pass/fail；`extra_patterns.json` 配置文件 + 首页「⚙ 解析配置」Tab 增删改 UI | `core/log_parser.py`, `app.py`, `templates/index.html`, `templates/result.html`, `static/style.css` |
+| v1.8 | 2026-03-29 | **通过标记配置（pass_patterns）**：`log_parser` 新增 `pass_patterns` 参数和 `pass_found` 返回字段，全文扫描内联检测；`pass_patterns.json` 配置文件（默认 `JVP TEST PASSED`）+ UI 增删改；空列表时退化为旧逻辑 | `core/log_parser.py`, `app.py`, `templates/index.html` |
+| v1.8 | 2026-03-29 | **PASS/FAIL 逻辑重设计**：PASS = 无任何非 WARNING 错误 AND 找到通过标记；FAIL = 有错误 OR 无错误但无通过标记；无通过标记配置时退化（只看有无错误） | `core/log_parser.py` |
+| v1.8 | 2026-03-29 | **结果页 FAIL/PASS 分组导航**：左侧导航 FAIL 日志在上（始终展开），PASS 日志折叠于「▶ PASS (N)」分组头下（默认收起）；默认激活第一个 FAIL（全 PASS 时激活第一个 PASS）；`focus=` URL 跳转修复（改用 `data-idx` 属性而非 DOM 顺序索引，避免重排后错位；自动展开 pass 组） | `templates/result.html`, `static/style.css` |
+| v1.8 | 2026-03-29 | **动态统计与下拉框**：结果页统计卡、错误类型下拉框、去重跳转链接均动态包含 extra_patterns；badge/stat-chip 新增兜底灰色和紫色 extra 样式；`_unique_error_counts()` 动态化；`_valid_levels()` 动态化 | `app.py`, `templates/result.html`, `static/style.css` |

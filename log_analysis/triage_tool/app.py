@@ -82,10 +82,62 @@ _jobs: dict = {}         # job_id -> {phase, parse_done, match_done, total, pct,
 
 _CONFLICT_FIELDS = ['错误类型', '错误ID', '关键描述关键词', '报错原因', '所属模块', '录入日期', '_row_idx']
 
+# ── 额外错误关键词配置 ───────────────────────────────────
+_EXTRA_PATTERNS_FILE    = BASE_DIR / 'extra_patterns.json'
+_EXTRA_PATTERNS_DEFAULT = ['ERROR', 'FATAL', 'FAILED']
+_extra_patterns_lock    = threading.Lock()
+
+def _load_extra_patterns() -> list:
+    try:
+        if _EXTRA_PATTERNS_FILE.exists():
+            data = json.loads(_EXTRA_PATTERNS_FILE.read_text(encoding='utf-8'))
+            if isinstance(data, list):
+                return [str(x).strip().upper() for x in data if str(x).strip()]
+    except Exception:
+        pass
+    return list(_EXTRA_PATTERNS_DEFAULT)
+
+def _save_extra_patterns(patterns: list):
+    _EXTRA_PATTERNS_FILE.write_text(
+        json.dumps(patterns, ensure_ascii=False, indent=2),
+        encoding='utf-8'
+    )
+
+EXTRA_PATTERNS: list = _load_extra_patterns()
+
+# ── 通过标记配置 ─────────────────────────────────────────
+_PASS_PATTERNS_FILE    = BASE_DIR / 'pass_patterns.json'
+_PASS_PATTERNS_DEFAULT = ['JVP TEST PASSED']
+_pass_patterns_lock    = threading.Lock()
+
+def _load_pass_patterns() -> list:
+    try:
+        if _PASS_PATTERNS_FILE.exists():
+            data = json.loads(_PASS_PATTERNS_FILE.read_text(encoding='utf-8'))
+            if isinstance(data, list):
+                return [str(x).strip() for x in data if str(x).strip()]
+    except Exception:
+        pass
+    return list(_PASS_PATTERNS_DEFAULT)
+
+def _save_pass_patterns(patterns: list):
+    _PASS_PATTERNS_FILE.write_text(
+        json.dumps(patterns, ensure_ascii=False, indent=2),
+        encoding='utf-8'
+    )
+
+PASS_PATTERNS: list = _load_pass_patterns()
+
+
+def _valid_levels() -> set:
+    """返回所有合法的 level 值（UVM 三项 + 当前 extra_patterns）。"""
+    return {'UVM_FATAL', 'UVM_ERROR', 'UVM_WARNING'} | set(EXTRA_PATTERNS)
+
+
 def _unique_error_counts(results: list) -> dict:
-    """跨所有文件对 all_errors 去重，返回各级别唯一错误数。"""
+    """跨所有文件对 all_errors 去重，返回各级别唯一错误数（动态包含 extra_patterns）。"""
     seen   = set()
-    counts = {'UVM_FATAL': 0, 'UVM_ERROR': 0, 'UVM_WARNING': 0}
+    counts = {}
     for r in results:
         for err in r.get('all_errors', []):
             lvl = err.get('level', '')
@@ -93,8 +145,10 @@ def _unique_error_counts(results: list) -> dict:
             key = (lvl, eid if eid else err.get('description', '')[:80].lower())
             if key not in seen:
                 seen.add(key)
-                if lvl in counts:
-                    counts[lvl] += 1
+                counts[lvl] = counts.get(lvl, 0) + 1
+    # 保证 UVM 三项始终存在（即使为 0）
+    for k in ('UVM_FATAL', 'UVM_ERROR', 'UVM_WARNING'):
+        counts.setdefault(k, 0)
     return counts
 
 
@@ -118,23 +172,59 @@ def _set_results(sid: str, results: list, db_path: str):
     _store[sid] = {'results': results, 'db_path': db_path, 'ts': time.time()}
 
 
-def _run_analysis(job_id: str, sid: str, saved_paths: list,
+def _run_analysis(job_id: str, sid: str, input_data: list,
                   db_path: str, path_mode: bool) -> None:
-    """后台线程：解析日志 → 知识库匹配 → 存储结果，全程更新 _jobs[job_id]。"""
-    job   = _jobs[job_id]
-    total = len(saved_paths)
+    """后台线程：解析日志 → 知识库匹配 → 存储结果，全程更新 _jobs[job_id]。
+    path_mode=True 时 input_data 是 glob 模式列表，线程内展开；
+    path_mode=False 时 input_data 是已保存的上传文件路径列表。
+    """
+    job = _jobs[job_id]
 
     def _ts():
         return datetime.now().strftime('%H:%M:%S')
+
+    # ── 路径模式：在后台线程里展开 glob，避免阻塞请求处理 ──────
+    if path_mode:
+        job['phase'] = 'scanning'
+        job['logs'].append(f"[{_ts()}] 正在扫描文件...")
+        saved_paths = []
+        not_found   = []
+        for pattern in input_data:
+            matched   = sorted(_glob.glob(pattern, recursive=True))
+            log_files = [str(Path(fp).resolve())
+                         for fp in matched
+                         if Path(fp).is_file()
+                         and Path(fp).suffix.lower() == '.log']
+            if log_files:
+                saved_paths.extend(log_files)
+            else:
+                not_found.append(pattern)
+
+        if not saved_paths:
+            job['phase'] = 'error'
+            job['error'] = '未找到任何 .log 文件' + (
+                '：' + '；'.join(not_found) if not_found else '')
+            return
+
+        if len(saved_paths) > MAX_PATH_FILES:
+            job['phase'] = 'error'
+            job['error'] = (f'一次最多分析 {MAX_PATH_FILES} 个文件，'
+                            f'当前匹配到 {len(saved_paths)} 个，请缩小范围')
+            return
+
+        job['total'] = len(saved_paths)
+        job['logs'].append(f"[{_ts()}] 扫描完成，共找到 {len(saved_paths)} 个文件")
+    else:
+        saved_paths = input_data
+
+    total = len(saved_paths)
 
     def _parse_cb(filename, result, done, tot):
         s = result['statistics']
         job['parse_done'] = done
         job['pct']        = done * 50 // max(tot, 1)
-        job['logs'].append(
-            f"[{_ts()}] 已解析: {filename}"
-            f"  (FATAL:{s['UVM_FATAL']}  ERROR:{s['UVM_ERROR']}  WARNING:{s['UVM_WARNING']})"
-        )
+        stat_str = '  '.join(f"{k}:{v}" for k, v in s.items() if v > 0) or '无报错'
+        job['logs'].append(f"[{_ts()}] 已解析: {filename}  ({stat_str})")
 
     def _match_cb(filename, matched, n_errors, done, tot):
         job['match_done'] = done
@@ -150,7 +240,9 @@ def _run_analysis(job_id: str, sid: str, saved_paths: list,
     try:
         job['phase'] = 'parsing'
         job['logs'].append(f"[{_ts()}] 开始解析 {total} 个日志文件...")
-        results = parse_logs(saved_paths, progress_cb=_parse_cb)
+        results = parse_logs(saved_paths, progress_cb=_parse_cb,
+                             extra_keywords=EXTRA_PATTERNS,
+                             pass_patterns=PASS_PATTERNS)
 
         # 上传模式：解析后立即删除临时文件
         if not path_mode:
@@ -221,7 +313,7 @@ def analyze():
     path_mode = request.form.get('path_mode', '').strip()
 
     if path_mode:
-        # ── 路径模式：直接读服务器本地文件，无需上传拷贝 ──────
+        # ── 路径模式：glob 展开移至后台线程，这里只做基本格式校验 ──────
         raw = request.form.get('log_paths', '').strip()
         if not raw:
             return jsonify({'error': '请输入日志文件路径'}), 400
@@ -230,28 +322,8 @@ def analyze():
                     for line in raw.splitlines()
                     for p in line.split(',')
                     if p.strip()]
-
-        saved_paths = []
-        not_found = []
-        for pattern in patterns:
-            matched = sorted(_glob.glob(pattern, recursive=True))
-            log_files = [str(Path(fp).resolve())
-                         for fp in matched
-                         if Path(fp).is_file()
-                         and Path(fp).suffix.lower() == '.log']
-            if log_files:
-                saved_paths.extend(log_files)
-            else:
-                not_found.append(pattern)
-
-        if not saved_paths:
-            return jsonify({'error': '未找到任何 .log 文件：' + '；'.join(not_found)}), 400
-
-        if len(saved_paths) > MAX_PATH_FILES:
-            return jsonify({
-                'error': f'一次最多分析 {MAX_PATH_FILES} 个文件，'
-                         f'当前匹配到 {len(saved_paths)} 个，请缩小范围'
-            }), 400
+        # input_data 传 glob 模式列表，由后台线程展开
+        input_data = patterns
 
     else:
         # ── 上传模式：浏览器上传文件流，保存到 uploads/ ────────
@@ -280,13 +352,16 @@ def analyze():
         if not saved_paths:
             return jsonify({'error': '文件保存失败'}), 500
 
+        input_data = saved_paths
+
     # 创建后台任务，立即返回 job_id 供前端轮询进度
+    # path_mode 时 total=0，后台扫描完成后更新；upload 模式已知 total
     job_id = str(uuid.uuid4())
     _jobs[job_id] = {
-        'phase':       'pending',
+        'phase':       'scanning' if path_mode else 'pending',
         'parse_done':  0,
         'match_done':  0,
-        'total':       len(saved_paths),
+        'total':       0 if path_mode else len(input_data),
         'pct':         0,
         'logs':        [],
         'redirect':    None,
@@ -295,7 +370,7 @@ def analyze():
     }
     threading.Thread(
         target=_run_analysis,
-        args=(job_id, sid, saved_paths, db_path, bool(path_mode)),
+        args=(job_id, sid, input_data, db_path, bool(path_mode)),
         daemon=True,
     ).start()
     return jsonify({'job_id': job_id})
@@ -321,6 +396,9 @@ def progress_stream(job_id):
             payload = {k: v for k, v in job.items() if k != 'ts'}
             yield 'data: ' + json.dumps(payload, ensure_ascii=False) + '\n\n'
             if job.get('phase') in ('done', 'error'):
+                # Linux 上服务端立即关闭连接可能导致客户端先收到 FIN 再收到数据，
+                # 延迟 1s 确保最终事件被浏览器接收处理后再关闭连接。
+                time.sleep(1)
                 return
             time.sleep(0.3)
 
@@ -331,13 +409,23 @@ def progress_stream(job_id):
     )
 
 
+@app.route('/progress_status/<job_id>')
+def progress_status(job_id):
+    """单次 JSON 轮询任务最终状态，供 SSE onerror 兜底使用。"""
+    job = _jobs.get(job_id)
+    if not job:
+        return jsonify({'phase': 'error', 'error': '任务不存在或已过期'})
+    return jsonify({k: v for k, v in job.items() if k != 'ts'})
+
+
 @app.route('/result')
 def result():
     sid = _sid()
     results, db_path = _get_results(sid)
     unique_counts = _unique_error_counts(results)
     return render_template('result.html', results=results, db_path=db_path,
-                           unique_counts=unique_counts, os_username=OS_USERNAME)
+                           unique_counts=unique_counts, os_username=OS_USERNAME,
+                           extra_patterns=EXTRA_PATTERNS)
 
 
 @app.route('/errors')
@@ -345,7 +433,7 @@ def errors_view():
     sid = _sid()
     results, _ = _get_results(sid)
     level = request.args.get('level', '').upper()
-    if level not in ('UVM_FATAL', 'UVM_ERROR', 'UVM_WARNING'):
+    if not level:
         return redirect('/result')
 
     # 跨文件聚合：相同 (level, error_id) 合并，记录出现的文件列表
@@ -397,10 +485,9 @@ def writeback():
     data = request.get_json()
 
     # S4: 输入校验
-    VALID_LEVELS = {'UVM_FATAL', 'UVM_ERROR', 'UVM_WARNING'}
     MAX_LEN = 500
     level = data.get('level', '').strip().upper()
-    if level not in VALID_LEVELS:
+    if level not in _valid_levels():
         return jsonify({'success': False, 'error': '无效的错误级别'}), 400
     reason = data.get('reason', '').strip()
     if not reason:
@@ -513,12 +600,12 @@ def kb_add():
     """
     data = request.get_json() or {}
     db_path = data.get('db_path', '').strip() or DB_DEFAULT
-    VALID_LEVELS = {'UVM_FATAL', 'UVM_ERROR', 'UVM_WARNING'}
     MAX_LEN = 500
 
     level = data.get('错误类型', '').strip().upper()
-    if level not in VALID_LEVELS:
-        return jsonify({'success': False, 'error': '错误类型无效，须为 UVM_FATAL / UVM_ERROR / UVM_WARNING'}), 400
+    if level not in _valid_levels():
+        valid_str = ' / '.join(sorted(_valid_levels()))
+        return jsonify({'success': False, 'error': f'错误类型无效，须为 {valid_str}'}), 400
     reason = data.get('报错原因', '').strip()
     if not reason:
         return jsonify({'success': False, 'error': '报错原因不能为空'}), 400
@@ -585,6 +672,140 @@ def kb_delete():
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/extra_patterns', methods=['GET'])
+def extra_patterns_get():
+    """返回当前额外错误关键词列表。"""
+    return jsonify({'patterns': EXTRA_PATTERNS})
+
+
+@app.route('/extra_patterns/add', methods=['POST'])
+def extra_patterns_add():
+    """添加一个关键词。JSON: {keyword: str}"""
+    data = request.get_json() or {}
+    kw = data.get('keyword', '').strip().upper()
+    if not kw:
+        return jsonify({'success': False, 'error': '关键词不能为空'}), 400
+    if not re.match(r'^[A-Z0-9_]+$', kw):
+        return jsonify({'success': False, 'error': '关键词只能包含大写字母、数字和下划线'}), 400
+    with _extra_patterns_lock:
+        if kw in EXTRA_PATTERNS:
+            return jsonify({'success': False, 'error': '关键词已存在'})
+        EXTRA_PATTERNS.append(kw)
+        try:
+            _save_extra_patterns(EXTRA_PATTERNS)
+        except Exception as e:
+            EXTRA_PATTERNS.remove(kw)
+            return jsonify({'success': False, 'error': str(e)}), 500
+    return jsonify({'success': True, 'patterns': EXTRA_PATTERNS})
+
+
+@app.route('/extra_patterns/delete', methods=['POST'])
+def extra_patterns_delete():
+    """删除一个关键词。JSON: {keyword: str}"""
+    data = request.get_json() or {}
+    kw = data.get('keyword', '').strip().upper()
+    with _extra_patterns_lock:
+        if kw not in EXTRA_PATTERNS:
+            return jsonify({'success': False, 'error': '关键词不存在'})
+        EXTRA_PATTERNS.remove(kw)
+        try:
+            _save_extra_patterns(EXTRA_PATTERNS)
+        except Exception as e:
+            EXTRA_PATTERNS.append(kw)
+            return jsonify({'success': False, 'error': str(e)}), 500
+    return jsonify({'success': True, 'patterns': EXTRA_PATTERNS})
+
+
+@app.route('/extra_patterns/update', methods=['POST'])
+def extra_patterns_update():
+    """重命名一个关键词。JSON: {old: str, new: str}"""
+    data = request.get_json() or {}
+    old_kw = data.get('old', '').strip().upper()
+    new_kw = data.get('new', '').strip().upper()
+    if not new_kw:
+        return jsonify({'success': False, 'error': '新关键词不能为空'}), 400
+    if not re.match(r'^[A-Z0-9_]+$', new_kw):
+        return jsonify({'success': False, 'error': '关键词只能包含大写字母、数字和下划线'}), 400
+    with _extra_patterns_lock:
+        if old_kw not in EXTRA_PATTERNS:
+            return jsonify({'success': False, 'error': '原关键词不存在'})
+        if new_kw in EXTRA_PATTERNS and new_kw != old_kw:
+            return jsonify({'success': False, 'error': '新关键词已存在'})
+        idx = EXTRA_PATTERNS.index(old_kw)
+        EXTRA_PATTERNS[idx] = new_kw
+        try:
+            _save_extra_patterns(EXTRA_PATTERNS)
+        except Exception as e:
+            EXTRA_PATTERNS[idx] = old_kw
+            return jsonify({'success': False, 'error': str(e)}), 500
+    return jsonify({'success': True, 'patterns': EXTRA_PATTERNS})
+
+
+@app.route('/pass_patterns', methods=['GET'])
+def pass_patterns_get():
+    """返回当前通过标记字符串列表。"""
+    return jsonify({'patterns': PASS_PATTERNS})
+
+
+@app.route('/pass_patterns/add', methods=['POST'])
+def pass_patterns_add():
+    """添加一个通过标记。JSON: {pattern: str}"""
+    data = request.get_json() or {}
+    pt = data.get('pattern', '').strip()
+    if not pt:
+        return jsonify({'success': False, 'error': '通过标记不能为空'}), 400
+    with _pass_patterns_lock:
+        if pt in PASS_PATTERNS:
+            return jsonify({'success': False, 'error': '该标记已存在'})
+        PASS_PATTERNS.append(pt)
+        try:
+            _save_pass_patterns(PASS_PATTERNS)
+        except Exception as e:
+            PASS_PATTERNS.remove(pt)
+            return jsonify({'success': False, 'error': str(e)}), 500
+    return jsonify({'success': True, 'patterns': PASS_PATTERNS})
+
+
+@app.route('/pass_patterns/delete', methods=['POST'])
+def pass_patterns_delete():
+    """删除一个通过标记。JSON: {pattern: str}"""
+    data = request.get_json() or {}
+    pt = data.get('pattern', '').strip()
+    with _pass_patterns_lock:
+        if pt not in PASS_PATTERNS:
+            return jsonify({'success': False, 'error': '标记不存在'})
+        PASS_PATTERNS.remove(pt)
+        try:
+            _save_pass_patterns(PASS_PATTERNS)
+        except Exception as e:
+            PASS_PATTERNS.append(pt)
+            return jsonify({'success': False, 'error': str(e)}), 500
+    return jsonify({'success': True, 'patterns': PASS_PATTERNS})
+
+
+@app.route('/pass_patterns/update', methods=['POST'])
+def pass_patterns_update():
+    """修改一个通过标记。JSON: {old: str, new: str}"""
+    data = request.get_json() or {}
+    old_pt = data.get('old', '').strip()
+    new_pt = data.get('new', '').strip()
+    if not new_pt:
+        return jsonify({'success': False, 'error': '新标记不能为空'}), 400
+    with _pass_patterns_lock:
+        if old_pt not in PASS_PATTERNS:
+            return jsonify({'success': False, 'error': '原标记不存在'})
+        if new_pt in PASS_PATTERNS and new_pt != old_pt:
+            return jsonify({'success': False, 'error': '新标记已存在'})
+        idx = PASS_PATTERNS.index(old_pt)
+        PASS_PATTERNS[idx] = new_pt
+        try:
+            _save_pass_patterns(PASS_PATTERNS)
+        except Exception as e:
+            PASS_PATTERNS[idx] = old_pt
+            return jsonify({'success': False, 'error': str(e)}), 500
+    return jsonify({'success': True, 'patterns': PASS_PATTERNS})
 
 
 @app.route('/export/excel')

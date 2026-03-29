@@ -26,9 +26,21 @@
     <div class="scard"><div class="num">{{ results|length }}</div><div class="slbl">日志总数</div></div>
     <div class="scard scard-pass"><div class="num c-pass">{{ total_pass }}</div><div class="slbl">PASS</div></div>
     <div class="scard scard-fail"><div class="num c-fail">{{ total_fail }}</div><div class="slbl">FAIL</div></div>
-    <a href="/errors?level=UVM_FATAL"   class="scard scard-link" title="点击查看去重错误列表"><div class="num c-fatal">{{ unique_counts['UVM_FATAL'] }}</div><div class="slbl">UVM_FATAL</div></a>
-    <a href="/errors?level=UVM_ERROR"   class="scard scard-link" title="点击查看去重错误列表"><div class="num c-error">{{ unique_counts['UVM_ERROR'] }}</div><div class="slbl">UVM_ERROR</div></a>
-    <a href="/errors?level=UVM_WARNING" class="scard scard-link" title="点击查看去重错误列表"><div class="num c-warning">{{ unique_counts['UVM_WARNING'] }}</div><div class="slbl">UVM_WARNING</div></a>
+    {% set _uvm_keys = ['UVM_FATAL', 'UVM_ERROR', 'UVM_WARNING'] %}
+    {% for key in _uvm_keys %}
+    <a href="/errors?level={{ key }}" class="scard scard-link" title="点击查看去重错误列表">
+      <div class="num c-{{ key | lower | replace('_','-') }}">{{ unique_counts.get(key, 0) }}</div>
+      <div class="slbl">{{ key }}</div>
+    </a>
+    {% endfor %}
+    {% for key, cnt in unique_counts.items() %}
+      {% if key not in _uvm_keys and cnt > 0 %}
+    <a href="/errors?level={{ key }}" class="scard scard-link" title="点击查看去重错误列表">
+      <div class="num c-extra">{{ cnt }}</div>
+      <div class="slbl">{{ key }}</div>
+    </a>
+      {% endif %}
+    {% endfor %}
     <div class="scard"><div class="num c-grey">{{ total_unmatched }}</div><div class="slbl">未匹配</div></div>
   </div>
 
@@ -36,24 +48,65 @@
   <div class="result-body">
 
     <!-- 左侧导航 -->
+    {# 计算默认激活项索引：优先第一个 fail，否则第一个 pass #}
+    {% set ns = namespace(first_active=-1) %}
+    {% for r in results %}
+      {% if r.status == 'fail' and ns.first_active == -1 %}
+        {% set ns.first_active = loop.index0 %}
+      {% endif %}
+    {% endfor %}
+    {% if ns.first_active == -1 %}
+      {% set ns.first_active = 0 %}
+    {% endif %}
     <div class="file-nav" id="fileNav">
+      {# ── FAIL 条目 ── #}
       {% for r in results %}
-      {% set has_fatal = r.statistics.UVM_FATAL > 0 %}
-      {% set has_error = r.statistics.UVM_ERROR > 0 %}
-      {% set unmatched = r.match.status == 'unmatched' %}
-      <div class="nav-item {% if loop.first %}active{% endif %}"
-           onclick="showPanel({{ loop.index0 }}, this)"
-           data-filepath="{{ r.file_path | default('') }}"
-           id="nav-{{ loop.index0 }}">
-        <span class="nav-dot
-          {% if has_fatal %}dot-fatal
-          {% elif has_error %}dot-error
-          {% elif r.status == 'pass' %}dot-pass
-          {% else %}dot-warning{% endif %}"></span>
-        <span class="nav-name" title="{{ r.file }}">{{ r.file }}</span>
-        {% if unmatched %}<span class="nav-badge">未匹配</span>{% endif %}
-      </div>
+        {% if r.status == 'fail' %}
+        {% set has_fatal = r.statistics.UVM_FATAL > 0 %}
+        {% set has_error = r.statistics.UVM_ERROR > 0
+           or (r.statistics.items() | selectattr('0', 'ne', 'UVM_WARNING')
+               | selectattr('0', 'ne', 'UVM_FATAL')
+               | selectattr('0', 'ne', 'UVM_ERROR')
+               | selectattr('1', 'gt', 0) | list | length > 0) %}
+        {% set unmatched = r.match.status == 'unmatched' %}
+        <div class="nav-item {% if loop.index0 == ns.first_active %}active{% endif %}"
+             onclick="showPanel({{ loop.index0 }}, this)"
+             data-idx="{{ loop.index0 }}"
+             data-filepath="{{ r.file_path | default('') }}"
+             id="nav-{{ loop.index0 }}">
+          <span class="nav-dot
+            {% if has_fatal %}dot-fatal
+            {% elif has_error %}dot-error
+            {% else %}dot-warning{% endif %}"></span>
+          <span class="nav-name" title="{{ r.file }}">{{ r.file }}</span>
+          {% if unmatched %}<span class="nav-badge">未匹配</span>{% endif %}
+        </div>
+        {% endif %}
       {% endfor %}
+
+      {# ── PASS 条目（默认折叠） ── #}
+      {% if total_pass > 0 %}
+      <div class="nav-group-hdr" onclick="togglePassGroup(this)">
+        <span class="nav-group-arrow collapsed">▶</span>
+        <span class="nav-group-lbl">PASS ({{ total_pass }})</span>
+      </div>
+      <div class="nav-pass-group" style="display:none">
+        {% for r in results %}
+          {% if r.status == 'pass' %}
+          {% set unmatched = r.match.status == 'unmatched' %}
+          <div class="nav-item {% if loop.index0 == ns.first_active %}active{% endif %}"
+               onclick="showPanel({{ loop.index0 }}, this)"
+               data-idx="{{ loop.index0 }}"
+               data-filepath="{{ r.file_path | default('') }}"
+               id="nav-{{ loop.index0 }}">
+            <span class="nav-dot dot-pass"></span>
+            <span class="nav-name" title="{{ r.file }}">{{ r.file }}</span>
+            {% if unmatched %}<span class="nav-badge">未匹配</span>{% endif %}
+          </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+      {% endif %}
     </div>
 
     <!-- 右侧详情面板 -->
@@ -61,7 +114,7 @@
       {% for r in results %}
       {% set ri = loop.index0 %}
 
-      <div class="detail-panel {% if loop.first %}active{% endif %}"
+      <div class="detail-panel {% if ri == ns.first_active %}active{% endif %}"
            id="panel-{{ ri }}">
 
         <div class="panel-filename">📄 {{ r.file }}</div>
@@ -71,17 +124,25 @@
           <div class="section-title">错误统计</div>
           <div class="stat-row">
             <div class="stat-chip fatal">
-              <span class="chip-num">{{ r.statistics.UVM_FATAL }}</span>
+              <span class="chip-num">{{ r.statistics.get('UVM_FATAL', 0) }}</span>
               <span class="chip-lbl">UVM_FATAL</span>
             </div>
             <div class="stat-chip error">
-              <span class="chip-num">{{ r.statistics.UVM_ERROR }}</span>
+              <span class="chip-num">{{ r.statistics.get('UVM_ERROR', 0) }}</span>
               <span class="chip-lbl">UVM_ERROR</span>
             </div>
             <div class="stat-chip warning">
-              <span class="chip-num">{{ r.statistics.UVM_WARNING }}</span>
+              <span class="chip-num">{{ r.statistics.get('UVM_WARNING', 0) }}</span>
               <span class="chip-lbl">UVM_WARNING</span>
             </div>
+            {% for k, v in r.statistics.items() %}
+              {% if k not in ('UVM_FATAL','UVM_ERROR','UVM_WARNING') and v > 0 %}
+            <div class="stat-chip extra">
+              <span class="chip-num">{{ v }}</span>
+              <span class="chip-lbl">{{ k }}</span>
+            </div>
+              {% endif %}
+            {% endfor %}
           </div>
         </div>
 
@@ -175,9 +236,9 @@
                       <div class="fg-item">
                         <label>错误类型</label>
                         <select class="fi" id="ed-type-{{ ek }}">
-                          <option {% if eentry.get('错误类型')=='UVM_FATAL' %}selected{% endif %}>UVM_FATAL</option>
-                          <option {% if eentry.get('错误类型')=='UVM_ERROR' %}selected{% endif %}>UVM_ERROR</option>
-                          <option {% if eentry.get('错误类型')=='UVM_WARNING' %}selected{% endif %}>UVM_WARNING</option>
+                          {% for lv in ['UVM_FATAL','UVM_ERROR','UVM_WARNING'] + extra_patterns %}
+                          <option {% if eentry.get('错误类型')==lv %}selected{% endif %}>{{ lv }}</option>
+                          {% endfor %}
                         </select>
                       </div>
                       <div class="fg-item">
@@ -232,9 +293,9 @@
                     <div class="fg-item">
                       <label>错误类型 <span class="req">*</span></label>
                       <select class="fi" id="supplevel-{{ ri }}-{{ ei }}">
-                        <option {% if elevel=='UVM_FATAL' %}selected{% endif %}>UVM_FATAL</option>
-                        <option {% if elevel=='UVM_ERROR' %}selected{% endif %}>UVM_ERROR</option>
-                        <option {% if elevel=='UVM_WARNING' %}selected{% endif %}>UVM_WARNING</option>
+                        {% for lv in ['UVM_FATAL','UVM_ERROR','UVM_WARNING'] + extra_patterns %}
+                        <option {% if elevel==lv %}selected{% endif %}>{{ lv }}</option>
+                        {% endfor %}
                       </select>
                     </div>
                     <div class="fg-item">
@@ -292,9 +353,9 @@
                     <div class="fg-item">
                       <label>错误类型 <span class="req">*</span></label>
                       <select class="fi" id="wblevel-{{ ri }}-{{ ei }}">
-                        <option {% if elevel=='UVM_FATAL' %}selected{% endif %}>UVM_FATAL</option>
-                        <option {% if elevel=='UVM_ERROR' %}selected{% endif %}>UVM_ERROR</option>
-                        <option {% if elevel=='UVM_WARNING' %}selected{% endif %}>UVM_WARNING</option>
+                        {% for lv in ['UVM_FATAL','UVM_ERROR','UVM_WARNING'] + extra_patterns %}
+                        <option {% if elevel==lv %}selected{% endif %}>{{ lv }}</option>
+                        {% endfor %}
                       </select>
                     </div>
                     <div class="fg-item">
@@ -549,6 +610,7 @@
       const fp = item.dataset.filepath;
       if (!fp) return;   // 上传模式无路径，不弹菜单
       e.preventDefault();
+      e.stopPropagation();  // 阻止冒泡到 document 的 contextmenu 处理器，否则菜单会被立即隐藏
       _ctxPath = fp;
       menu.style.display = 'block';
       // 防止菜单超出视口右/下边界
@@ -575,6 +637,14 @@
     el.classList.add('active');
   }
 
+  function togglePassGroup(hdr) {
+    const group = hdr.nextElementSibling;
+    const arrow = hdr.querySelector('.nav-group-arrow');
+    const hidden = group.style.display === 'none';
+    group.style.display = hidden ? '' : 'none';
+    arrow.classList.toggle('collapsed', !hidden);
+  }
+
   // 从 errors 页点击文件标签跳转时，自动激活对应面板
   (function () {
     const focus = new URLSearchParams(window.location.search).get('focus');
@@ -583,7 +653,13 @@
     for (let i = 0; i < items.length; i++) {
       const name = items[i].querySelector('.nav-name');
       if (name && (name.title === focus || name.textContent.trim() === focus)) {
-        showPanel(i, items[i]);
+        // 若目标在 pass 组中，先展开
+        const passGroup = items[i].closest('.nav-pass-group');
+        if (passGroup && passGroup.style.display === 'none') {
+          togglePassGroup(passGroup.previousElementSibling);
+        }
+        const panelIdx = parseInt(items[i].dataset.idx, 10);
+        showPanel(panelIdx, items[i]);
         items[i].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         break;
       }
