@@ -430,7 +430,7 @@
   <div id="ctxOpenLog"
        style="padding:9px 16px;cursor:pointer;font-size:13px;white-space:nowrap"
        onmouseenter="this.style.background='#EBF3FB'"
-       onmouseleave="this.style.background=''">📄 在新标签页中查看日志</div>
+       onmouseleave="this.style.background=''">📝 用 gvim 打开</div>
 </div>
 
 <script>
@@ -625,7 +625,12 @@
     });
 
     document.getElementById('ctxOpenLog').addEventListener('click', function () {
-      if (_ctxPath) window.open('/view_log?path=' + encodeURIComponent(_ctxPath), '_blank');
+      if (_ctxPath) {
+        fetch('/open_in_editor?path=' + encodeURIComponent(_ctxPath))
+          .then(r => r.json())
+          .then(d => { if (!d.ok) alert('打开失败：' + d.error); })
+          .catch(() => alert('请求失败，请检查服务是否运行'));
+      }
       menu.style.display = 'none';
     });
   })();

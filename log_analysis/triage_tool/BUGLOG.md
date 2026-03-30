@@ -584,3 +584,77 @@ fileInput.addEventListener('change', () => {
 
 - `templates/index.html`（逻辑修改）
 - `dist/triage_tool.exe`（重新打包）
+
+---
+
+## BUG-015 切换 Tab 后进度区（"分析完成，正在跳转"）残留
+
+**发现日期**：2026-03-30
+**状态**：已修复
+
+### 现象
+
+分析完成后进度区显示"分析完成，正在跳转"日志。此时切换到「查询知识库」「添加条目」「解析配置」任意 Tab，进度区依然可见，干扰操作。
+
+### 根因分析
+
+`switchMode()` 函数切换 Tab 时只负责显示/隐藏各模式 div 和按钮行，未对 `progressWrap` 做任何处理。进度区是独立的全局 DOM 节点，不属于任何模式 div，因此切 Tab 不会隐藏它。
+
+### 修复方案
+
+在 `switchMode()` 末尾追加：
+
+```javascript
+if (mode !== 'upload' && mode !== 'path') {
+  document.getElementById('progressWrap').style.display = 'none';
+}
+```
+
+切换到非分析 Tab 时立即隐藏进度区；切回「上传文件/指定路径」Tab 时保持原有状态（进度区仍可见，符合预期）。
+
+### 涉及文件
+
+- `templates/index.html`（`switchMode` 函数新增3行）
+- `dist/triage_tool.exe`（重新打包）
+
+---
+
+## BUG-016 打开「解析配置」Tab 后页面卡死（无限循环）+ 额外关键词含空格导致 ID 非法
+
+**发现日期**：2026-03-30
+**状态**：已修复
+
+### 现象
+
+1. 在 Windows（或任何平台）打开「解析配置」Tab 后，页面长时间无响应（浏览器弹出"页面无响应"对话框）
+2. 含空格的默认关键词（如 `JVP TEST FAILED`）在关键词配置列表中无法正常编辑/删除
+
+### 根因分析
+
+**Bug 1（无限循环，主因）**
+
+`_populateLevelSelects()` 中：
+```javascript
+while (dl.options.length > 3) dl.remove(3);
+```
+`dl` 是 `<datalist>` 元素。`<datalist>` 没有 `remove(index)` 方法；调用 `dl.remove(3)` 实际调用了继承自 `HTMLElement` 的 `remove()` 方法（无参数，忽略传入的 `3`），将整个 datalist 元素从 DOM 中移除。但 `dl.options.length` 在 datalist 脱离 DOM 后不会减少（内存中选项仍存在），导致 `while` 条件永远为真，进入**无限循环**。
+
+触发时机：页面加载时 fetch `/extra_patterns` 会调用 `_populateLevelSelects`，此时 `dl.options.length=3`（初始），loop 不进入，正常追加若干 options（length 变为 3+N）。之后用户打开「解析配置」Tab 触发 `kwRender`，再次调用 `_populateLevelSelects`，此时 `dl.options.length > 3`，进入死循环。
+
+**Bug 2（非法 HTML ID）**
+
+`kwRender` 使用 `kw` 直接拼接元素 ID：`id="kwrow-JVP TEST FAILED"`。HTML ID 不允许包含空格；`document.getElementById('kwrow-JVP TEST FAILED')` 在各浏览器行为不一致，导致编辑/删除按钮失效。此外，后端验证正则 `^[A-Z0-9_]+$` 拒绝含空格的关键词（而默认值中就含 `JVP TEST FAILED`），造成验证规则与实际数据不一致。
+
+### 修复方案
+
+**Bug 1**：将 `dl.remove(3)` 改为 `dl.options[3].remove()`，移除的是第 4 个 `<option>` 子元素而非 datalist 本身。
+
+**Bug 2**：
+- `kwRender` 改用数组下标（`i`）作为元素 ID（`id="kwrow-0"`, `id="kwrow-1"` 等），避免关键词内容出现在 ID 中；引入模块变量 `_kwPatterns` 存储当前列表，供 `kwStartEdit/kwCancelEdit/kwSaveEdit/kwDelete` 通过下标取回原始关键词值
+- `app.py` 后端验证改为 `^[A-Z0-9_ ]+$`，允许关键词中包含空格（支持 `JVP TEST FAILED` 等多词关键词）
+
+### 涉及文件
+
+- `templates/index.html`（`_populateLevelSelects`、`kwRender`、`kwStartEdit`、`kwCancelEdit`、`kwSaveEdit`、`kwDelete`）
+- `app.py`（`extra_patterns_add`、`extra_patterns_update` 验证正则和错误文字）
+- `dist/triage_tool.exe`（重新打包）

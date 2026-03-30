@@ -83,12 +83,14 @@ D:\sim\run1\*.log"></textarea>
     <div id="modeAdd" style="display:none">
       <div class="form-grid" style="margin-top:4px">
         <div class="fg-item">
-          <label>错误类型 <span class="req">*</span></label>
-          <select class="fi" id="addType">
-            <option value="UVM_ERROR">UVM_ERROR</option>
-            <option value="UVM_FATAL">UVM_FATAL</option>
-            <option value="UVM_WARNING">UVM_WARNING</option>
-          </select>
+          <label>错误类型</label>
+          <input class="fi" id="addType" list="addTypeList" placeholder="不填表示不限类型" autocomplete="off">
+          <datalist id="addTypeList">
+            <option value="">不限</option>
+            <option value="UVM_ERROR">
+            <option value="UVM_FATAL">
+            <option value="UVM_WARNING">
+          </datalist>
         </div>
         <div class="fg-item">
           <label>错误ID</label>
@@ -153,7 +155,7 @@ D:\sim\run1\*.log"></textarea>
         <div id="kwList" class="kw-list"></div>
         <div class="kw-add-row">
           <input type="text" id="kwNewInput" class="fi kw-new-input"
-                 placeholder="新关键词（如 ERROR、VIRL_MEM_WARNING）" maxlength="64">
+                 placeholder="新关键词（如 ERROR、JVP TEST FAILED）" maxlength="64">
           <button class="btn btn-primary" onclick="kwAdd()">+ 添加</button>
         </div>
         <div id="kwMsg" class="err-msg" style="margin-top:6px"></div>
@@ -252,6 +254,10 @@ D:\sim\run1\*.log"></textarea>
     document.getElementById('errMsg').textContent = '';
     if (mode !== 'query') document.getElementById('queryResultsWrap').style.display = 'none';
     if (mode === 'keywords') kwLoadList();
+    // 切换到非分析 Tab 时隐藏进度区
+    if (mode !== 'upload' && mode !== 'path') {
+      document.getElementById('progressWrap').style.display = 'none';
+    }
   }
 
   // ── 上传模式：拖拽 & 文件选择 ─────────────────────
@@ -572,6 +578,26 @@ D:\sim\run1\*.log"></textarea>
     wrap.scrollIntoView({behavior: 'smooth', block: 'start'});
   }
 
+  // ── 动态填充"错误类型"下拉框（查询 + 添加条目）──────
+  function _populateLevelSelects(extraPatterns) {
+    // qLevel：固定前3项（不限/UVM_FATAL/UVM_ERROR），后面是额外关键词
+    const qLevel = document.getElementById('qLevel');
+    const savedQ = qLevel.value;
+    while (qLevel.options.length > 3) qLevel.remove(3);
+    extraPatterns.forEach(p => qLevel.add(new Option(p, p)));
+    if ([...qLevel.options].some(o => o.value === savedQ)) qLevel.value = savedQ;
+
+    // addType（datalist）：固定 4 项（不限/UVM_ERROR/UVM_FATAL/UVM_WARNING）+ 额外关键词
+    // 注意：datalist 无 remove(index) 方法，须用 option.remove() 逐项删除
+    const dl = document.getElementById('addTypeList');
+    while (dl.options.length > 4) dl.options[4].remove();
+    extraPatterns.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p;
+      dl.appendChild(opt);
+    });
+  }
+
   // ── 解析配置：加载全部 ─────────────────────────────
   function kwLoadList() {
     fetch('/extra_patterns')
@@ -584,47 +610,53 @@ D:\sim\run1\*.log"></textarea>
       .catch(() => { document.getElementById('ppMsg').textContent = '加载失败'; });
   }
 
+  // 当前渲染的关键词列表（供下标函数引用原始值）
+  let _kwPatterns = [];
+
   function kwRender(patterns) {
+    _kwPatterns = patterns;
+    _populateLevelSelects(patterns);
     const list = document.getElementById('kwList');
     if (!patterns.length) {
       list.innerHTML = '<div class="kw-empty">暂无关键词，请在下方添加</div>';
       return;
     }
-    list.innerHTML = patterns.map(kw => `
-      <div class="kw-row" id="kwrow-${esc(kw)}">
-        <span class="kw-name" id="kwname-${esc(kw)}">${esc(kw)}</span>
-        <input class="fi kw-edit-input" id="kwedit-${esc(kw)}" value="${esc(kw)}"
+    // 使用数组下标作为元素 ID，避免关键词含空格/特殊字符导致 ID 非法
+    list.innerHTML = patterns.map((kw, i) => `
+      <div class="kw-row" id="kwrow-${i}">
+        <span class="kw-name" id="kwname-${i}">${esc(kw)}</span>
+        <input class="fi kw-edit-input" id="kwedit-${i}" value="${esc(kw)}"
                style="display:none" maxlength="64">
         <div class="kw-actions">
-          <button class="btn-entry-edit" onclick="kwStartEdit('${esc(kw)}')">✏ 编辑</button>
-          <button class="btn-entry-del"  onclick="kwDelete('${esc(kw)}')">🗑 删除</button>
+          <button class="btn-entry-edit" onclick="kwStartEdit(${i})">✏ 编辑</button>
+          <button class="btn-entry-del"  onclick="kwDelete(${i})">🗑 删除</button>
         </div>
-        <div class="kw-save-actions" id="kwsave-${esc(kw)}" style="display:none">
-          <button class="btn btn-primary btn-sm" onclick="kwSaveEdit('${esc(kw)}')">保存</button>
-          <button class="btn btn-secondary btn-sm" onclick="kwCancelEdit('${esc(kw)}', '${esc(kw)}')">取消</button>
+        <div class="kw-save-actions" id="kwsave-${i}" style="display:none">
+          <button class="btn btn-primary btn-sm" onclick="kwSaveEdit(${i})">保存</button>
+          <button class="btn btn-secondary btn-sm" onclick="kwCancelEdit(${i})">取消</button>
         </div>
       </div>`).join('');
   }
 
-  function kwStartEdit(kw) {
-    document.getElementById('kwname-'  + kw).style.display = 'none';
-    document.getElementById('kwedit-'  + kw).style.display = '';
-    document.getElementById('kwedit-'  + kw).focus();
-    const actions = document.querySelector('#kwrow-' + kw + ' .kw-actions');
-    if (actions) actions.style.display = 'none';
-    document.getElementById('kwsave-' + kw).style.display = '';
+  function kwStartEdit(i) {
+    document.getElementById('kwname-' + i).style.display = 'none';
+    document.getElementById('kwedit-' + i).style.display = '';
+    document.getElementById('kwedit-' + i).focus();
+    document.querySelector('#kwrow-' + i + ' .kw-actions').style.display = 'none';
+    document.getElementById('kwsave-' + i).style.display = '';
   }
 
-  function kwCancelEdit(kw) {
-    document.getElementById('kwname-'  + kw).style.display = '';
-    document.getElementById('kwedit-'  + kw).style.display = 'none';
-    const actions = document.querySelector('#kwrow-' + kw + ' .kw-actions');
-    if (actions) actions.style.display = '';
-    document.getElementById('kwsave-' + kw).style.display = 'none';
+  function kwCancelEdit(i) {
+    document.getElementById('kwname-' + i).style.display = '';
+    document.getElementById('kwedit-' + i).value = _kwPatterns[i];
+    document.getElementById('kwedit-' + i).style.display = 'none';
+    document.querySelector('#kwrow-' + i + ' .kw-actions').style.display = '';
+    document.getElementById('kwsave-' + i).style.display = 'none';
   }
 
-  async function kwSaveEdit(oldKw) {
-    const newKw = document.getElementById('kwedit-' + oldKw).value.trim().toUpperCase();
+  async function kwSaveEdit(i) {
+    const oldKw = _kwPatterns[i];
+    const newKw = document.getElementById('kwedit-' + i).value.trim().toUpperCase();
     if (!newKw) return;
     const d = await fetch('/extra_patterns/update',
       {method:'POST', headers:{'Content-Type':'application/json'},
@@ -633,7 +665,8 @@ D:\sim\run1\*.log"></textarea>
     if (d.success) kwRender(d.patterns);
   }
 
-  async function kwDelete(kw) {
+  async function kwDelete(i) {
+    const kw = _kwPatterns[i];
     const d = await fetch('/extra_patterns/delete',
       {method:'POST', headers:{'Content-Type':'application/json'},
        body: JSON.stringify({keyword: kw})}).then(r => r.json());
@@ -727,6 +760,20 @@ D:\sim\run1\*.log"></textarea>
       ppRender(d.patterns);
     }
   }
+
+  // 页面加载时初始化"错误类型"下拉框（无需先打开解析配置 Tab）
+  fetch('/extra_patterns').then(r => r.json())
+    .then(d => _populateLevelSelects(d.patterns || []))
+    .catch(() => {});
+
+  // 浏览器从 Back/Forward Cache 恢复页面时（← 返回）重置分析 UI，
+  // 防止进度圈和禁用按钮残留在页面上。
+  window.addEventListener('pageshow', function(e) {
+    if (e.persisted) {
+      _resetAnalyzeBtn();
+      document.getElementById('progressWrap').style.display = 'none';
+    }
+  });
 </script>
 </body>
 </html>

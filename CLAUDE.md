@@ -13,6 +13,8 @@ log_analysis/triage_tool/
 ├── install_packages.py # Offline installer helper for Linux intranet deployment
 ├── triage_tool.spec    # PyInstaller build spec (auto-generated, do not edit)
 ├── error_db.xlsx       # Default knowledge base (Excel)
+├── extra_patterns.json # Runtime config: extra error keywords (auto-created next to exe)
+├── pass_patterns.json  # Runtime config: pass marker strings (auto-created next to exe)
 ├── core/
 │   ├── log_parser.py   # UVM log streaming parser + parallel dispatch
 │   ├── matcher.py      # Two-stage KB matching (per top_errors entry)
@@ -68,11 +70,17 @@ On Linux intranet machines, use `install_packages.py` instead of manual pip comm
 This is a Flask web app for triaging UVM simulation log files against an Excel knowledge base.
 
 **Request flow:**
-1. User uploads `.log` files **or** specifies server-local glob patterns → `/analyze`
-2. `core/log_parser.py` streams each file line-by-line (constant memory regardless of file size, per-file limit 10 GB), extracts up to `TOP_N=5` `UVM_FATAL/ERROR` entries (`UVM_WARNING` is counted but not matched) with up to 3 continuation lines each; files are parsed in parallel via `ThreadPoolExecutor`; scanning continues to end-of-file to produce accurate totals. Each parse result includes `all_errors` (unique `(level, error_id)` pairs across all files, first occurrence only) and per-file `status` (`'pass'` if zero FATAL+ERROR, else `'fail'`)
-3. `core/matcher.py` runs two-stage KB matching on **each** of the `top_errors` entries: (1) exact error ID + type, (2) all keywords present in description (AND logic); Chinese full-width comma `，` treated same as `,`
-4. Results rendered in `result.html` with per-error match panels; unmatched errors can be written back via `/writeback` (requires `error_idx` to target a specific entry)
-5. Reports exported as Excel or HTML via `/export/excel` and `/export/html`
+1. User uploads `.log` files **or** specifies server-local glob patterns → `/analyze` (returns `{job_id}` immediately; analysis runs in a background `threading.Thread`)
+2. Frontend polls progress via SSE (`/progress/<job_id>`); path-mode glob expansion happens inside the background thread (`phase='scanning'`), not in the request handler. On SSE `onerror`, frontend falls back to `/progress_status/<job_id>` (single JSON poll) to avoid Linux TCP race.
+3. `core/log_parser.py` streams each file line-by-line (constant memory, per-file limit 10 GB), extracts up to `TOP_N=5` error entries with up to 3 continuation lines each; files are parsed in parallel via `ThreadPoolExecutor`. Recognises two error classes:
+   - **UVM pattern** (priority): `UVM_FATAL/ERROR/WARNING` with standard `@ time: component [ID] msg` format
+   - **Generic keyword pattern** (fallback): `^KEYWORD: msg` (line-start + colon) for any keyword in `EXTRA_PATTERNS` (`extra_patterns.json`)
+   - `UVM_WARNING` and WARNING-suffix extra keywords are counted but not entered into `top_errors`
+   - **Pass/fail logic**: `PASS` = zero non-WARNING errors **AND** any `PASS_PATTERNS` string found in file; `FAIL` = otherwise. If `pass_patterns.json` is empty, falls back to old logic (pass = zero errors only).
+   - Each result includes `statistics` (dynamic dict with all levels), `pass_found` (bool), `all_errors` (unique `(level, error_id)` pairs), and `status`
+4. `core/matcher.py` runs two-stage KB matching on **each** of the `top_errors` entries: (1) exact error ID + type, (2) all keywords present in description (AND logic); Chinese full-width comma `，` treated same as `,`
+5. Results rendered in `result.html`: **FAIL files listed first** (always expanded), **PASS files collapsed** under a "▶ PASS (N)" group header; per-error match panels; unmatched errors writable via `/writeback` (requires `error_idx`)
+6. Reports exported as Excel or HTML via `/export/excel` and `/export/html`
 
 **KB management routes** (independent of the analyze/result session flow):
 - `POST /query` — fuzzy search KB: exact `level` filter, partial `error_id` match, any-token scoring across 6 fields; returns top 100
@@ -82,11 +90,18 @@ This is a Flask web app for triaging UVM simulation log files against an Excel k
 
 All write endpoints share the same duplicate detection flow: call `find_duplicates`, return `{duplicate: true, conflicts: [...]}` for the frontend to confirm, then re-call with `force: true` to proceed. Dedup rules (any one match triggers conflict, `录入人` excluded): same `错误类型` + `错误ID`; same `错误类型` + `关键描述关键词`; same `错误类型` + `报错原因`; same `错误类型` + `解决方案`.
 
+**Parse config routes** (live-reload globals, no restart needed):
+- `GET/POST /extra_patterns`, `/extra_patterns/add|delete|update` — manage `EXTRA_PATTERNS` list in memory + `extra_patterns.json`
+- `GET/POST /pass_patterns`, `/pass_patterns/add|delete|update` — manage `PASS_PATTERNS` list in memory + `pass_patterns.json`
+- `_valid_levels()` is called dynamically so `/writeback` and `/kb/add` automatically accept newly added extra keywords as valid `错误类型` values
+
 **Dual input modes:**
 - *Upload mode*: files saved to `uploads/` with session-prefixed names, deleted immediately after parsing (result kept in `_store`)
-- *Path mode*: server reads files directly via `glob.glob()` patterns (supports `**` recursion, comma/newline-separated patterns, max 5000 files per request, `.log` extension filter)
+- *Path mode*: glob expansion runs **inside the background thread** (job starts with `phase='scanning'`); supports `**` recursion, comma/newline-separated patterns, max 5000 files per request, `.log` extension filter
 
 **Session state** is stored in module-level dict `_store` keyed by a UUID from the Flask session cookie. Each entry holds `{'results': ..., 'db_path': ..., 'ts': time.time()}`. Entries expire after 2 hours (`_STORE_TTL = 7200`); stale entries are swept on each access. State is lost on restart by design.
+
+**Background job state** is stored in module-level dict `_jobs[job_id]` with fields `phase`, `pct`, `total`, `parse_done`, `match_done`, `logs`, `redirect`, `error`, `ts`. Phase sequence: `scanning` (path-mode glob) → `parsing` → `matching` → `done|error`. SSE generator adds `sleep(1)` before closing on terminal phases to avoid Linux TCP FIN race. `sid` is extracted before the thread starts since Flask's session proxy is not thread-safe.
 
 ### PyInstaller Path Handling
 

@@ -8,6 +8,7 @@ import time
 import uuid
 import secrets
 import getpass
+import subprocess
 import threading
 import glob as _glob
 from pathlib import Path
@@ -84,7 +85,7 @@ _CONFLICT_FIELDS = ['错误类型', '错误ID', '关键描述关键词', '报错
 
 # ── 额外错误关键词配置 ───────────────────────────────────
 _EXTRA_PATTERNS_FILE    = BASE_DIR / 'extra_patterns.json'
-_EXTRA_PATTERNS_DEFAULT = ['ERROR', 'FATAL', 'FAILED']
+_EXTRA_PATTERNS_DEFAULT = ['ERROR', 'FATAL', 'FAILED', 'VIRL_MEM_WARNING', 'JVP TEST FAILED']
 _extra_patterns_lock    = threading.Lock()
 
 def _load_extra_patterns() -> list:
@@ -254,7 +255,7 @@ def _run_analysis(job_id: str, sid: str, input_data: list,
 
         # 还原显示文件名，path_mode 下同时保存完整路径供查看功能使用
         for r in results:
-            r['file_path'] = r['file'] if path_mode else ''
+            r['file_path'] = r.get('filepath', '') if path_mode else ''
             r['file'] = Path(r['file']).name
             sid_prefix = f'{sid}_'
             if r['file'].startswith(sid_prefix):
@@ -478,6 +479,27 @@ def view_log():
     return send_file(str(p), mimetype='text/plain; charset=utf-8')
 
 
+@app.route('/open_in_editor')
+def open_in_editor():
+    """用 gvim 打开日志文件（仅 path_mode 可用，且文件须在本次会话结果中）。"""
+    sid = _sid()
+    results, _ = _get_results(sid)
+    req_path = request.args.get('path', '').strip()
+    if not req_path:
+        return jsonify({'ok': False, 'error': '未指定文件路径'}), 400
+    allowed = {r.get('file_path', '') for r in results} - {''}
+    if req_path not in allowed:
+        return jsonify({'ok': False, 'error': '无权限访问该文件（仅限本次分析的路径模式日志）'}), 403
+    p = Path(req_path)
+    if not p.is_file():
+        return jsonify({'ok': False, 'error': '文件不存在或已被移动'}), 404
+    try:
+        subprocess.Popen(['gvim', str(p)])
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
 @app.route('/writeback', methods=['POST'])
 def writeback():
     sid = _sid()
@@ -603,9 +625,9 @@ def kb_add():
     MAX_LEN = 500
 
     level = data.get('错误类型', '').strip().upper()
-    if level not in _valid_levels():
+    if level and level not in _valid_levels():
         valid_str = ' / '.join(sorted(_valid_levels()))
-        return jsonify({'success': False, 'error': f'错误类型无效，须为 {valid_str}'}), 400
+        return jsonify({'success': False, 'error': f'错误类型无效，须为空（不限）或 {valid_str}'}), 400
     reason = data.get('报错原因', '').strip()
     if not reason:
         return jsonify({'success': False, 'error': '报错原因不能为空'}), 400
@@ -687,8 +709,8 @@ def extra_patterns_add():
     kw = data.get('keyword', '').strip().upper()
     if not kw:
         return jsonify({'success': False, 'error': '关键词不能为空'}), 400
-    if not re.match(r'^[A-Z0-9_]+$', kw):
-        return jsonify({'success': False, 'error': '关键词只能包含大写字母、数字和下划线'}), 400
+    if not re.match(r'^[A-Z0-9_ ]+$', kw):
+        return jsonify({'success': False, 'error': '关键词只能包含大写字母、数字、下划线或空格'}), 400
     with _extra_patterns_lock:
         if kw in EXTRA_PATTERNS:
             return jsonify({'success': False, 'error': '关键词已存在'})

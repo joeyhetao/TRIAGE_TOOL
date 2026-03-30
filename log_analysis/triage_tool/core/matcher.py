@@ -24,11 +24,13 @@ def match_error(error: dict, db_entries: list) -> dict:
                       reverse=True)
 
     # Step1: 收集所有 错误ID + 错误类型 均匹配的行
+    # 错误类型为空（不限）的 KB 条目可匹配任意 level
     id_matches = [
         e for e in db_entries
         if str(e.get('错误ID', '')).strip().lower() == error_id
         and error_id
-        and str(e.get('错误类型', '')).strip().upper() == level
+        and (not str(e.get('错误类型', '')).strip()
+             or str(e.get('错误类型', '')).strip().upper() == level)
     ]
     if id_matches:
         id_matches = _sort_by_date(id_matches)

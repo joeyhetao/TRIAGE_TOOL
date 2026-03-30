@@ -1,7 +1,7 @@
 # 仿真日志分类分诊工具 — 产品需求文档（PRD）
 
-**文档版本**：v1.8
-**基准代码版本**：2026-03-29
+**文档版本**：v1.9
+**基准代码版本**：2026-03-30
 **适用范围**：功能增改、需求评审、开发参考
 
 ---
@@ -28,7 +28,7 @@
 
 ---
 
-## 3. 当前功能（v1.8）
+## 3. 当前功能（v1.9）
 
 ### 3.1 日志输入
 
@@ -114,7 +114,7 @@ UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
-| 错误类型 | **是**（添加/编辑） | UVM_FATAL / UVM_ERROR / UVM_WARNING / **额外关键词**（v1.8：下拉选项动态包含当前 `extra_patterns.json` 中的全部关键词）；回写表单中显示为下拉选择框（v1.6 新增） |
+| 错误类型 | **是**（添加/编辑） | UVM_FATAL / UVM_ERROR / UVM_WARNING / **额外关键词**（下拉候选项动态包含当前 `extra_patterns.json` 中的全部关键词）；回写表单中显示为下拉选择框（v1.6 新增）；首页「添加条目」Tab 中改为可输入+可选 combobox（v1.9 升级） |
 | 关键描述关键词 | 否 | 逗号分隔，默认预填该条错误描述前50字符 |
 | 报错原因 | **是** | 根因说明，不能为空，服务端校验 |
 | 所属模块 | 否 | 默认预填错误位置文件名 |
@@ -160,7 +160,8 @@ UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
 首页第四个 Tab「➕ 添加条目」，无需上传 log，直接向知识库追加新记录：
 
 - 提供完整录入表单，字段与知识库 Schema 一致（见 4.1）
-- `错误类型` 和 `报错原因` 为必填项，服务端校验
+- `错误类型` 为**可输入可选**的 combobox（`<input list>`）：下拉候选项包含 UVM_ERROR / UVM_FATAL / UVM_WARNING 及当前 extra_patterns 中所有额外关键词，用户也可手动输入自定义值（v1.9 升级）
+- `报错原因` 为必填项，服务端校验
 - 写入成功后表单自动清空，可连续录入多条
 - 「清空」按钮一键重置表单至默认状态
 - 写入前执行去重检测（见 3.10），发现重复时展示警告
@@ -235,7 +236,7 @@ UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
 
 - **匹配格式**：`^关键词: 描述内容`（行首 + 冒号，不区分大小写，UVM 正则优先，generic 正则兜底）
 - **与 UVM 等价**：计入错误统计、进入 top_errors、参与知识库匹配、影响 pass/fail 判断
-- **默认关键词**：`ERROR`、`FATAL`、`FAILED`（首次运行时无配置文件时使用）
+- **默认关键词**：`ERROR`、`FATAL`、`FAILED`、`VIRL_MEM_WARNING`、`JVP TEST FAILED`（首次运行时无配置文件时使用）
 - **配置文件**：`extra_patterns.json`（与 exe 同目录），自动创建，JSON 字符串数组
 - **UI 管理**：支持增删改，即时生效（下次分析时使用新列表）；关键词仅允许大写字母、数字和下划线
 - **动态化影响**：结果页统计卡、错误类型下拉框、`_valid_levels()` 校验集合均动态包含当前关键词列表
@@ -440,3 +441,7 @@ _jobs[job_id] = {
 | v1.8 | 2026-03-29 | **PASS/FAIL 逻辑重设计**：PASS = 无任何非 WARNING 错误 AND 找到通过标记；FAIL = 有错误 OR 无错误但无通过标记；无通过标记配置时退化（只看有无错误） | `core/log_parser.py` |
 | v1.8 | 2026-03-29 | **结果页 FAIL/PASS 分组导航**：左侧导航 FAIL 日志在上（始终展开），PASS 日志折叠于「▶ PASS (N)」分组头下（默认收起）；默认激活第一个 FAIL（全 PASS 时激活第一个 PASS）；`focus=` URL 跳转修复（改用 `data-idx` 属性而非 DOM 顺序索引，避免重排后错位；自动展开 pass 组） | `templates/result.html`, `static/style.css` |
 | v1.8 | 2026-03-29 | **动态统计与下拉框**：结果页统计卡、错误类型下拉框、去重跳转链接均动态包含 extra_patterns；badge/stat-chip 新增兜底灰色和紫色 extra 样式；`_unique_error_counts()` 动态化；`_valid_levels()` 动态化 | `app.py`, `templates/result.html`, `static/style.css` |
+| v1.9 | 2026-03-30 | **默认额外关键词扩充**：`_EXTRA_PATTERNS_DEFAULT` 从 `['ERROR','FATAL','FAILED']` 扩展为 `['ERROR','FATAL','FAILED','VIRL_MEM_WARNING','JVP TEST FAILED']`，覆盖常见 JVP 测试失败和内存警告格式 | `app.py` |
+| v1.9 | 2026-03-30 | **查询/添加条目错误类型动态化**：首页「查询知识库」`qLevel` 下拉和「添加条目」`addType` 均在页面加载时自动追加当前 extra_patterns；配置变更后实时同步（通过 `kwRender` 回调）；`_populateLevelSelects()` 函数统一管理 | `templates/index.html` |
+| v1.9 | 2026-03-30 | **添加条目错误类型改为 combobox**：`addType` 由 `<select>` 改为 `<input list>` + `<datalist>`，用户既可下拉选择预设值，也可手动输入任意自定义错误类型 | `templates/index.html` |
+| v1.9 | 2026-03-30 | **BUG-015 修复（非分析 Tab 残留进度区）**：`switchMode` 切换到「查询知识库/添加条目/解析配置」Tab 时自动隐藏 `progressWrap`，消除分析完成后进度日志在非分析界面残留的问题 | `templates/index.html` |
