@@ -471,9 +471,14 @@ def view_log():
     if not req_path:
         return '未指定文件路径', 400
     allowed = {r.get('file_path', '') for r in results} - {''}
-    if req_path not in allowed:
+    # 对传入路径做 resolve，处理软链接/路径表示不一致的情况
+    try:
+        req_real = str(Path(req_path).resolve())
+    except Exception:
+        req_real = req_path
+    if req_path not in allowed and req_real not in allowed:
         return '无权限访问该文件（仅限本次分析的路径模式日志）', 403
-    p = Path(req_path)
+    p = Path(req_real) if req_real in allowed else Path(req_path)
     if not p.is_file():
         return '文件不存在或已被移动', 404
     return send_file(str(p), mimetype='text/plain; charset=utf-8')
@@ -488,16 +493,30 @@ def open_in_editor():
     if not req_path:
         return jsonify({'ok': False, 'error': '未指定文件路径'}), 400
     allowed = {r.get('file_path', '') for r in results} - {''}
-    if req_path not in allowed:
+    # 对传入路径做 resolve，处理软链接/路径表示不一致的情况
+    try:
+        req_real = str(Path(req_path).resolve())
+    except Exception:
+        req_real = req_path
+    if req_path not in allowed and req_real not in allowed:
         return jsonify({'ok': False, 'error': '无权限访问该文件（仅限本次分析的路径模式日志）'}), 403
-    p = Path(req_path)
+    p = Path(req_real) if req_real in allowed else Path(req_path)
     if not p.is_file():
         return jsonify({'ok': False, 'error': '文件不存在或已被移动'}), 404
     try:
-        subprocess.Popen(['gvim', str(p)])
+        # 显式传递当前环境（含 DISPLAY），避免从终端启动时 DISPLAY 丢失
+        env = os.environ.copy()
+        subprocess.Popen(['gvim', str(p)], env=env,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return jsonify({'ok': True})
+    except FileNotFoundError:
+        return jsonify({'ok': False, 'error': 'gvim 未安装或不在 PATH 中'}), 500
     except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
+        err = str(e)
+        if 'DISPLAY' in err or 'display' in err.lower():
+            return jsonify({'ok': False,
+                            'error': '无法连接显示器，请复制路径后在终端手动执行 gvim'}), 500
+        return jsonify({'ok': False, 'error': err}), 500
 
 
 @app.route('/writeback', methods=['POST'])
