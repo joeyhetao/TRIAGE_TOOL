@@ -76,7 +76,13 @@ This is a Flask web application for triaging UVM simulation log files. The workf
 
 ### Key Files
 
-- [app.py](app.py) — Flask routes; `_store` dict with 2h TTL for session state; `sys.frozen` guard for PyInstaller path resolution; `MAX_FILE_SIZE = 10 GB`, `MAX_PATH_FILES = 5000`
+- [app.py](app.py) — Flask entry point (~100 lines): path init, secret key, blueprint registration, `/` route, startup cleanup
+- [state.py](state.py) — all shared state: `_store`/`_jobs` dicts, `EXTRA_PATTERNS`/`PASS_PATTERNS` lists, locks, path constants, helper functions (`_sid`, `_get_results`, `_set_results`, `_valid_levels`, `_validate_db_path`, `_conflict_summary`, `_unique_error_counts`); all blueprints `import state` — never `from state import` mutable lists
+- [blueprints/analysis.py](blueprints/analysis.py) — `/analyze`, `/progress/<id>` (SSE), `/progress_status/<id>`, `/result`, `/errors`, `/view_log`, `/open_in_editor`; `_run_analysis` background thread
+- [blueprints/writeback.py](blueprints/writeback.py) — `/writeback`: append KB entry + update in-memory result
+- [blueprints/kb.py](blueprints/kb.py) — `/query`, `/kb/add`, `/kb/update`, `/kb/delete`
+- [blueprints/config_bp.py](blueprints/config_bp.py) — `/extra_patterns*`, `/pass_patterns*` (live-reload, no restart)
+- [blueprints/export.py](blueprints/export.py) — `/export/excel`, `/export/html`
 - [core/log_parser.py](core/log_parser.py) — streaming UVM log parser; `pending` state machine for continuation lines; `parse_logs()` dispatches parallel `ThreadPoolExecutor`
 - [core/matcher.py](core/matcher.py) — two-stage matching; iterates `top_errors` list, attaches `match` field to each entry; supports `，` in keyword splits
 - [core/db_manager.py](core/db_manager.py) — read/write Excel KB; `threading.Lock` + `_FileLock`; `time.time()` for stale lock age; `os.remove()` wrapped for Windows compat

@@ -74,6 +74,20 @@ HEADERS = [
 ]
 
 
+def _save_atomic(wb, db_path: str) -> None:
+    """先写 .tmp 再原子重命名，防止写入中途崩溃导致 Excel 损坏。"""
+    tmp = str(db_path) + '.tmp'
+    try:
+        wb.save(tmp)
+        os.replace(tmp, db_path)
+    except Exception:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def ensure_db(db_path: str) -> None:
     """若知识库不存在则自动创建含表头的空白Excel文件。"""
     path = Path(db_path)
@@ -178,7 +192,7 @@ def update_entry(db_path: str, row_idx: int, new_data: dict) -> None:
             for col_idx, header in enumerate(headers, 1):
                 if header in new_data:
                     ws.cell(row=row_idx, column=col_idx, value=new_data[header])
-            wb.save(db_path)
+            _save_atomic(wb, db_path)
 
 
 def delete_entry(db_path: str, row_idx: int) -> None:
@@ -188,7 +202,7 @@ def delete_entry(db_path: str, row_idx: int) -> None:
             wb = openpyxl.load_workbook(db_path)
             ws = wb.active
             ws.delete_rows(row_idx)
-            wb.save(db_path)
+            _save_atomic(wb, db_path)
 
 
 def append_entry(db_path: str, entry: dict) -> None:
@@ -204,4 +218,4 @@ def append_entry(db_path: str, entry: dict) -> None:
             wb = openpyxl.load_workbook(db_path)
             ws = wb.active
             ws.append(row)
-            wb.save(db_path)
+            _save_atomic(wb, db_path)

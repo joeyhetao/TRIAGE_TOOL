@@ -1,7 +1,7 @@
 # 仿真日志分类分诊工具 — 产品需求文档（PRD）
 
-**文档版本**：v1.9
-**基准代码版本**：2026-03-30
+**文档版本**：v2.1
+**基准代码版本**：2026-04-02
 **适用范围**：功能增改、需求评审、开发参考
 
 ---
@@ -28,7 +28,7 @@
 
 ---
 
-## 3. 当前功能（v1.9）
+## 3. 当前功能（v2.0）
 
 ### 3.1 日志输入
 
@@ -445,3 +445,4 @@ _jobs[job_id] = {
 | v1.9 | 2026-03-30 | **查询/添加条目错误类型动态化**：首页「查询知识库」`qLevel` 下拉和「添加条目」`addType` 均在页面加载时自动追加当前 extra_patterns；配置变更后实时同步（通过 `kwRender` 回调）；`_populateLevelSelects()` 函数统一管理 | `templates/index.html` |
 | v1.9 | 2026-03-30 | **添加条目错误类型改为 combobox**：`addType` 由 `<select>` 改为 `<input list>` + `<datalist>`，用户既可下拉选择预设值，也可手动输入任意自定义错误类型 | `templates/index.html` |
 | v1.9 | 2026-03-30 | **BUG-015 修复（非分析 Tab 残留进度区）**：`switchMode` 切换到「查询知识库/添加条目/解析配置」Tab 时自动隐藏 `progressWrap`，消除分析完成后进度日志在非分析界面残留的问题 | `templates/index.html` |
+| v2.0 | 2026-04-02 | **代码架构重构（Flask Blueprint 拆分）**：`app.py` 从 ~964 行缩减为 ~100 行；所有路由拆分为 5 个 Blueprint：`blueprints/analysis.py`（7条路由含后台线程 `_run_analysis`）、`blueprints/writeback.py`（1条）、`blueprints/kb.py`（4条）、`blueprints/config_bp.py`（8条）、`blueprints/export.py`（2条）；新增 `state.py` 集中管理所有共享状态（`_store`/`_jobs`/`EXTRA_PATTERNS`/`PASS_PATTERNS` 及所有工具函数）；无任何功能变更 | `app.py`, `state.py`, `blueprints/` |
