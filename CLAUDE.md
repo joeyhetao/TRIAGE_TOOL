@@ -144,6 +144,5 @@ _FileLock       →  serializes across processes/machines (stdlib only)
 
 - [log_analysis/triage_tool/PRD.md](log_analysis/triage_tool/PRD.md) — Full product requirements; update when adding or changing features
 - [log_analysis/triage_tool/BUGLOG.md](log_analysis/triage_tool/BUGLOG.md) — Historical bug fixes with root cause analysis
-- [log_analysis/triage_tool/LLM_INTEGRATION_PLAN.md](log_analysis/triage_tool/LLM_INTEGRATION_PLAN.md) — Design spec (v2.0) for optional LLM enhancement layer; **not yet implemented**. Covers `core/llm_client.py` interface, 6 AI injection points (P1–P6), prompt strategies, and graceful degradation when `llm_config.json` is absent
-- [log_analysis/triage_tool/LLM_INTEGRATION_PLAN_ADD.md](log_analysis/triage_tool/LLM_INTEGRATION_PLAN_ADD.md) — Addendum to v2.0 plan; discusses P7 (KB semantic dedup quality check), dual-mode (fast/deep) batch processing, progressive progress display, and Excel export of dedup results
+- [log_analysis/triage_tool/LLM_INTEGRATION_PLAN.md](log_analysis/triage_tool/LLM_INTEGRATION_PLAN.md) — Design spec (v2.1) for optional LLM enhancement layer; **not yet implemented**. Covers `core/llm_client.py` interface, 8 AI injection points (P1–P7 + engineering enhancements), prompt strategies, dual-mode P7 dedup with Excel export, and graceful degradation when `llm_config.json` is absent
 - [log_analysis/triage_tool/velvety-wishing-dewdrop.md](log_analysis/triage_tool/velvety-wishing-dewdrop.md) — Earlier LLM design draft (v1.0); superseded by `LLM_INTEGRATION_PLAN.md`

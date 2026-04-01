@@ -157,20 +157,23 @@ def _conflict_summary(conflicts: list) -> list:
     """返回冲突条目的摘要字段列表，用于前端展示。"""
     return [{f: str(e.get(f, '') or '') for f in _CONFLICT_FIELDS} for e in conflicts]
 _store: dict = {}        # sid -> {'results': list, 'db_path': str, 'ts': float}
+_store_lock = threading.Lock()
 
 
 def _get_results(sid: str):
     """读取会话数据，同时清理过期条目。"""
-    now = time.time()
-    stale = [k for k, v in list(_store.items()) if now - v['ts'] > _STORE_TTL]
-    for k in stale:
-        del _store[k]
-    entry = _store.get(sid)
-    return (entry['results'], entry['db_path']) if entry else ([], DB_DEFAULT)
+    with _store_lock:
+        now = time.time()
+        stale = [k for k, v in list(_store.items()) if now - v['ts'] > _STORE_TTL]
+        for k in stale:
+            del _store[k]
+        entry = _store.get(sid)
+        return (entry['results'], entry['db_path']) if entry else ([], DB_DEFAULT)
 
 
 def _set_results(sid: str, results: list, db_path: str):
-    _store[sid] = {'results': results, 'db_path': db_path, 'ts': time.time()}
+    with _store_lock:
+        _store[sid] = {'results': results, 'db_path': db_path, 'ts': time.time()}
 
 
 def _run_analysis(job_id: str, sid: str, input_data: list,

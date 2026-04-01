@@ -4,6 +4,58 @@
 
 ---
 
+## BUG-017 _store 并发访问竞态条件导致去重详情页信息丢失
+
+**发现日期**：2026-04-01
+**状态**：已修复
+
+### 现象
+
+路径模式分析大量日志完成后，汇总栏去重报错数字（如 UVM_ERROR 6条）显示正常，但点击进入 `/errors?level=xxx` 详情页时列表为空。偶发，非必现。
+
+### 根因分析
+
+`_store` 字典无任何同步机制，后台分析线程（`_run_analysis`）调用 `_set_results` 写入时，Flask 请求线程可能同时调用 `_get_results` 执行读取 + TTL 过期清理（`del _store[k]`），导致两种竞态：
+
+1. **写入与读取并发**：后台线程写入 `_store[sid]` 期间，请求线程读到部分写入的数据（Python dict 赋值为原子操作，但 TTL 清理的 `del` + `get` 组合不原子），导致 `entry` 为 `None`，返回空结果。
+2. **TTL 清理误删**：后台线程写入后 `ts` 未及时更新，或清理窗口恰好卡在写入前，`del _store[k]` 将刚写入的 sid 误删。
+
+`/result` 页面通常在后台线程完成后首次加载（数据已稳定），而 `/errors` 是二次点击，若恰好另一用户的会话触发了 TTL 清理，同一次 `_get_results` 调用中 `del _store[k]` 遍历时可能波及当前 sid。
+
+### 修复方案
+
+新增 `_store_lock = threading.Lock()`，在 `_get_results` 和 `_set_results` 中用 `with _store_lock` 保护所有对 `_store` 的读写和 TTL 清理操作。锁持有时间极短（内存操作），性能影响可忽略。
+
+```python
+# 修复前
+def _get_results(sid):
+    stale = [k for k, v in list(_store.items()) if ...]
+    for k in stale: del _store[k]   # 无锁
+    return ...
+
+def _set_results(sid, results, db_path):
+    _store[sid] = {...}              # 无锁
+
+# 修复后
+_store_lock = threading.Lock()
+
+def _get_results(sid):
+    with _store_lock:
+        stale = [...]
+        for k in stale: del _store[k]
+        return ...
+
+def _set_results(sid, results, db_path):
+    with _store_lock:
+        _store[sid] = {...}
+```
+
+### 涉及文件
+
+- `app.py`（`_store_lock` 定义，`_get_results`，`_set_results`）
+
+---
+
 ## BUG-014 Linux 路径模式多用例扫描：启动慢 + 完成后圆圈持续转动
 
 **发现日期**：2026-03-29
