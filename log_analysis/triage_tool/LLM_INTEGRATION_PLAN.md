@@ -1,7 +1,7 @@
 # triage_tool — LLM 集成方案 v2.0
 
 > **声明**：本方案为功能分析和架构设计，不含代码实现。
-> **版本说明**：v2.0 在 v1.0 基础上新增 P2（多条匹配智能推荐）和 P3（自定义提取），并细化了所有场景的 Prompt 设计。
+> **版本说明**：v2.0 在 v1.0 基础上新增 P2（多条匹配智能推荐）和 P3（自定义提取），并细化了所有场景的 Prompt 设计。v2.1 补充：P7 双模式设计（快速/深度）+ Excel 导出；工程增强功能（缓存、重试、热重载）；P3 多轮轮次可配置；llm_config.json 新增8个可选配置项。
 
 ---
 
@@ -17,7 +17,7 @@ triage_tool 当前是一个基于规则的 UVM 仿真日志分类分诊工具。
 **目标**：设计一套可选的 LLM 增强层，满足：
 - 未配置 LLM 时，工具行为与现在 100% 一致（基础版）
 - 配置 LLM 后，启用 AI 辅助功能（高配版）
-- 不引入新的第三方依赖包（复用 requests 或降级到标准库 urllib）
+- 不引入新的第三方依赖包（复用 requests，内网 Flask 环境已确认存在）
 - 支持任意 OpenAI-compatible 接口
 
 ---
@@ -44,11 +44,14 @@ triage_tool 当前是一个基于规则的 UVM 仿真日志分类分诊工具。
 
 ```
 核心接口：
-├── init(base_dir: Path) → None        # 加载 llm_config.json
-├── is_configured() → bool            # 检查 LLM 是否可用
-├── call_llm(prompt, ...) → str       # 调用 LLM API
-└── get_config() → dict | None        # 获取当前配置
+├── init(base_dir: Path) → None          # 加载 llm_config.json
+├── is_configured() → bool              # 检查 LLM 是否可用
+├── call_llm(prompt, ...) → str         # 调用 LLM API（含超时重试）
+├── call_llm_with_cache(prompt, ...) → str  # 带缓存包装：命中直接返回，未命中调用后写缓存
+└── get_config() → dict | None          # 获取当前配置
 ```
+
+**缓存机制**：模块级 `_cache dict`，key = `md5(prompt.encode())[:16]`，TTL 由 `cache_ttl` 配置项控制（秒）；`cache_ttl=0` 时禁用缓存；重启后缓存清空（纯内存，无需管理）。
 
 **配置文件**（`BASE_DIR/llm_config.json`，不打包进 exe）：
 ```json
@@ -57,11 +60,26 @@ triage_tool 当前是一个基于规则的 UVM 仿真日志分类分诊工具。
   "api_key": "sk-xxx",
   "model": "qwen2.5-7b",
   "timeout": 30,
-  "context_window": 8192
+  "context_window": 8192,
+
+  "max_dialog_turns": 3,
+  "cache_ttl": 3600,
+  "llm_max_retries": 2,
+  "llm_retry_delay": 1,
+  "kb_review_mode": "fast",
+  "kb_review_window_size": 20,
+  "kb_review_step_size": 10,
+  "kb_review_batch_size": 50
 }
 ```
 
-> `context_window`：目标 LLM 的最大 token 数（默认 8192）。P3 自定义提取用此值动态计算日志采样上限，避免单次调用超限。
+> - `context_window`：目标 LLM 的最大 token 数（默认 8192）。P3 自定义提取用此值动态计算日志采样上限。
+> - `max_dialog_turns`：P3 多轮对话保留轮次上限（默认 3，0 表示不限）。
+> - `cache_ttl`：LLM 响应缓存 TTL（秒），0 表示禁用缓存（默认 3600）。
+> - `llm_max_retries` / `llm_retry_delay`：超时重试次数上限和基础延迟（秒），指数退避（默认 2 次，1s 起）。
+> - `kb_review_mode`：P7 默认模式（`fast` 快速 / `deep` 深度）。
+> - `kb_review_window_size` / `kb_review_step_size`：P7 快速模式滑动窗口大小和步长。
+> - `kb_review_batch_size`：P7 深度模式每批条数（50~80）。
 
 **配置优先级**：**环境变量 > 文件**
 
@@ -73,10 +91,7 @@ triage_tool 当前是一个基于规则的 UVM 仿真日志分类分诊工具。
 | `LLM_TIMEOUT` | timeout（整数秒） |
 | `LLM_CONTEXT_WINDOW` | context_window（整数） |
 
-**降级策略**：
-- 优先使用 `requests`（Flask 已依赖）
-- 降级使用 `urllib`（标准库兜底）
-- 超时/失败时返回空字符串，静默降级
+**HTTP 依赖**：使用 `requests`（Flask 已依赖，内网环境确认存在）。超时/失败时返回空字符串，静默降级。
 
 ### 2.2 app.py 改动点（5~6 处最小改动）
 
@@ -155,12 +170,14 @@ def score_query(entries, text, level=None) -> list:
 **`core/llm_client.py`（纯逻辑，无 Flask 依赖）**
 
 ```
-init(base_dir)          → 加载 llm_config.json，缓存配置
-is_configured() → bool  → 检查 endpoint + model 是否均已设置
-call_llm(prompt, ...)   → 调用 /chat/completions，失败返回 ""
+init(base_dir)                  → 加载 llm_config.json，缓存配置
+is_configured() → bool          → 检查 endpoint + model 是否均已设置
+call_llm(prompt, ...)           → 调用 /chat/completions，含超时重试，失败返回 ""
+call_llm_with_cache(prompt, ...) → 带内存缓存包装，TTL 由 cache_ttl 控制
+reload_config()                 → 重新读取 llm_config.json，热更新内存配置
 ```
 
-HTTP 层：优先 `requests`（Flask 已依赖），降级 `urllib`（标准库兜底）。
+HTTP 层：使用 `requests`（Flask 已依赖，内网环境确认存在）。
 
 **`core/llm_routes.py`（Flask Blueprint）**
 
@@ -491,7 +508,8 @@ POST /llm/custom_extract
 - 有行号范围：读取指定范围，超过字符预算则从起始行截断，response 中注明实际行数
 - `level_filter` 在 Python 侧预过滤后再送 LLM
 - **多轮对话**：`_store[sid]['p3_history']` 存储消息列表；仅首轮嵌入日志，后续轮只追加用户查询
-  - 历史字符总量超过 MAX_LOG_CHARS × 1.8 时：保留 messages[0:2]（首轮）+ messages[-4:]（最近2轮），response 带 `trimmed:true`
+  - 保留策略由 `max_dialog_turns` 控制（默认 3）：保留首轮（含日志采样，必须保留）+ 最近 `max_dialog_turns-1` 轮；`max_dialog_turns=0` 时不裁剪
+  - 历史字符总量超过 MAX_LOG_CHARS × 1.8 时触发裁剪，response 带 `trimmed:true`
 
 #### 输出自动判断（后端）
 ```python
@@ -691,22 +709,50 @@ temperature=0.1, max_tokens=300
 "添加条目" Tab 底部：
 └── [🔍 知识库质量检查] ← {% if llm_enabled %}
 
-点击后：
-→ POST /llm/kb_review
-→ 返回疑似重复对列表（表格形式）：
-   | 条目A（错误ID+原因） | 条目B（错误ID+原因） | 相似原因 | [保留两者] [删除A] [删除B] |
+点击后弹出模式选择框：
+  ┌─────────────────────────────────────┐
+  │ 选择检查模式                          │
+  │ ● 快速模式（~5分钟）                   │
+  │   滑动窗口=20，步长=10，按错误类型分组   │
+  │ ○ 深度模式（~15分钟）                  │
+  │   按类型全量，自动分批50条              │
+  │                [开始检查]  [取消]      │
+  └─────────────────────────────────────┘
+
+检查中（进度展示）：
+  正在检查 UVM_ERROR（第 3/8 组，已完成 60 对，预计剩余 8 分钟）[停止]
+
+检查完成：
+  发现 12 对疑似重复条目
+  [查看结果列表] [导出 Excel]
+
+结果列表（表格形式）：
+  | 条目A（错误ID+原因摘要） | 条目B（错误ID+原因摘要） | 相似原因 | [保留两者] [删除A] [删除B] |
 → 操作按钮调用现有 /kb/delete 端点
 ```
 
 #### 新增路由
 ```
 POST /llm/kb_review
-请求：{ db_path, max_check:200 }
-响应：
-  成功：{ ok:true, suspect_pairs:[{row_a, row_b, similarity_reason}] }
-        row_a/row_b 字段：{_row_idx, 错误类型, 错误ID, 报错原因, 解决方案}
-  失败：{ ok:false, reason:"..." }
+请求：{ db_path, mode: "fast"|"deep", max_check: 200 }
+响应（SSE 流式或轮询）：
+  进行中：{ status:"running", group:"UVM_ERROR", done:6, total:20, eta_min:8 }
+  完成：  { status:"done", suspect_pairs:[{row_a, row_b, similarity_reason}] }
+          row_a/row_b 字段：{_row_idx, 错误类型, 错误ID, 报错原因, 解决方案}
+  失败：  { status:"error", reason:"..." }
+
+GET /llm/kb_review_export
+请求：{ session_key }  （指向上次检查结果）
+响应：Excel 文件（3个Sheet，见下）
 ```
+
+#### Excel 导出格式（3个Sheet）
+- **Sheet1**：疑似重复对列表
+  列：序号 | 行号A | 错误类型A | 错误ID-A | 报错原因摘要A | 行号B | 错误类型B | 错误ID-B | 报错原因摘要B | 相似原因
+- **Sheet2**：条目A完整数据（全部10列 KB 字段）
+- **Sheet3**：条目B完整数据（全部10列 KB 字段）
+
+Sheet2/Sheet3 与 Sheet1 行序一一对应，方便 vlookup 联查。
 
 #### Prompt 设计
 ```
@@ -724,23 +770,63 @@ User:   错误类型「{level}」的知识库条目（共{N}条）：
 temperature=0.1, max_tokens=500
 ```
 
-#### 分批策略（滑动窗口）
-- 按 `错误类型` 分组
-- 每组使用**滑动窗口（窗口=20条，步长=10）**，确保任意相邻 20 位置内的条目都会被比较
-- 同一组 N 条约需 `ceil((N-10)/10)` 次 LLM 调用
-- `max_check=200` 限制每组最多检查 200 条
-- LLM 返回的 `a/b` 是批次内索引，需映射回实际 `_row_idx`
-- 跨批次相同 pair 去重：用 `frozenset({row_a, row_b})` 作为 key
+#### 双模式实现逻辑
+```
+快速模式（fast）：
+  按 错误类型 分组
+  每组用滑动窗口（window_size=kb_review_window_size，step=kb_review_step_size）
+  跨窗口相同 pair 去重（用 frozenset({row_a, row_b}) 为 key）
+
+深度模式（deep）：
+  按 错误类型 分组
+  每组全量，自动按 kb_review_batch_size（默认50）分批
+  每批 LLM 检查，结果跨批去重
+  不同类型组可并行处理
+```
+
+LLM 返回的 `a/b` 是批次内索引，需映射回实际 `_row_idx`。
+
+#### P7 降级策略
+| 场景 | 行为 |
+|---|---|
+| 检查过程中用户停止 | 已完成的结果仍可导出 |
+| 单批 LLM 失败 | 跳过该批，继续下一批，response 中记录 skipped_batches |
+| 深度模式 Token 超限 | 自动减小 batch_size 至 30，再失败则跳过该批 |
 
 ---
 
-## 四、文件变更清单
+## 四、工程增强功能（llm_client.py 内置）
+
+以下功能全部封装在 `core/llm_client.py` 内，不新增文件，不影响 LLM 未配置时的行为。
+
+### 1. LLM 响应缓存
+
+- **存储**：模块级 `_cache dict`（纯内存，重启清空）
+- **Key**：`md5(prompt.encode()).hexdigest()[:16]`
+- **TTL**：由 `cache_ttl` 配置项控制（秒），`cache_ttl=0` 时禁用
+- **行为**：命中时直接返回缓存内容，不调用 API；通过 `call_llm_with_cache()` 接口调用
+
+### 2. 超时重试
+
+- **策略**：指数退避，延迟 = `llm_retry_delay × (2^attempt)`（第1次1s，第2次2s）
+- **次数上限**：`llm_max_retries`（默认2）
+- **失败处理**：最终失败返回 `""`，不抛异常（调用方按空字符串处理，静默降级）
+
+### 3. 配置热重载
+
+- **接口**（在 `llm_routes.py`）：`POST /llm/reload_config` — 重新读取 `llm_config.json`，更新内存配置，同步更新 `app.jinja_env.globals['llm_enabled']`
+- **前端**：在 `templates/index.html` 的"解析配置"Tab 底部加"重载 LLM 配置"按钮，点击后调用此接口并 toast 提示结果（成功/失败及当前是否已启用 LLM）
+- **用途**：修改 `llm_config.json` 后无需重启服务即可生效
+
+---
+
+## 五、文件变更清单
 
 | 文件 | 变更类型 | 说明 |
 |------|----------|------|
 | `core/session_store.py` | 新增 | `_store` + `get/set_results`（从 app.py 迁移，解决 Blueprint 循环依赖） |
 | `core/llm_client.py` | 新增 | LLM API 客户端，无 Flask 依赖（约 120 行） |
-| `core/llm_routes.py` | 新增 | Flask Blueprint，8 条 LLM 路由（约 320 行） |
+| `core/llm_routes.py` | 新增 | Flask Blueprint，9 条 LLM 路由（约 340 行，含 /llm/reload_config） |
 | `core/matcher.py` | 修改 | 新增 `score_query()` 函数（从 `/query` 路由提取，P4 共用） |
 | `app.py` | 修改 | 5~6 处最小改动：session_store 导入、Blueprint 注册、llm_enabled 注入、file_paths 存储、score_query 替换 |
 | `templates/result.html` | 修改 | P1/P2/P3/P4/P5 按钮 + JS（inline，`{% if llm_enabled %}` 块） |
@@ -761,7 +847,7 @@ temperature=0.1, max_tokens=500
 | `.ai-extract-modal` | P3 自定义提取模态框 |
 | `.btn-ai`, `.btn-ai-sm` | AI 操作按钮（带特色样式） |
 
-### 新增路由汇总（共 8 条）
+### 新增路由汇总（共 9 条）
 | 路由 | 对应功能 |
 |------|---------|
 | `POST /llm/analyze_error` | P1 未匹配自动分析 |
@@ -770,11 +856,13 @@ temperature=0.1, max_tokens=500
 | `POST /llm/similar_errors` | P4 相似错误推荐 |
 | `POST /llm/batch_patterns` | P5 批量模式分析 |
 | `POST /llm/semantic_query` | P6 语义知识库查询 |
-| `POST /llm/kb_review` | P7 知识库语义去重 |
+| `POST /llm/kb_review` | P7 知识库语义去重检查 |
+| `GET /llm/kb_review_export` | P7 导出去重结果 Excel |
+| `POST /llm/reload_config` | 配置热重载 |
 
 ---
 
-## 五、降级与安全策略
+## 六、降级与安全策略
 
 | 场景 | 行为 |
 |------|------|
@@ -786,15 +874,18 @@ temperature=0.1, max_tokens=500
 | entries.length <= 1（P2） | 不显示「智能推荐」按钮 |
 | 所有条目关联用例均为空（P2） | LLM 返回 focus_cases:[]，面板显示「暂无关联用例」 |
 | context_window 未配置（P3） | 默认 8192，采样约 173 行（@150 chars/行）|
-| 历史轮次超 token 预算（P3） | 丢弃中间轮次，保留首轮（含日志）+ 最近 2 轮，response 带 trimmed:true |
+| 历史轮次超 token 预算（P3） | 丢弃中间轮次，保留首轮（含日志）+ 最近 max_dialog_turns-1 轮，response 带 trimmed:true |
 | Upload 模式（P3） | 不显示「自定义提取」按钮 |
 | 多文件模式（P3） | 不显示「自定义提取」按钮 |
 | 单文件模式（P5） | 不显示「AI 模式分析」按钮 |
 | 语义查询候选 ≤1（P6） | toast 提示，不调 LLM |
+| LLM 响应命中缓存 | 直接返回缓存内容，不调用 API |
+| LLM 调用超时 | 指数退避重试（最多 llm_max_retries 次），最终失败返回空，不影响流程 |
+| llm_config.json 修改后 | 调用 /llm/reload_config 生效，无需重启 |
 
 ---
 
-## 六、实施顺序
+## 七、实施顺序
 
 | 步骤 | 内容 | 依赖 |
 |------|------|------|
@@ -811,7 +902,7 @@ temperature=0.1, max_tokens=500
 
 ---
 
-## 七、验证要点
+## 八、验证要点
 
 1. **基础版验证**：无 `llm_config.json` 时，启动工具，所有页面不显示 `AI` 字样按钮
 2. **P1 验证**：有效配置时，未匹配错误一键分析，5 个字段正确预填（空字段不预填）
@@ -823,7 +914,7 @@ temperature=0.1, max_tokens=500
    - Path 模式单文件时显示按钮，Upload 模式不显示
    - 首轮查询：实际采样行数随 context_window 变化（小模型行数少）
    - 多轮追问：第 2+ 轮不重传日志，历史正确追加
-   - 历史压缩：超过预算时保留首轮+最近2轮，响应 trimmed:true
+   - 历史压缩：超过预算时保留首轮+最近 max_dialog_turns-1 轮，响应 trimmed:true
    - 清空对话：点击后重置历史，下次查询等效首轮
 5. **降级验证**：LLM 超时/失败时，不影响现有手工流程
 6. **回归验证**：现有 `test_all_features.py` 全部通过（9条新路由不影响现有路由）

@@ -506,17 +506,28 @@ def open_in_editor():
     try:
         # 显式传递当前环境（含 DISPLAY），避免从终端启动时 DISPLAY 丢失
         env = os.environ.copy()
-        subprocess.Popen(['gvim', str(p)], env=env,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return jsonify({'ok': True})
+        proc = subprocess.Popen(['gvim', str(p)], env=env,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # 等待 0.3s 检测 gvim 是否立即退出（如 DISPLAY 未设置）
+        time.sleep(0.3)
+        rc = proc.poll()
+        if rc is not None and rc != 0:
+            return jsonify({'ok': False,
+                            'error': f'gvim 启动后立即退出（退出码 {rc}），'
+                                     f'服务器可能无图形界面（DISPLAY 未设置）。'
+                                     f'请复制路径后在本机终端手动执行 gvim。',
+                            'path': str(p)}), 500
+        return jsonify({'ok': True, 'path': str(p)})
     except FileNotFoundError:
-        return jsonify({'ok': False, 'error': 'gvim 未安装或不在 PATH 中'}), 500
+        return jsonify({'ok': False, 'error': 'gvim 未安装或不在 PATH 中',
+                        'path': str(p)}), 500
     except Exception as e:
         err = str(e)
         if 'DISPLAY' in err or 'display' in err.lower():
             return jsonify({'ok': False,
-                            'error': '无法连接显示器，请复制路径后在终端手动执行 gvim'}), 500
-        return jsonify({'ok': False, 'error': err}), 500
+                            'error': '无法连接显示器，请复制路径后在终端手动执行 gvim',
+                            'path': str(p)}), 500
+        return jsonify({'ok': False, 'error': err, 'path': str(p)}), 500
 
 
 @app.route('/writeback', methods=['POST'])

@@ -431,6 +431,10 @@
        style="padding:9px 16px;cursor:pointer;font-size:13px;white-space:nowrap"
        onmouseenter="this.style.background='#EBF3FB'"
        onmouseleave="this.style.background=''">📝 用 gvim 打开</div>
+  <div id="ctxCopyPath"
+       style="padding:9px 16px;cursor:pointer;font-size:13px;white-space:nowrap;border-top:1px solid #f0f0f0"
+       onmouseenter="this.style.background='#EBF3FB'"
+       onmouseleave="this.style.background=''">📋 复制路径</div>
 </div>
 
 <script>
@@ -628,8 +632,28 @@
       if (_ctxPath) {
         fetch('/open_in_editor?path=' + encodeURIComponent(_ctxPath))
           .then(r => r.json())
-          .then(d => { if (!d.ok) alert('打开失败：' + d.error); })
+          .then(d => {
+            if (d.ok) {
+              const msg = '已发送 gvim 打开指令。\n\n若 gvim 未弹出，请手动在终端执行：\ngvim "' + (d.path || _ctxPath) + '"';
+              alert(msg);
+            } else {
+              alert('打开失败：' + d.error + (d.path ? '\n\n文件路径（可复制后手动打开）：\n' + d.path : ''));
+            }
+          })
           .catch(() => alert('请求失败，请检查服务是否运行'));
+      }
+      menu.style.display = 'none';
+    });
+
+    document.getElementById('ctxCopyPath').addEventListener('click', function () {
+      if (_ctxPath) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(_ctxPath)
+            .then(() => alert('路径已复制到剪贴板：\n' + _ctxPath))
+            .catch(() => prompt('请手动复制以下路径：', _ctxPath));
+        } else {
+          prompt('请手动复制以下路径：', _ctxPath);
+        }
       }
       menu.style.display = 'none';
     });
