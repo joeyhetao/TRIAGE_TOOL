@@ -21,6 +21,20 @@ _UVM_ANY = re.compile(r'UVM_(?:ERROR|WARNING|FATAL|INFO)\s', re.IGNORECASE)
 TOP_N = 5  # 每个日志最多提取的错误条数（按出现顺序）
 
 
+def _error_result(filepath: str, error_msg: str) -> dict:
+    """解析失败时返回带 error 字段的占位结果，供调用方识别并继续处理其余文件。"""
+    return {
+        'file':       Path(filepath).name,
+        'filepath':   str(filepath),
+        'statistics': {'UVM_WARNING': 0, 'UVM_ERROR': 0, 'UVM_FATAL': 0},
+        'status':     'fail',
+        'pass_found': False,
+        'top_errors': [],
+        'all_errors': [],
+        'error':      error_msg,
+    }
+
+
 def _build_gen_pattern(keywords):
     """构建行首关键词匹配正则：^KEYWORD\\s*:\\s*(.*)，不区分大小写。
     keywords 为空列表时返回 None。
@@ -205,7 +219,10 @@ def parse_logs(filepaths: list, progress_cb=None,
         done = 0
         for future in as_completed(future_to):
             i, fp = future_to[future]
-            r = future.result()
+            try:
+                r = future.result()
+            except Exception as e:
+                r = _error_result(fp, str(e))
             results[i] = r
             done += 1
             if progress_cb:

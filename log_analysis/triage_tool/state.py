@@ -38,15 +38,55 @@ REPORT_DIR.mkdir(exist_ok=True)
 
 MAX_FILE_SIZE  = 10 * 1024 * 1024 * 1024   # 10 GB 单文件上限
 MAX_PATH_FILES = 5000                        # 路径模式单次最多文件数
+TOP_N          = 5                           # 每个日志最多提取的错误条数
+MAX_LEN        = 500                         # 表单字段最大字符数
+
+from core.db_manager import BACKUP_COUNT     # 滚动备份份数（供路由层使用）
 
 # ── 会话存储 ──────────────────────────────────────────────
 _STORE_TTL  = 2 * 3600                       # 2 小时后过期
-_store: dict = {}                            # sid -> {'results', 'db_path', 'ts'}
+_store: dict = {}                            # sid -> {'results', 'db_path', 'file_paths', 'p3_history', 'p3_tokens', 'ts'}
 _store_lock  = threading.Lock()
 
 # ── 后台任务状态 ──────────────────────────────────────────
-_JOBS_TTL = 3600                             # 任务状态保留 1 小时
+_JOBS_TTL  = 3600                            # 任务状态保留 1 小时
 _jobs: dict = {}                             # job_id -> 任务字段
+_jobs_lock  = threading.Lock()
+
+
+def _cleanup_jobs():
+    """清理过期的任务记录（由 /analyze 路由在创建新任务前调用）。"""
+    with _jobs_lock:
+        now   = time.time()
+        stale = [k for k, v in list(_jobs.items()) if now - v.get('ts', 0) > _JOBS_TTL]
+        for k in stale:
+            del _jobs[k]
+
+# ── 删除撤销缓冲（独立于分析会话，按 sid 分组，仅限当次进程生命周期） ──
+_undo_buffers: dict = {}        # sid -> [{entry, db_path, ts}, ...]
+_undo_lock    = threading.Lock()
+_UNDO_MAX     = 10              # 每个 session 最多保留 10 条可撤销删除
+
+
+def _push_delete_undo(sid: str, entry: dict, db_path: str) -> None:
+    """将已删除条目压入撤销栈（去除内部字段 _row_idx）。"""
+    with _undo_lock:
+        buf = _undo_buffers.setdefault(sid, [])
+        buf.append({
+            'entry':    {k: v for k, v in entry.items() if k != '_row_idx'},
+            'db_path':  db_path,
+            'ts':       time.time(),
+        })
+        if len(buf) > _UNDO_MAX:
+            buf.pop(0)
+
+
+def _pop_delete_undo(sid: str):
+    """弹出最近一次删除记录，没有可撤销项时返回 None。"""
+    with _undo_lock:
+        buf = _undo_buffers.get(sid, [])
+        return buf.pop() if buf else None
+
 
 # ── KB 冲突摘要字段 ───────────────────────────────────────
 _CONFLICT_FIELDS = [
@@ -156,12 +196,20 @@ def _get_results(sid: str):
         for k in stale:
             del _store[k]
         entry = _store.get(sid)
-        return (entry['results'], entry['db_path']) if entry else ([], DB_DEFAULT)
+        return (entry.get('results', []), entry.get('db_path', DB_DEFAULT)) if entry else ([], DB_DEFAULT)
 
 
-def _set_results(sid: str, results: list, db_path: str):
+def _set_results(sid: str, results: list, db_path: str, file_paths: list = None):
     with _store_lock:
-        _store[sid] = {'results': results, 'db_path': db_path, 'ts': time.time()}
+        existing = _store.get(sid, {})
+        _store[sid] = {
+            'results':    results,
+            'db_path':    db_path,
+            'file_paths': file_paths or existing.get('file_paths', []),
+            'p3_history': existing.get('p3_history', []),
+            'p3_tokens':  existing.get('p3_tokens', 0),
+            'ts':         time.time(),
+        }
 
 
 def _sid() -> str:

@@ -112,7 +112,8 @@ def _run_analysis(job_id: str, sid: str, input_data: list,
         job['logs'].append(f"[{_ts()}] 开始知识库匹配...")
         results = run_match(results, db_path, progress_cb=_match_cb)
 
-        state._set_results(sid, results, db_path)
+        file_paths = saved_paths if path_mode else []
+        state._set_results(sid, results, db_path, file_paths=file_paths)
         job['pct']      = 100
         job['logs'].append(f"[{_ts()}] 分析完成，共处理 {total} 个文件")
         job['redirect'] = '/result'   # 必须在 phase='done' 之前赋值
@@ -171,18 +172,20 @@ def analyze():
             return jsonify({'error': '文件保存失败'}), 500
         input_data = saved_paths
 
+    state._cleanup_jobs()
     job_id = str(uuid.uuid4())
-    state._jobs[job_id] = {
-        'phase':       'scanning' if path_mode else 'pending',
-        'parse_done':  0,
-        'match_done':  0,
-        'total':       0 if path_mode else len(input_data),
-        'pct':         0,
-        'logs':        [],
-        'redirect':    None,
-        'error':       None,
-        'ts':          time.time(),
-    }
+    with state._jobs_lock:
+        state._jobs[job_id] = {
+            'phase':       'scanning' if path_mode else 'pending',
+            'parse_done':  0,
+            'match_done':  0,
+            'total':       0 if path_mode else len(input_data),
+            'pct':         0,
+            'logs':        [],
+            'redirect':    None,
+            'error':       None,
+            'ts':          time.time(),
+        }
     threading.Thread(
         target=_run_analysis,
         args=(job_id, sid, input_data, db_path, bool(path_mode)),
@@ -195,11 +198,7 @@ def analyze():
 def progress_stream(job_id):
     """SSE 端点：推送后台分析任务进度，直到 done / error。"""
     def generate():
-        now = time.time()
-        stale = [k for k, v in list(state._jobs.items())
-                 if now - v.get('ts', 0) > state._JOBS_TTL]
-        for k in stale:
-            del state._jobs[k]
+        state._cleanup_jobs()
 
         while True:
             job = state._jobs.get(job_id)

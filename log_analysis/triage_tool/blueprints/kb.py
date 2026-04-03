@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
 import re
+from datetime import datetime
+from pathlib import Path
 from flask import Blueprint, request, jsonify
 
 import state
-from core.db_manager import load_db, find_duplicates, append_entry, update_entry, delete_entry
+from core.db_manager import (load_db, find_duplicates, append_entry,
+                              update_entry, delete_entry, restore_backup)
 
 kb_bp = Blueprint('kb', __name__)
 
@@ -56,7 +59,7 @@ def kb_add():
         db_path = state._validate_db_path(data.get('db_path', ''))
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
-    MAX_LEN = 500
+    MAX_LEN = state.MAX_LEN
 
     level = data.get('错误类型', '').strip().upper()
     if level and level not in state._valid_levels():
@@ -120,7 +123,8 @@ def kb_update():
 
 @kb_bp.route('/kb/delete', methods=['POST'])
 def kb_delete():
-    """删除知识库中指定行。JSON: {row_idx, db_path?}"""
+    """删除知识库中指定行，并将完整条目压入当前 session 的撤销栈。
+    JSON: {row_idx, db_path?}"""
     data = request.get_json() or {}
     row_idx = data.get('row_idx')
     if not isinstance(row_idx, int) or row_idx < 2:
@@ -130,7 +134,78 @@ def kb_delete():
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
     try:
+        # 删除前先读出该行数据供撤销
+        entries = load_db(db_path)
+        entry_to_undo = next((e for e in entries if e.get('_row_idx') == row_idx), None)
+
         delete_entry(db_path, row_idx)
+
+        # 压入撤销栈，返回 entry_label 供前端 Toast 显示
+        entry_label = ''
+        if entry_to_undo:
+            sid = state._sid()
+            state._push_delete_undo(sid, entry_to_undo, db_path)
+            lvl = str(entry_to_undo.get('错误类型', '') or '').strip()
+            eid = str(entry_to_undo.get('错误ID',   '') or '').strip()
+            entry_label = f"{lvl} / {eid}" if eid else (lvl or '未知条目')
+
+        return jsonify({'success': True, 'entry_label': entry_label})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@kb_bp.route('/kb/undo_delete', methods=['POST'])
+def kb_undo_delete():
+    """撤销最近一次删除操作（从当前 session 的撤销栈恢复条目）。"""
+    sid = state._sid()
+    item = state._pop_delete_undo(sid)
+    if not item:
+        return jsonify({'success': False, 'error': '没有可撤销的删除操作（会话已过期或未执行过删除）'})
+    try:
+        append_entry(item['db_path'], item['entry'])
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
+
+
+@kb_bp.route('/kb/backups')
+def kb_backups():
+    """列出当前知识库路径下可用的滚动备份文件及修改时间。"""
+    try:
+        db_path = state._validate_db_path(request.args.get('db_path', ''))
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    p = Path(db_path)
+    result = []
+    for i in range(1, state.BACKUP_COUNT + 1):
+        bak = p.parent / f"{p.stem}.bak{i}{p.suffix}"
+        if bak.exists():
+            mtime = bak.stat().st_mtime
+            result.append({
+                'idx':      i,
+                'filename': bak.name,
+                'mtime':    mtime,
+                'mtime_str': datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S'),
+            })
+    return jsonify({'backups': result})
+
+
+@kb_bp.route('/kb/restore_backup', methods=['POST'])
+def kb_restore():
+    """从指定滚动备份恢复知识库。JSON: {backup_idx, db_path?}
+    恢复前自动将当前文件轮转备份，不会丢失当前状态。"""
+    data = request.get_json() or {}
+    backup_idx = data.get('backup_idx')
+    if not isinstance(backup_idx, int) or backup_idx < 1 or backup_idx > state.BACKUP_COUNT:
+        return jsonify({'success': False, 'error': f'备份编号须在 1–{state.BACKUP_COUNT} 之间'})
+    try:
+        db_path = state._validate_db_path(data.get('db_path', ''))
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    try:
+        restore_backup(db_path, backup_idx)
+        return jsonify({'success': True})
+    except (FileNotFoundError, ValueError) as e:
+        return jsonify({'success': False, 'error': str(e)})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500

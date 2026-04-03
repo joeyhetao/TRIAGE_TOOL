@@ -4,6 +4,7 @@ from datetime import date
 import os
 import time
 import threading
+import shutil
 import openpyxl
 
 # ── 锁机制说明 ────────────────────────────────────────────
@@ -13,6 +14,8 @@ import openpyxl
 #                仅用标准库实现，无第三方依赖
 
 _thread_lock = threading.Lock()
+
+BACKUP_COUNT = 3   # 写入前保留的滚动备份份数
 
 
 class _FileLock:
@@ -74,8 +77,32 @@ HEADERS = [
 ]
 
 
+def _rotate_backups(db_path: str, n: int = BACKUP_COUNT) -> None:
+    """写入前将现有文件轮转到最多 n 份滚动备份（.bak1 最新，.bakN 最旧）。
+    备份失败（磁盘满等）静默跳过，不影响主写入流程。"""
+    p = Path(db_path)
+    if not p.exists():
+        return
+    stem, parent, suffix = p.stem, p.parent, p.suffix
+    # bak(n-1) → bakn, ..., bak1 → bak2
+    for i in range(n, 1, -1):
+        src = parent / f"{stem}.bak{i - 1}{suffix}"
+        dst = parent / f"{stem}.bak{i}{suffix}"
+        if src.exists():
+            try:
+                shutil.copy2(str(src), str(dst))
+            except OSError:
+                pass
+    # 当前文件 → bak1
+    try:
+        shutil.copy2(db_path, str(parent / f"{stem}.bak1{suffix}"))
+    except OSError:
+        pass
+
+
 def _save_atomic(wb, db_path: str) -> None:
-    """先写 .tmp 再原子重命名，防止写入中途崩溃导致 Excel 损坏。"""
+    """写入前轮转备份，再写 .tmp 并原子重命名，防止写入中途崩溃导致 Excel 损坏。"""
+    _rotate_backups(db_path)
     tmp = str(db_path) + '.tmp'
     try:
         wb.save(tmp)
@@ -86,6 +113,20 @@ def _save_atomic(wb, db_path: str) -> None:
         except OSError:
             pass
         raise
+
+
+def restore_backup(db_path: str, backup_idx: int) -> None:
+    """从指定滚动备份（1=最新）恢复知识库。
+    恢复本身也经过 _save_atomic()，当前文件会先被轮转备份，再被覆盖。"""
+    p = Path(db_path)
+    bak = p.parent / f"{p.stem}.bak{backup_idx}{p.suffix}"
+    if not bak.exists():
+        raise FileNotFoundError(f'备份文件不存在: {bak.name}')
+    try:
+        wb = openpyxl.load_workbook(str(bak))
+    except Exception as e:
+        raise ValueError(f'无法读取备份文件（可能已损坏）: {e}')
+    _save_atomic(wb, db_path)
 
 
 def ensure_db(db_path: str) -> None:
@@ -127,7 +168,7 @@ def load_db(db_path: str) -> list:
             for excel_row, row in enumerate(rows[1:], start=2):
                 if all(cell is None for cell in row):
                     continue
-                entry = {headers[i]: (row[i] if row[i] is not None else '')
+                entry = {headers[i]: (row[i] if i < len(row) and row[i] is not None else '')
                          for i in range(len(headers))}
                 entry['_row_idx'] = excel_row
                 entries.append(entry)
@@ -185,7 +226,10 @@ def update_entry(db_path: str, row_idx: int, new_data: dict) -> None:
     """
     with _thread_lock:
         with _FileLock(db_path):
-            wb = openpyxl.load_workbook(db_path)
+            try:
+                wb = openpyxl.load_workbook(db_path)
+            except Exception as e:
+                raise ValueError(f'无法读取知识库文件（可能已损坏或被独占）: {e}')
             ws = wb.active
             headers = [str(ws.cell(1, c).value).strip() if ws.cell(1, c).value else ''
                        for c in range(1, len(HEADERS) + 1)]
@@ -199,7 +243,10 @@ def delete_entry(db_path: str, row_idx: int) -> None:
     """删除知识库中指定行（row_idx 为 Excel 行号，从2开始）。"""
     with _thread_lock:
         with _FileLock(db_path):
-            wb = openpyxl.load_workbook(db_path)
+            try:
+                wb = openpyxl.load_workbook(db_path)
+            except Exception as e:
+                raise ValueError(f'无法读取知识库文件（可能已损坏或被独占）: {e}')
             ws = wb.active
             ws.delete_rows(row_idx)
             _save_atomic(wb, db_path)

@@ -569,7 +569,6 @@
   }
 
   async function deleteKbEntry(rowIdx, dbPath, cardId, boxId) {
-    if (!confirm('确认删除该知识库条目？此操作不可撤销。')) return;
     try {
       const resp = await fetch('/kb/delete', {
         method: 'POST',
@@ -595,11 +594,42 @@
             box.querySelector('.match-header').innerHTML = '❌ 知识库条目已全部删除';
           }
         }
+        showUndoToast(data.entry_label || '未知条目');
       } else {
         alert('删除失败：' + (data.error || '未知错误'));
       }
     } catch(e) {
       alert('请求失败：' + e.message);
+    }
+  }
+
+  function showUndoToast(label) {
+    let toast = document.getElementById('undoToast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'undoToast';
+      toast.className = 'undo-toast';
+      document.body.appendChild(toast);
+    }
+    clearTimeout(toast._timer);
+    toast.innerHTML = '已删除 <b>' + esc(label) + '</b>' +
+      ' <button onclick="doUndoDelete()" class="undo-btn">撤销</button>';
+    toast.classList.add('visible');
+    toast._timer = setTimeout(() => toast.classList.remove('visible'), 8000);
+  }
+
+  async function doUndoDelete() {
+    const resp = await fetch('/kb/undo_delete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: '{}',
+    });
+    const d = await resp.json();
+    if (d.success) {
+      document.getElementById('undoToast').classList.remove('visible');
+      location.reload();
+    } else {
+      alert('撤销失败：' + (d.error || '未知'));
     }
   }
 

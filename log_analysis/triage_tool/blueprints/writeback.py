@@ -13,7 +13,7 @@ def writeback():
     results, db_path = state._get_results(sid)
     data = request.get_json()
 
-    MAX_LEN = 500
+    MAX_LEN = state.MAX_LEN
     level = data.get('level', '').strip().upper()
     if level not in state._valid_levels():
         return jsonify({'success': False, 'error': '无效的错误级别'}), 400
@@ -21,13 +21,21 @@ def writeback():
     if not reason:
         return jsonify({'success': False, 'error': '报错原因不能为空'}), 400
 
+    # 根因分类：规范化为枚举值，未知值兜底为"其他问题"
+    _VALID_CATEGORIES = ['DUT Bug', 'TB Bug', '用例问题', '工具问题', '其他问题']
+    raw_category = data.get('category', '').strip()[:MAX_LEN]
+    category = next((c for c in _VALID_CATEGORIES
+                     if c.lower() == raw_category.lower()), None)
+    if category is None:
+        category = '其他问题'
+
     entry = {
         '错误类型':       level,
         '错误ID':         data.get('error_id',    '')[:MAX_LEN],
         '关键描述关键词':  data.get('keywords',    '')[:MAX_LEN],
         '报错原因':        reason[:MAX_LEN],
         '所属模块':        data.get('module',      '')[:MAX_LEN],
-        '根因分类':        data.get('category',    '')[:MAX_LEN],
+        '根因分类':        category,
         '解决方案':        data.get('solution',    '')[:MAX_LEN],
         '关联用例':        data.get('related_case','')[:MAX_LEN],
         '录入人':          data.get('author',      '')[:MAX_LEN],

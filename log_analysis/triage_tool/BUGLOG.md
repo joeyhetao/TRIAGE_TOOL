@@ -4,6 +4,50 @@
 
 ---
 
+## BUG-025 切换 Tab 后返回，进度日志丢失只见转圈
+
+**发现日期**：2026-04-03
+**状态**：已修复
+
+### 现象
+
+分析进行中切换到「查询知识库」等其他 Tab，再切回「上传文件」或「指定路径」Tab，`progressWrap` 进度区不见了，只能看到分析按钮上的 `btnSpinner` 还在转，进度日志全部消失。
+
+### 根因分析
+
+`switchMode()` 在切换到非分析 Tab 时会将 `progressWrap` 设为 `display:none`（正确行为，避免空进度区残留），但切回分析 Tab 时只恢复了 `analyzeBtnRow` 的显示，没有重新显示 `progressWrap`。
+
+SSE 连接（EventSource）是网络层对象，隐藏 DOM 不会中断它，`progLogs` 内容持续被 `_updateProgressUI` 写入，日志并未丢失——只是容器 div 隐藏了。
+
+```javascript
+// 修复前：切回分析 Tab 时未恢复 progressWrap
+if (mode !== 'upload' && mode !== 'path') {
+  document.getElementById('progressWrap').style.display = 'none';
+}
+// 没有对应的 else 分支
+```
+
+### 修复方案
+
+在 `switchMode` 增加 `else if` 分支：切回分析 Tab 时，若 `analyzeBtn` 仍处于 `disabled`（即分析进行中），将 `progressWrap` 恢复为可见。
+
+```javascript
+// 修复后
+if (mode !== 'upload' && mode !== 'path') {
+  document.getElementById('progressWrap').style.display = 'none';
+} else if (document.getElementById('analyzeBtn').disabled) {
+  document.getElementById('progressWrap').style.display = '';
+}
+```
+
+**为何用 `analyzeBtn.disabled` 作为判断依据**：分析开始时按钮被 disable，分析结束（完成/失败/超时）时由 `_resetAnalyzeBtn()` 统一恢复 enable，与进度区生命周期完全对齐，无需额外状态变量。
+
+### 涉及文件
+
+- `templates/index.html`：`switchMode()` 函数（约第 268 行）
+
+---
+
 ## BUG-017 _store 并发访问竞态条件导致去重详情页信息丢失
 
 **发现日期**：2026-04-01
@@ -668,6 +712,302 @@ if (mode !== 'upload' && mode !== 'path') {
 
 - `templates/index.html`（`switchMode` 函数新增3行）
 - `dist/triage_tool.exe`（重新打包）
+
+---
+
+## BUG-024 SSE 进度流 JSON 解析错误被静默吞掉 + 服务端挂死时按钮永久禁用
+
+**发现日期**：2026-04-02
+**状态**：已修复
+
+### 现象
+
+1. SSE 进度流收到非法 JSON 数据时，`catch(_) {}` 静默丢弃，界面无任何反馈，进度条卡住
+2. 服务端进程挂死（非正常退出）时，`EventSource` 持续重连，"开始分析"按钮永远禁用，用户只能强制刷新页面
+
+### 根因分析
+
+```javascript
+// 修复前
+try {
+    const d = JSON.parse(event.data);
+    ...
+} catch(_) {}   // ← 吞掉所有错误
+```
+
+`catch` 块为空，JSON 解析失败后流程中断但无任何提示。`EventSource` 本身没有超时机制，`onerror` 仅在 TCP 断开时触发；服务端挂死时 TCP 连接保持，`onerror` 不触发，按钮永久禁用。
+
+### 修复方案
+
+**`templates/index.html`**：
+
+1. 将 `catch(_) {}` 改为 `catch(parseErr) { console.error('[SSE] JSON 解析失败:', parseErr, event.data); }`
+2. 添加 30 秒无活动超时计时器（`_resetTimeout`），每收到一条消息重置，超时后关闭连接并提示用户
+3. `onerror` 处理器中调用 `clearTimeout(_timeout)` 防止泄漏
+
+```javascript
+let _timeout = setTimeout(function() {
+    es.close();
+    document.getElementById('errMsg').textContent = '分析超时（30秒无响应），请检查服务端状态后重试';
+    _resetAnalyzeBtn();
+}, 30000);
+function _resetTimeout() { clearTimeout(_timeout); _timeout = setTimeout(..., 30000); }
+es.onmessage = function(event) {
+    _resetTimeout();
+    try { ... } catch(parseErr) { console.error('[SSE] JSON 解析失败:', parseErr, event.data); }
+};
+es.onerror = function() { clearTimeout(_timeout); es.close(); fetch('/progress_status/...') ... };
+```
+
+### 涉及文件
+
+- `templates/index.html`（`_connectProgressStream` 函数）
+
+---
+
+## BUG-023 `_get_results()` 直接访问字典字段，结构不完整时抛 KeyError
+
+**发现日期**：2026-04-02
+**状态**：已修复
+
+### 现象
+
+`state._store[sid]` 结构不完整时（如存在旧格式条目或手动注入测试数据），`_get_results()` 抛 `KeyError`，导致 `/result`、`/errors`、`/export` 等多个路由返回 HTTP 500。
+
+### 根因分析
+
+```python
+# 修复前
+entry = _store.get(sid)
+return (entry['results'], entry['db_path']) if entry else ([], DB_DEFAULT)
+```
+
+`entry` 非 None 但缺少 `results` 或 `db_path` 字段时，直接访问抛 `KeyError`。
+
+### 修复方案
+
+**`state.py`**，改为 `.get()` 并提供默认值：
+
+```python
+# 修复后
+entry = _store.get(sid)
+return (entry.get('results', []), entry.get('db_path', DB_DEFAULT)) if entry else ([], DB_DEFAULT)
+```
+
+### 涉及文件
+
+- `state.py`（`_get_results` 函数）
+
+---
+
+## BUG-022 `_jobs` 字典并发清理无锁保护，存在竞态条件
+
+**发现日期**：2026-04-02
+**状态**：已修复
+
+### 现象
+
+SSE 端点 `/progress/<job_id>` 清理过期 `_jobs` 条目时无锁保护，与后台分析线程写入 `_jobs[job_id]` 并发，可能导致：
+1. `dict changed size during iteration` 异常
+2. 正在运行的任务被误删，前端收到"任务不存在"错误
+3. 过期条目不清理导致内存持续增长（若 SSE 端点从未被调用）
+
+### 根因分析
+
+```python
+# 修复前（无锁）
+stale = [k for k, v in list(state._jobs.items())
+         if now - v.get('ts', 0) > state._JOBS_TTL]
+for k in stale:
+    del state._jobs[k]
+```
+
+对比：`_store` 的清理在 `_store_lock` 保护下执行，`_jobs` 清理无任何同步保护，不一致。
+
+### 修复方案
+
+**`state.py`**，新增 `_jobs_lock = threading.Lock()` 和 `_cleanup_jobs()` 函数：
+
+```python
+_jobs_lock = threading.Lock()
+
+def _cleanup_jobs():
+    with _jobs_lock:
+        now   = time.time()
+        stale = [k for k, v in list(_jobs.items()) if now - v.get('ts', 0) > _JOBS_TTL]
+        for k in stale:
+            del _jobs[k]
+```
+
+**`blueprints/analysis.py`**：
+- SSE 生成器中改为调用 `state._cleanup_jobs()`
+- `/analyze` 路由在创建新任务前调用 `state._cleanup_jobs()`，并以 `with state._jobs_lock:` 保护任务字典写入
+
+### 涉及文件
+
+- `state.py`（新增 `_jobs_lock`、`_cleanup_jobs`）
+- `blueprints/analysis.py`（`progress_stream`、`analyze`）
+
+---
+
+## BUG-021 `update_entry`/`delete_entry` 无异常处理，知识库文件损坏时返回 HTTP 500
+
+**发现日期**：2026-04-02
+**状态**：已修复
+
+### 现象
+
+知识库 Excel 文件损坏（如写入中途崩溃）或被独占时，`update_entry()` 和 `delete_entry()` 的 `openpyxl.load_workbook()` 抛出未捕获异常，穿透到 Flask 路由层，返回无任何错误提示的 HTTP 500。
+
+### 根因分析
+
+```python
+# 修复前（无异常处理）
+with _thread_lock:
+    with _FileLock(db_path):
+        wb = openpyxl.load_workbook(db_path)   # ← 损坏文件直接抛异常
+        ...
+```
+
+### 修复方案
+
+**`core/db_manager.py`**，在两个函数中包裹 try/except，抛出语义化 `ValueError`：
+
+```python
+# 修复后
+try:
+    wb = openpyxl.load_workbook(db_path)
+except Exception as e:
+    raise ValueError(f'无法读取知识库文件（可能已损坏或被独占）: {e}')
+```
+
+调用方（`blueprints/kb.py`）已有 `try/except Exception` 包裹，会将 `ValueError` 转为带 message 的 JSON 错误响应。
+
+### 涉及文件
+
+- `core/db_manager.py`（`update_entry`、`delete_entry`）
+
+---
+
+## BUG-020 `load_db()` 未做行列数边界检查，用户手动编辑 Excel 缺列时抛 IndexError
+
+**发现日期**：2026-04-02
+**状态**：已修复
+
+### 现象
+
+用户手动编辑 `error_db.xlsx` 时误删列，导致某些数据行的实际列数少于表头列数。`load_db()` 重试 3 次后向上抛出 `RuntimeError`，知识库读取功能完全不可用。
+
+### 根因分析
+
+```python
+# 修复前（无边界检查）
+entry = {headers[i]: (row[i] if row[i] is not None else '')
+         for i in range(len(headers))}
+# 若 len(row) < len(headers)，row[i] 抛 IndexError
+```
+
+### 修复方案
+
+**`core/db_manager.py`**，加入列数边界检查：
+
+```python
+# 修复后
+entry = {headers[i]: (row[i] if i < len(row) and row[i] is not None else '')
+         for i in range(len(headers))}
+```
+
+缺失列自动填充空字符串，知识库仍可正常读取，不影响正常条目。
+
+### 涉及文件
+
+- `core/db_manager.py`（`load_db` 函数）
+
+---
+
+## BUG-019 `_sort_by_date()` 空日期排序方向与注释相悖，无日期条目排在最前
+
+**发现日期**：2026-04-02
+**状态**：已修复
+
+### 现象
+
+`_sort_by_date()` 用于对知识库命中条目按录入日期降序排列，注释明确"缺失日期排最后"。实际行为相反：无录入日期的条目排在最前，成为首选展示给用户的匹配结果。
+
+### 根因分析
+
+```python
+# 修复前
+key=lambda e: str(e.get('录入日期', '') or '')
+```
+
+`''`（空字符串）的字典序小于任何日期字符串（如 `'2024-01-01'`），`reverse=True` 降序排列后，空字符串反而排在最前。
+
+### 修复方案
+
+**`core/matcher.py`**，将空值替换为最小日期占位符：
+
+```python
+# 修复后
+key=lambda e: str(e.get('录入日期', '') or '0000-00-00')
+```
+
+`'0000-00-00'` 字典序小于任何合法日期，`reverse=True` 后确保无日期条目排在最后。
+
+### 涉及文件
+
+- `core/matcher.py`（`_sort_by_date` 函数）
+
+---
+
+## BUG-018 `parse_logs()` 单文件解析失败导致整批任务中断
+
+**发现日期**：2026-04-02
+**状态**：已修复
+
+### 现象
+
+批量分析 1000 个日志文件时，若其中一个文件权限不足、已被删除或路径断开，`parse_logs()` 立即抛出未捕获异常，终止整个批次，其余所有文件的解析结果全部丢失。
+
+### 根因分析
+
+```python
+# 修复前
+for future in as_completed(future_to):
+    i, fp = future_to[future]
+    r = future.result()   # ← parse_log() 内部异常穿透至此，整批中断
+    results[i] = r
+```
+
+`parse_log()` 内部的 `open()` 调用无 try/except，权限不足、文件消失等均会抛出未捕获异常。
+
+### 修复方案
+
+**`core/log_parser.py`**，新增 `_error_result()` 占位符函数，`parse_logs()` 捕获单文件异常后返回占位结果：
+
+```python
+def _error_result(filepath: str, error_msg: str) -> dict:
+    return {
+        'file': Path(filepath).name, 'filepath': str(filepath),
+        'statistics': {'UVM_WARNING': 0, 'UVM_ERROR': 0, 'UVM_FATAL': 0},
+        'status': 'fail', 'pass_found': False,
+        'top_errors': [], 'all_errors': [],
+        'error': error_msg,
+    }
+
+# parse_logs() 中
+try:
+    r = future.result()
+except Exception as e:
+    r = _error_result(fp, str(e))
+results[i] = r
+```
+
+调用方可通过检查 `result.get('error')` 字段识别失败条目，其余文件正常返回。
+
+### 涉及文件
+
+- `core/log_parser.py`（`_error_result` 新增，`parse_logs` 修改）
 
 ---
 

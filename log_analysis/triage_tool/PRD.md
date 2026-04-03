@@ -1,6 +1,6 @@
 # 仿真日志分类分诊工具 — 产品需求文档（PRD）
 
-**文档版本**：v2.1
+**文档版本**：v2.2
 **基准代码版本**：2026-04-02
 **适用范围**：功能增改、需求评审、开发参考
 
@@ -28,7 +28,7 @@
 
 ---
 
-## 3. 当前功能（v2.0）
+## 3. 当前功能（v2.2）
 
 ### 3.1 日志输入
 
@@ -138,7 +138,9 @@ UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
 - 支持在 UI 填写自定义知识库路径（可指向网络共享盘）
 - 知识库不存在时自动创建含样式表头的空白文件
 - **编辑条目**（v1.5 新增）：结果页每条命中条目提供「✏ 编辑」按钮，展开内联编辑表单（预填所有字段），保存后直接更新 Excel 对应行
-- **删除条目**（v1.5 新增）：结果页每条命中条目提供「🗑 删除」按钮，确认后从 Excel 删除对应行，并同步更新页面显示（无需刷新）
+- **删除条目**（v1.5 新增）：结果页每条命中条目提供「🗑 删除」按钮，直接从 Excel 删除对应行并同步更新页面显示（无需刷新）；删除后页面底部显示 Toast 通知，8 秒内可点「撤销」恢复（v2.2 升级）
+- **自动滚动备份**（v2.2 新增）：每次写入知识库前自动保留最多 3 份滚动备份（`.bak1` 最新、`.bak3` 最旧），备份文件与知识库同目录
+- **备份恢复 UI**（v2.2 新增）：「解析配置」Tab 底部「📦 知识库备份」区域，显示现有备份列表（文件名 + 修改时间），可一键恢复至任意备份版本；恢复操作本身也会先备份当前状态，不会丢失数据
 
 ### 3.8 知识库查询（v1.3 新增）
 
@@ -251,6 +253,33 @@ UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
 - **UI 管理**：支持增删改，即时生效；标记字符串无格式限制，可包含空格和特殊字符
 - **空列表行为**：退化为旧逻辑（只看有无错误，忽略 pass_found）
 
+### 3.17 知识库备份与撤销删除（v2.2 新增）
+
+**撤销删除**：
+
+- 删除条目操作无需预先 `confirm()`，执行后页面底部显示 Toast「已删除 `<类型> / <ID>`」
+- Toast 8 秒内提供「撤销」按钮，点击后恢复该条目并刷新页面
+- 撤销缓冲存于进程内存（`_undo_buffers[sid]`），每会话最多保留 10 条，程序重启后清空
+- 路由：`POST /kb/undo_delete`
+
+**写入前自动滚动备份**：
+
+每次调用任何写入操作（追加、编辑、删除）前，自动将知识库文件轮转备份：
+
+```
+当前文件 → bak1,  bak1 → bak2,  bak2 → bak3  （旧 bak3 丢弃）
+```
+
+- 最多保留 3 份（`.bak1` 最新、`.bak3` 最旧），`.bak1` 始终是上一次写入前的状态
+- 备份通过 `shutil.copy2()` 实现；磁盘满等 `OSError` 静默跳过，不影响主写入
+- 恢复操作本身也触发一次备份轮转（自动将当前状态存入 `.bak1`），恢复后数据可再次撤销
+
+**备份恢复 UI**：
+
+- 「解析配置」Tab 切换时自动查询 `GET /kb/backups`
+- 列表展示每份备份的文件名与最后修改时间；无备份时显示提示
+- 每份备份有「恢复」按钮，confirm 确认后调用 `POST /kb/restore_backup`，成功后刷新列表
+
 ---
 
 ## 4. 数据结构
@@ -343,9 +372,9 @@ _jobs[job_id] = {
 | 并发写安全 | `threading.Lock`（进程内）+ `_FileLock`（跨进程，基于 `.lock` 文件 + `O_EXCL`） |
 | 会话隔离 | 模块级 dict `_store`，key 为 Flask session UUID，TTL 2 小时 |
 | 上传文件清理 | 上传模式：解析完成后**立即删除**临时文件（结果已存入内存，文件不再需要）；启动时额外清理 `uploads/` 和 `reports/` 下超过24小时的文件作为兜底 |
-| 安全 | `secure_filename` 防路径穿越；随机持久化 `secret_key`；HTML 报告全字段 `html.escape`；writeback 服务端输入校验 |
+| 安全 | `secure_filename` 防路径穿越；随机持久化 `secret_key`；HTML 报告全字段 `html.escape`；writeback 服务端输入校验；`根因分类` 枚举归一化防数据污染 |
 | 标准库优先 | 并发锁、报告 HTML、glob 展开均使用标准库；新功能开发优先评估标准库可行性 |
-| SSE / 后台线程 | 进度推送使用 Flask SSE（`text/event-stream`），无需额外依赖；后台解析使用 `threading.Thread`，`_jobs` dict 在主线程与后台线程间共享（GIL 保护简单读写）；`sid`（session ID）在后台线程启动前提取，避免跨线程访问 Flask session |
+| SSE / 后台线程 | 进度推送使用 Flask SSE（`text/event-stream`），无需额外依赖；后台解析使用 `threading.Thread`，`_jobs` dict 由 `_jobs_lock` 保护（清理和创建），`_store` 由 `_store_lock` 保护；`sid`（session ID）在后台线程启动前提取，避免跨线程访问 Flask session；SSE 前端有 30 秒无活动超时兜底 |
 
 ---
 
@@ -363,7 +392,10 @@ _jobs[job_id] = {
 | POST | `/query` | 知识库模糊查询。JSON 字段：`db_path`（可选）、`level`（可选）、`error_id`（可选，部分匹配）、`text`（可选，任意词模糊）。返回 `{entries: list, total: int}` |
 | POST | `/kb/add` | 直接追加知识库条目（不依赖会话）。JSON 字段：`db_path`（可选）、`错误类型`（必填）、`报错原因`（必填）及其余知识库字段、`force`（可选）。返回 `{success, duplicate?, conflicts?, error?}` |
 | POST | `/kb/update` | 编辑知识库指定行。JSON 字段：`row_idx`（Excel 行号）、`db_path`（可选）、需更新的字段、`force`（可选）。返回 `{success, duplicate?, conflicts?, error?}` |
-| POST | `/kb/delete` | 删除知识库指定行。JSON 字段：`row_idx`、`db_path`（可选）。返回 `{success, error?}` |
+| POST | `/kb/delete` | 删除知识库指定行。JSON 字段：`row_idx`、`db_path`（可选）。返回 `{success, entry_label, error?}`；删除前自动入撤销栈（v2.2） |
+| POST | `/kb/undo_delete` | 撤销最近一次删除，从当前会话内存缓冲中恢复被删条目。返回 `{success, error?}`（v2.2 新增） |
+| GET | `/kb/backups` | 查询当前知识库路径下可用的滚动备份列表。返回 `{backups: [{idx, filename, mtime, mtime_str}]}`（v2.2 新增） |
+| POST | `/kb/restore_backup` | 从指定备份（`backup_idx` 1–3）恢复知识库；恢复前自动备份当前状态。返回 `{success, error?}`（v2.2 新增） |
 | GET | `/export/excel` | 下载 Excel 报告 |
 | GET | `/export/html` | 下载 HTML 报告 |
 | GET | `/extra_patterns` | 返回当前额外错误关键词列表 `{patterns: list}` （v1.8 新增） |
@@ -433,9 +465,6 @@ _jobs[job_id] = {
 | v1.6 | 2026-03-23 | **去重错误统计与跳转**：`parse_log` 新增 `all_errors` 字段；`/result` 路由计算跨文件去重唯一计数；汇总栏 FATAL/ERROR/WARNING 显示去重数并可点击跳转 `/errors` 详情页；详情页按出现文件数降序列出唯一错误 | `core/log_parser.py`, `app.py`, `templates/result.html`, `templates/errors.html`, `static/style.css` |
 | v1.6 | 2026-03-23 | **文件标签超链接**：`errors.html` 文件标签改为 `<a href="/result?focus=...">` 超链接，支持右键在新标签页打开；Jinja2 注册 `urlencode` 自定义过滤器用于 URL 安全编码文件名 | `templates/errors.html`, `app.py` |
 | v1.7 | 2026-03-26 | **录入人自动预填**：启动时通过 `getpass.getuser()` 获取操作系统当前用户名（Windows 读 `USERNAME` 环境变量，Linux 读 `USER`/`LOGNAME` 或 `pwd` 模块），注入全局变量 `OS_USERNAME`；未匹配回写表单、已命中补充录入表单、首页「添加条目」Tab 三处「录入人」输入框自动预填，用户可手动修改；获取失败时降级为空字符串不影响功能 | `app.py`, `templates/result.html`, `templates/index.html` |
-| v1.8 | 2026-03-29 | **BUG-014 修复（Linux 路径模式）**：glob 展开从请求处理线程移至后台分析线程（job 立即创建，phase='scanning'），消除请求阻塞和启动延迟；新增 `scanning` 阶段进度文字"正在扫描文件..." | `app.py`, `templates/index.html` |
-| v1.8 | 2026-03-29 | **BUG-014 修复（Linux SSE TCP 竞争）**：后台线程推送 done/error 后新增 `sleep(1)` 再关闭连接，避免 Linux TCP FIN 先于数据被 EventSource 接收；前端 `onerror` 改为回退轮询 `/progress_status/<job_id>` 单次 JSON 接口，任务完成时直接跳转 `/result` | `app.py`, `templates/index.html` |
-| v1.8 | 2026-03-29 | **BUG 修复（Linux 右键菜单）**：`fileNav` contextmenu 监听器加 `e.stopPropagation()`，阻止事件冒泡到 document 层导致菜单被立即关闭 | `templates/result.html` |
 | v1.8 | 2026-03-29 | **额外错误关键词支持**：`log_parser` 新增 `_build_gen_pattern()` 和 `extra_keywords` 参数，支持任意行首关键词+冒号格式的错误行（UVM 优先，generic 兜底）；`statistics` 动态扩展；错误条目进入 top_errors 参与 KB 匹配和 pass/fail；`extra_patterns.json` 配置文件 + 首页「⚙ 解析配置」Tab 增删改 UI | `core/log_parser.py`, `app.py`, `templates/index.html`, `templates/result.html`, `static/style.css` |
 | v1.8 | 2026-03-29 | **通过标记配置（pass_patterns）**：`log_parser` 新增 `pass_patterns` 参数和 `pass_found` 返回字段，全文扫描内联检测；`pass_patterns.json` 配置文件（默认 `JVP TEST PASSED`）+ UI 增删改；空列表时退化为旧逻辑 | `core/log_parser.py`, `app.py`, `templates/index.html` |
 | v1.8 | 2026-03-29 | **PASS/FAIL 逻辑重设计**：PASS = 无任何非 WARNING 错误 AND 找到通过标记；FAIL = 有错误 OR 无错误但无通过标记；无通过标记配置时退化（只看有无错误） | `core/log_parser.py` |
@@ -444,5 +473,11 @@ _jobs[job_id] = {
 | v1.9 | 2026-03-30 | **默认额外关键词扩充**：`_EXTRA_PATTERNS_DEFAULT` 从 `['ERROR','FATAL','FAILED']` 扩展为 `['ERROR','FATAL','FAILED','VIRL_MEM_WARNING','JVP TEST FAILED']`，覆盖常见 JVP 测试失败和内存警告格式 | `app.py` |
 | v1.9 | 2026-03-30 | **查询/添加条目错误类型动态化**：首页「查询知识库」`qLevel` 下拉和「添加条目」`addType` 均在页面加载时自动追加当前 extra_patterns；配置变更后实时同步（通过 `kwRender` 回调）；`_populateLevelSelects()` 函数统一管理 | `templates/index.html` |
 | v1.9 | 2026-03-30 | **添加条目错误类型改为 combobox**：`addType` 由 `<select>` 改为 `<input list>` + `<datalist>`，用户既可下拉选择预设值，也可手动输入任意自定义错误类型 | `templates/index.html` |
-| v1.9 | 2026-03-30 | **BUG-015 修复（非分析 Tab 残留进度区）**：`switchMode` 切换到「查询知识库/添加条目/解析配置」Tab 时自动隐藏 `progressWrap`，消除分析完成后进度日志在非分析界面残留的问题 | `templates/index.html` |
 | v2.0 | 2026-04-02 | **代码架构重构（Flask Blueprint 拆分）**：`app.py` 从 ~964 行缩减为 ~100 行；所有路由拆分为 5 个 Blueprint：`blueprints/analysis.py`（7条路由含后台线程 `_run_analysis`）、`blueprints/writeback.py`（1条）、`blueprints/kb.py`（4条）、`blueprints/config_bp.py`（8条）、`blueprints/export.py`（2条）；新增 `state.py` 集中管理所有共享状态（`_store`/`_jobs`/`EXTRA_PATTERNS`/`PASS_PATTERNS` 及所有工具函数）；无任何功能变更 | `app.py`, `state.py`, `blueprints/` |
+| v2.1 | 2026-04-02 | **根因分类枚举校验（L-I-3）**：`/writeback` 端点对 `category` 字段做大小写不敏感归一化，匹配 `DUT Bug/TB Bug/用例问题/工具问题/其他问题` 枚举，未知值自动兜底为「其他问题」，防止 LLM 或自由输入污染知识库 | `blueprints/writeback.py` |
+| v2.1 | 2026-04-02 | **LLM 会话字段预留（L-I-1）**：`_store[sid]` 新增 `file_paths`（路径模式文件列表）、`p3_history`（多轮对话历史）、`p3_tokens`（token 计数）字段；`_set_results()` 改为合并写入（不覆盖已有 LLM 字段）；`_run_analysis` 在路径模式下传入 `file_paths` | `state.py`, `blueprints/analysis.py` |
+| v2.1 | 2026-04-02 | **常量集中管理（M-3）**：`TOP_N = 5` 和 `MAX_LEN = 500` 统一在 `state.py` 定义；`blueprints/writeback.py` 和 `blueprints/kb.py` 改为引用 `state.MAX_LEN`，消除重复定义 | `state.py`, `blueprints/writeback.py`, `blueprints/kb.py` |
+| v2.1 | 2026-04-02 | **自动化测试基础设施（L-3）**：新增 `tests/` 目录，包含 `conftest.py`（fixtures）、`test_log_parser.py`（14 tests）、`test_matcher.py`（11 tests）、`test_db_manager.py`（14 tests）、`test_api.py`（12 tests）和 `pytest.ini`；pytest 需从互联网机器 `pip download pytest -d ./packages` 后安装 | `tests/` |
+| v2.2 | 2026-04-02 | **知识库滚动备份**：`_save_atomic()` 写入前自动轮转最多 3 份滚动备份（`.bak1` 最新，`.bak3` 最旧）；新增 `_rotate_backups()` 和 `restore_backup()` 函数；备份失败（磁盘满等）静默跳过，不影响主写入 | `core/db_manager.py` |
+| v2.2 | 2026-04-02 | **撤销删除（Toast + 内存缓冲）**：删除知识库条目不再弹 `confirm()`，改为底部 Toast「已删除 X / Y」+ 8 秒内可点「撤销」恢复；后端 `_undo_buffers[sid]` 内存栈（每会话最多 10 条，重启后清空）；新增路由 `POST /kb/undo_delete` | `state.py`, `blueprints/kb.py`, `templates/result.html`, `static/style.css` |
+| v2.2 | 2026-04-02 | **解析配置 Tab 备份恢复面板**：「解析配置」Tab 底部新增「📦 知识库备份」区域，显示最多 3 份备份的文件名和修改时间；每份备份有「恢复」按钮，确认后调用 `POST /kb/restore_backup`；恢复前自动备份当前状态，不丢数据；新增路由 `GET /kb/backups`、`POST /kb/restore_backup` | `blueprints/kb.py`, `templates/index.html` |

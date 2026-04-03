@@ -20,7 +20,7 @@ def match_error(error: dict, db_entries: list) -> dict:
     def _sort_by_date(entries):
         """按录入日期降序排列，日期格式 YYYY-MM-DD；缺失日期排最后。"""
         return sorted(entries,
-                      key=lambda e: str(e.get('录入日期', '') or ''),
+                      key=lambda e: str(e.get('录入日期', '') or '0000-00-00'),
                       reverse=True)
 
     # Step1: 收集所有 错误ID + 错误类型 均匹配的行

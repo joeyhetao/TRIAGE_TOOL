@@ -365,3 +365,16 @@ a.ed-filetag:hover { background: #C5D8F8; text-decoration: underline; }
 .kw-add-row      { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
 .kw-new-input    { max-width: 240px; }
 .btn-sm          { padding: 4px 10px; font-size: 12px; }
+
+/* ── 撤销删除 Toast ──────────────────────────────────────── */
+.undo-toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: #323232; color: #fff; padding: 12px 20px; border-radius: 6px;
+  display: none; align-items: center; gap: 12px; z-index: 9999;
+  box-shadow: 0 4px 12px rgba(0,0,0,.3);
+}
+.undo-toast.visible { display: flex; }
+.undo-btn {
+  background: #90caf9; color: #000; border: none;
+  padding: 4px 10px; border-radius: 4px; cursor: pointer;
+}

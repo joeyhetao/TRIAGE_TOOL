@@ -178,6 +178,16 @@ D:\sim\run1\*.log"></textarea>
         <div id="ppMsg" class="err-msg" style="margin-top:6px"></div>
       </div>
 
+      <!-- 知识库备份 -->
+      <div class="cfg-section" style="margin-top:18px">
+        <div class="cfg-section-title">📦 知识库备份</div>
+        <div class="cfg-section-desc">
+          每次写入知识库前自动保留最近 3 份滚动备份（.bak1 最新）。<br>
+          恢复前当前文件会先备份，不会丢失。
+        </div>
+        <div id="backupList" class="kw-list" style="min-height:32px">加载中...</div>
+      </div>
+
     </div>
 
     <div class="btn-row" id="analyzeBtnRow">
@@ -253,10 +263,12 @@ D:\sim\run1\*.log"></textarea>
     // 知识库路径选择框在「添加条目」模式仍需显示
     document.getElementById('errMsg').textContent = '';
     if (mode !== 'query') document.getElementById('queryResultsWrap').style.display = 'none';
-    if (mode === 'keywords') kwLoadList();
-    // 切换到非分析 Tab 时隐藏进度区
+    if (mode === 'keywords') { kwLoadList(); loadBackups(); }
+    // 切换到非分析 Tab 时隐藏进度区；切换回时若分析仍在进行则恢复
     if (mode !== 'upload' && mode !== 'path') {
       document.getElementById('progressWrap').style.display = 'none';
+    } else if (document.getElementById('analyzeBtn').disabled) {
+      document.getElementById('progressWrap').style.display = '';
     }
   }
 
@@ -361,23 +373,43 @@ D:\sim\run1\*.log"></textarea>
 
   function _connectProgressStream(jobId) {
     const es = new EventSource('/progress/' + jobId);
+    // 30 秒无新消息时强制超时，防止服务端挂死时按钮永久禁用
+    let _timeout = setTimeout(function() {
+      es.close();
+      document.getElementById('errMsg').textContent = '分析超时（30秒无响应），请检查服务端状态后重试';
+      _resetAnalyzeBtn();
+    }, 30000);
+    function _resetTimeout() {
+      clearTimeout(_timeout);
+      _timeout = setTimeout(function() {
+        es.close();
+        document.getElementById('errMsg').textContent = '分析超时（30秒无响应），请检查服务端状态后重试';
+        _resetAnalyzeBtn();
+      }, 30000);
+    }
     es.onmessage = function(event) {
+      _resetTimeout();
       try {
         const d = JSON.parse(event.data);
         _updateProgressUI(d);
         if (d.phase === 'done') {
+          clearTimeout(_timeout);
           es.close();
           setTimeout(() => { window.location.href = '/result'; }, 600);
         } else if (d.phase === 'error') {
+          clearTimeout(_timeout);
           es.close();
           document.getElementById('errMsg').textContent = '分析失败：' + (d.error || '未知错误');
           _resetAnalyzeBtn();
         }
-      } catch(_) {}
+      } catch(parseErr) {
+        console.error('[SSE] JSON 解析失败:', parseErr, event.data);
+      }
     };
     // SSE 连接中断（Linux 上服务端关连接时可能先于最终消息触发 onerror），
     // 回退到单次轮询确认真实状态，避免进度圈卡住或错过重定向。
     es.onerror = function() {
+      clearTimeout(_timeout);
       es.close();
       fetch('/progress_status/' + jobId)
         .then(r => r.json())
@@ -758,6 +790,53 @@ D:\sim\run1\*.log"></textarea>
     if (d.success) {
       document.getElementById('ppNewInput').value = '';
       ppRender(d.patterns);
+    }
+  }
+
+  // ── 知识库备份 ─────────────────────────────────────
+  function loadBackups() {
+    const dp = document.getElementById('dbPath').value || '';
+    fetch('/kb/backups?' + new URLSearchParams({db_path: dp}))
+      .then(r => r.json())
+      .then(d => renderBackups(d.backups || []))
+      .catch(() => { document.getElementById('backupList').textContent = '加载失败'; });
+  }
+
+  function renderBackups(backups) {
+    const el = document.getElementById('backupList');
+    if (!backups.length) {
+      el.textContent = '暂无备份（写入知识库后自动创建）';
+      return;
+    }
+    el.innerHTML = backups.map(b =>
+      '<div class="kw-row">' +
+        '<span class="kw-text">' + esc(b.filename) + '</span>' +
+        '<span style="color:#888;font-size:12px;margin-left:8px">' + esc(b.mtime_str) + '</span>' +
+        '<div class="kw-actions">' +
+          '<button class="btn btn-secondary btn-sm" onclick="restoreBackup(' + b.idx + ')">恢复</button>' +
+        '</div>' +
+      '</div>'
+    ).join('');
+  }
+
+  async function restoreBackup(idx) {
+    if (!confirm('恢复到备份 bak' + idx + '？当前知识库将被覆盖（会自动备份当前状态）。')) return;
+    const dp = document.getElementById('dbPath').value || '';
+    try {
+      const resp = await fetch('/kb/restore_backup', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({backup_idx: idx, db_path: dp}),
+      });
+      const d = await resp.json();
+      if (d.success) {
+        alert('恢复成功！知识库已更新。');
+        loadBackups();
+      } else {
+        alert('恢复失败：' + (d.error || '未知错误'));
+      }
+    } catch(e) {
+      alert('请求失败：' + e.message);
     }
   }
 
