@@ -15,6 +15,8 @@ if hasattr(sys.stderr, 'buffer'):
         sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 import state
+from core import llm_client
+llm_client.init(state.BASE_DIR)
 
 # ── Flask 应用 ────────────────────────────────────────────
 app = Flask(__name__,
@@ -22,6 +24,7 @@ app = Flask(__name__,
             static_folder=str(state._BUNDLE_DIR / 'static'))
 
 app.jinja_env.filters['urlencode'] = lambda s: _url_quote(str(s), safe='')
+app.jinja_env.globals['llm_enabled'] = llm_client.is_configured()
 
 # S2: 持久化随机 secret_key（重启后 session 仍有效）
 _key_file = state.BASE_DIR / '.secret_key'
@@ -40,12 +43,14 @@ from blueprints.writeback import writeback_bp
 from blueprints.kb        import kb_bp
 from blueprints.config_bp import config_bp
 from blueprints.export    import export_bp
+from blueprints.llm_bp    import llm_bp
 
 app.register_blueprint(analysis_bp)
 app.register_blueprint(writeback_bp)
 app.register_blueprint(kb_bp)
 app.register_blueprint(config_bp)
 app.register_blueprint(export_bp)
+app.register_blueprint(llm_bp)
 
 # ── 根路由 ────────────────────────────────────────────────
 @app.route('/')

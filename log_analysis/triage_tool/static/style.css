@@ -378,3 +378,132 @@ a.ed-filetag:hover { background: #C5D8F8; text-decoration: underline; }
   background: #90caf9; color: #000; border: none;
   padding: 4px 10px; border-radius: 4px; cursor: pointer;
 }
+
+/* ── AI / LLM 相关样式 ───────────────────────────────────── */
+.btn-ai      { background: #7B5EA7; color: #fff; border: none;
+               padding: 7px 14px; border-radius: 6px; cursor: pointer;
+               font-size: 13px; font-weight: 600; transition: background .15s; }
+.btn-ai:hover { background: #6A4E93; }
+.btn-ai:disabled { background: #B0A0C8; cursor: default; }
+
+.btn-ai-sm  { background: #7B5EA7; color: #fff; border: none;
+              padding: 4px 10px; border-radius: 5px; cursor: pointer;
+              font-size: 12px; font-weight: 600; transition: background .15s; }
+.btn-ai-sm:hover    { background: #6A4E93; }
+.btn-ai-sm:disabled { background: #B0A0C8; cursor: default; }
+
+.ai-tag     { display: inline-block; background: #EDE7F6; color: #5E3BA4;
+              font-size: 11px; font-weight: 700; padding: 2px 7px;
+              border-radius: 10px; margin-right: 6px; }
+
+.ai-hint    { background: #F9F5FF; border: 1px solid #D1C4E9;
+              border-radius: 6px; padding: 9px 12px; margin: 8px 0;
+              font-size: 13px; color: #4A3570; }
+
+.ai-warn    { background: #FFF8E1; border: 1px solid #FFE082;
+              border-radius: 5px; padding: 6px 10px; margin-bottom: 8px;
+              font-size: 12px; color: #795548; }
+
+/* P2 rank panel */
+.ai-rank-panel  { background: #F9F5FF; border: 1px solid #D1C4E9;
+                  border-radius: 6px; padding: 10px 12px; margin: 8px 0; }
+.ai-rank-header { font-size: 12px; color: #666; margin-bottom: 8px; }
+.ai-ranked-entry { display: flex; align-items: center; gap: 8px;
+                   padding: 4px 0; font-size: 13px;
+                   border-bottom: 1px solid #EEE; }
+.ai-ranked-entry:last-child { border-bottom: none; }
+.ai-rank-num    { display: inline-flex; align-items: center; justify-content: center;
+                  width: 20px; height: 20px; background: #7B5EA7; color: #fff;
+                  border-radius: 50%; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+.ai-reason-tag  { color: #555; font-size: 12px; overflow: hidden;
+                  white-space: nowrap; text-overflow: ellipsis; max-width: 400px; }
+.ai-focus-cases { margin-top: 8px; font-size: 12px; }
+.ai-case-chip   { display: inline-block; background: #E8F5E9; color: #2E7D32;
+                  border-radius: 10px; padding: 2px 8px; margin: 2px 3px;
+                  font-size: 11px; font-family: monospace; }
+
+/* P4 similar errors */
+.ai-similar-section { background: #F3F8FF; border: 1px solid #BBDEFB;
+                      border-radius: 6px; padding: 10px 12px; margin: 8px 0 10px; }
+.ai-similar-title   { font-size: 12px; font-weight: 700; color: #1565C0;
+                      margin-bottom: 8px; }
+.ai-suggest-card    { background: #fff; border: 1px solid #E3F2FD;
+                      border-radius: 5px; padding: 8px 10px; margin-bottom: 6px; }
+.ai-suggest-card:last-child { margin-bottom: 0; }
+.asc-title  { font-size: 13px; font-weight: 600; color: #333; margin-bottom: 4px; }
+.asc-body   { font-size: 12px; color: #555; line-height: 1.6; }
+.asc-label  { font-weight: 600; color: #1565C0; }
+.asc-reason { color: #7B5EA7; font-style: italic; }
+
+/* P3 modal */
+.ai-modal           { position: fixed; inset: 0; z-index: 10000;
+                      display: flex; align-items: center; justify-content: center; }
+.ai-modal-backdrop  { position: absolute; inset: 0; background: rgba(0,0,0,.45); }
+.ai-modal-box       { position: relative; background: #fff; border-radius: 10px;
+                      box-shadow: 0 8px 32px rgba(0,0,0,.25);
+                      width: min(720px, 95vw); height: min(620px, 92vh);
+                      display: flex; flex-direction: column; overflow: hidden; }
+.ai-modal-hdr       { display: flex; align-items: center; gap: 10px;
+                      padding: 14px 16px; background: #7B5EA7; color: #fff;
+                      font-size: 15px; font-weight: 700; flex-shrink: 0; }
+.ai-modal-info      { font-size: 12px; opacity: .8; margin-left: auto; }
+.ai-modal-close     { background: none; border: none; color: #fff;
+                      font-size: 18px; cursor: pointer; padding: 0 4px; }
+.ai-chat-area       { flex: 1; overflow-y: auto; padding: 14px 16px; }
+.ai-modal-footer    { border-top: 1px solid #EEE; padding: 12px 16px; flex-shrink: 0; }
+.ai-chat-input      { width: 100%; border: 1px solid #D0D0D0; border-radius: 6px;
+                      padding: 8px 10px; font-size: 13px; resize: none;
+                      font-family: inherit; }
+.ai-chat-input:focus { border-color: #7B5EA7; outline: none; }
+.ai-modal-actions   { display: flex; gap: 8px; margin-top: 8px; }
+
+/* P3 chat messages */
+.p3msg       { display: flex; gap: 10px; margin-bottom: 12px; }
+.p3msg-user  { flex-direction: row-reverse; }
+.p3lbl       { display: inline-flex; align-items: center; justify-content: center;
+               width: 30px; height: 30px; border-radius: 50%; font-size: 11px;
+               font-weight: 700; flex-shrink: 0; margin-top: 2px; }
+.p3msg-user .p3lbl      { background: #7B5EA7; color: #fff; }
+.p3msg-assistant .p3lbl { background: #E8EAF6; color: #3949AB; }
+.p3msg-loading .p3lbl   { background: #F5F5F5; color: #999; }
+.p3msg-error .p3lbl     { background: #FFEBEE; color: #C62828; }
+.p3body      { background: #F5F5F5; border-radius: 8px; padding: 9px 12px;
+               font-size: 13px; line-height: 1.6; max-width: 90%;
+               word-break: break-word; }
+.p3msg-user .p3body      { background: #EDE7F6; }
+.p3msg-assistant .p3body { background: #F3F4F8; }
+.p3msg-error .p3body     { background: #FFEBEE; color: #C62828; }
+.ai-footer   { font-size: 11px; color: #999; margin-top: 8px; border-top: 1px solid #EEE;
+               padding-top: 5px; }
+.ai-json-pre { background: #272822; color: #F8F8F2; border-radius: 5px;
+               padding: 10px; font-size: 12px; overflow-x: auto;
+               white-space: pre-wrap; word-break: break-all; max-height: 300px; }
+
+/* ── 基础版 / 增强版 模式切换 ────────────────────────────── */
+/* result.html：隐藏所有 AI 功能按钮和面板 */
+body.llm-basic .result-page .btn-ai,
+body.llm-basic .result-page .btn-ai-sm    { display: none !important; }
+body.llm-basic .result-page #p3Modal      { display: none !important; }
+body.llm-basic .result-page .p2result-area,
+body.llm-basic .result-page .p1result-area,
+body.llm-basic .result-page .p4sec        { display: none !important; }
+/* index.html：隐藏 P6/P7 功能区（保留配置表单） */
+body.llm-basic #llmFeaturesArea           { display: none !important; }
+body.llm-basic #llmUnconfiguredHint       { display: none !important; }
+
+/* 模式切换按钮 */
+.llm-mode-btn { font-size: 12px; padding: 4px 10px; border-radius: 12px;
+                border: 1px solid currentColor; cursor: pointer; background: transparent;
+                font-weight: 600; line-height: 1.4; }
+.llm-mode-btn.enhanced { color: #7B5EA7; border-color: #7B5EA7; }
+.llm-mode-btn.basic    { color: #888;    border-color: #BBB; }
+
+/* LLM 失败提示条 */
+.llm-fail-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+                background: #FFF8E1; border: 1px solid #FFD54F;
+                border-radius: 6px; padding: 8px 14px; font-size: 13px; color: #5D4037;
+                margin-bottom: 10px; }
+.llm-fail-bar a, .llm-fail-bar button { font-size: 12px; color: #7B5EA7;
+                background: none; border: none; cursor: pointer;
+                text-decoration: underline; padding: 0; }
+

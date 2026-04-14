@@ -15,7 +15,20 @@
       <a href="/" class="btn btn-secondary">← 重新上传</a>
       <a href="/export/excel" class="btn btn-green">⬇ 导出 Excel</a>
       <a href="/export/html"  class="btn btn-blue">⬇ 导出 HTML</a>
+      {% if llm_enabled and is_path_mode %}
+      <button class="btn btn-ai" onclick="openP3Modal()">📋 AI日志问答</button>
+      {% endif %}
+      {% if llm_enabled %}
+      <button id="llmModeBtn" class="llm-mode-btn enhanced" onclick="toggleLlmMode()" title="点击切换增强版/基础版">🤖 增强版</button>
+      {% endif %}
     </div>
+  </div>
+
+  <!-- LLM 连接失败提示条（默认隐藏，故障时自动显示） -->
+  <div id="llmFailBar" class="llm-fail-bar" style="display:none;margin:8px 16px 0">
+    <span>⚠ LLM 连接失败，AI 功能暂时不可用。</span>
+    <button onclick="switchToBasic()">切换至基础版</button>
+    <button onclick="document.getElementById('llmFailBar').style.display='none'">忽略</button>
   </div>
 
   <!-- 汇总条 -->
@@ -192,6 +205,10 @@
                   <span class="match-hdr-btns">
                     <button class="btn-expand" onclick="toggleExtra(this)" title="显示全部字段">显示全部 ▾</button>
                     <button class="btn-supp" onclick="toggleSupp('suppform-{{ ri }}-{{ ei }}', this)">+ 补充录入</button>
+                    {% if llm_enabled and eentries|length > 1 %}
+                    <button class="btn-ai-sm" id="p2btn-{{ ri }}-{{ ei }}"
+                            onclick="aiRankEntries('{{ ri }}-{{ ei }}')">🤖 智能推荐</button>
+                    {% endif %}
                   </span>
                 </div>
 
@@ -286,6 +303,16 @@
                 </div>
                 {% endfor %}
 
+                {% if llm_enabled and eentries|length > 1 %}
+                <script>
+                window._p2data = window._p2data || {};
+                window._p2data['{{ ri }}-{{ ei }}'] = {
+                  entries: {{ eentries | tojson }},
+                  current_error: {level: {{ elevel | tojson }}, error_id: {{ err.error_id | tojson }}, location: {{ err.location | tojson }}, description: {{ (err.description or '')[:500] | tojson }}}
+                };
+                </script>
+                <div id="p2result-{{ ri }}-{{ ei }}" class="ai-rank-panel" style="display:none"></div>
+                {% endif %}
                 <!-- 补充录入表单（默认折叠） -->
                 <div id="suppform-{{ ri }}-{{ ei }}" class="supp-form" style="display:none">
                   <div class="supp-title">补充录入新根因 / 解决方案</div>
@@ -346,7 +373,20 @@
 
               {% elif ematch.status == 'unmatched' %}
               <div class="match-box unmatched">
-                <div class="match-header">❌ 未匹配 — 建议将该报错条目添加至错误数据库</div>
+                <div class="match-header">❌ 未匹配 — 建议将该报错条目添加至错误数据库
+                  {% if llm_enabled %}
+                  <button class="btn-ai-sm" id="p1btn-{{ ri }}-{{ ei }}"
+                          data-key="{{ ri }}-{{ ei }}"
+                          data-level="{{ elevel }}"
+                          data-errorid="{{ err.error_id }}"
+                          data-loc="{{ err.location }}"
+                          data-desc="{{ (err.description or '')[:300] }}"
+                          onclick="aiAnalyzeError(this)">🤖 AI 分析</button>
+                  {% endif %}
+                </div>
+                {% if llm_enabled %}
+                <div id="p1result-{{ ri }}-{{ ei }}" class="ai-hint" style="display:none"></div>
+                {% endif %}
                 <!-- 回写表单 -->
                 <div class="writeback-form" id="form-{{ ri }}-{{ ei }}">
                   <div class="form-grid">
@@ -396,6 +436,20 @@
                       <input type="text" class="fi" id="author-{{ ri }}-{{ ei }}" placeholder="姓名" value="{{ os_username }}">
                     </div>
                   </div>
+                  {% if llm_enabled %}
+                  <div id="p4sec-{{ ri }}-{{ ei }}" class="ai-similar-section" style="display:none">
+                    <div class="ai-similar-title">🔍 相似错误推荐（可参考填写）</div>
+                    <div id="p4list-{{ ri }}-{{ ei }}"></div>
+                  </div>
+                  <button class="btn-ai-sm" id="p4btn-{{ ri }}-{{ ei }}"
+                          data-key="{{ ri }}-{{ ei }}"
+                          data-level="{{ elevel }}"
+                          data-errorid="{{ err.error_id }}"
+                          data-desc="{{ (err.description or '')[:300] }}"
+                          data-dbpath="{{ db_path }}"
+                          onclick="aiSimilarErrors(this)"
+                          style="margin-bottom:8px">🔍 查找相似错误</button>
+                  {% endif %}
                   <button class="btn btn-primary mt8"
                           onclick="writeBack({{ ri }}, {{ ei }}, '{{ r.file }}',
                                    '{{ elevel }}', '{{ err.error_id }}')">
@@ -725,6 +779,235 @@
     }
   })();
 
+  {% if llm_enabled %}
+  // ── P1: AI 分析未匹配错误 ──────────────────────────────────
+  async function aiAnalyzeError(btn) {
+    const key = btn.dataset.key;
+    btn.disabled = true;
+    btn.textContent = '⏳…';
+    try {
+      const resp = await fetch('/llm/analyze_error', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          level:       btn.dataset.level,
+          error_id:    btn.dataset.errorid,
+          location:    btn.dataset.loc,
+          description: btn.dataset.desc,
+        }),
+      });
+      const d = await resp.json();
+      const hint = document.getElementById('p1result-' + key);
+      if (!d.ok) {
+        btn.textContent = '🤖 失败';
+        if (hint) { hint.style.display='block'; hint.innerHTML='<span style="color:#c00">AI分析失败：' + esc(d.reason||'未知') + '</span>'; }
+        _notifyLlmFail();
+        return;
+      }
+      const setVal = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
+      setVal('kw-'       + key, d.keywords);
+      setVal('reason-'   + key, d.reason);
+      setVal('module-'   + key, d.module);
+      setVal('solution-' + key, d.solution);
+      const ctEl = document.getElementById('category-' + key);
+      if (ctEl && d.category) {
+        for (const opt of ctEl.options) { if (opt.value === d.category) { opt.selected = true; break; } }
+      }
+      if (hint) {
+        hint.style.display = 'block';
+        hint.innerHTML = '<span class="ai-tag">AI建议</span> 已自动填入分析结果，请核对后写回知识库。';
+      }
+      btn.textContent = '🤖 已分析';
+    } catch(e) {
+      btn.disabled = false;
+      btn.textContent = '🤖 AI 分析';
+      _notifyLlmFail();
+    }
+  }
+
+  // ── P2: 多条匹配智能推荐 ───────────────────────────────────
+  async function aiRankEntries(key) {
+    const btn = document.getElementById('p2btn-' + key);
+    if (!btn) return;
+    btn.disabled = true;
+    btn.textContent = '⏳…';
+    const p2d = (window._p2data || {})[key];
+    if (!p2d) { btn.disabled = false; return; }
+    try {
+      const resp = await fetch('/llm/rank_entries', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(p2d),
+      });
+      const d = await resp.json();
+      const panel = document.getElementById('p2result-' + key);
+      if (!d.ok || !panel) { btn.textContent = '🤖 推荐失败'; _notifyLlmFail(); return; }
+      let html = '<div class="ai-rank-header"><span class="ai-tag">AI推荐排序</span> （最相关在上）</div>';
+      (d.ranked || []).forEach((origIdx, rank) => {
+        const reason = (d.reasons || [])[rank] || '';
+        html += '<div class="ai-ranked-entry"><span class="ai-rank-num">' + (rank+1) + '</span>';
+        if (reason) html += '<span class="ai-reason-tag">' + esc(reason) + '</span>';
+        html += '</div>';
+      });
+      if (d.focus_cases && d.focus_cases.length) {
+        html += '<div class="ai-focus-cases"><span class="ai-tag">优先回归用例</span> ' +
+          d.focus_cases.map(c => '<span class="ai-case-chip">' + esc(c) + '</span>').join(' ') + '</div>';
+      }
+      panel.innerHTML = html;
+      panel.style.display = 'block';
+      btn.textContent = '🤖 已推荐';
+    } catch(e) { btn.disabled = false; btn.textContent = '🤖 智能推荐'; _notifyLlmFail(); }
+  }
+
+  // ── P4: 相似错误推荐 ──────────────────────────────────────
+  async function aiSimilarErrors(btn) {
+    const key = btn.dataset.key;
+    btn.disabled = true;
+    btn.textContent = '⏳ 查找中…';
+    try {
+      const resp = await fetch('/llm/similar_errors', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          level:       btn.dataset.level,
+          error_id:    btn.dataset.errorid,
+          description: btn.dataset.desc,
+          db_path:     btn.dataset.dbpath,
+        }),
+      });
+      const d = await resp.json();
+      if (!d.ok || !d.similar || !d.similar.length) {
+        btn.textContent = '🔍 无相似错误';
+        return;
+      }
+      const sec  = document.getElementById('p4sec-'  + key);
+      const list = document.getElementById('p4list-' + key);
+      let html = '';
+      d.similar.forEach(item => {
+        html += '<div class="ai-suggest-card">' +
+          '<div class="asc-title">' + esc(item['错误ID']||'—') + ' — ' + esc((item['报错原因']||'').slice(0,60)) + '</div>' +
+          '<div class="asc-body">' +
+          '<span class="asc-label">关键词：</span>' + esc(item['关键描述关键词']||'—') + '<br>' +
+          '<span class="asc-label">方案：</span>' + esc((item['解决方案']||'—').slice(0,80)) + '<br>' +
+          '<span class="asc-reason">相似原因：' + esc(item['similarity_reason']||'') + '</span>' +
+          '</div></div>';
+      });
+      if (list) list.innerHTML = html;
+      if (sec)  sec.style.display = 'block';
+      btn.style.display = 'none';
+    } catch(e) { btn.disabled = false; btn.textContent = '🔍 查找相似错误'; _notifyLlmFail(); }
+  }
+
+  // ── P3: AI日志问答 ────────────────────────────────────────
+  function openP3Modal() {
+    const m = document.getElementById('p3Modal');
+    if (m) { m.style.display = 'flex'; document.getElementById('p3input').focus(); }
+  }
+  function closeP3Modal() {
+    const m = document.getElementById('p3Modal');
+    if (m) m.style.display = 'none';
+  }
+  async function sendP3() {
+    const input   = document.getElementById('p3input');
+    const sendBtn = document.getElementById('p3sendBtn');
+    const query   = input.value.trim();
+    if (!query) return;
+    sendBtn.disabled = true;
+    _appendP3('user', esc(query));
+    input.value = '';
+    const lid = 'p3l' + Date.now();
+    _appendP3('loading', '⏳ 分析中…', lid);
+    try {
+      const resp = await fetch('/llm/custom_extract', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({query}),
+      });
+      const d = await resp.json();
+      _removeP3(lid);
+      if (!d.ok) {
+        _appendP3('error', '失败：' + esc(d.reason||'未知'));
+      } else {
+        let body = '';
+        if (d.coverage_warning) body += '<div class="ai-warn">⚠️ ' + esc(d.coverage_warning) + '</div>';
+        if (d.format === 'json' && Array.isArray(d.data)) {
+          body += '<pre class="ai-json-pre">' + esc(JSON.stringify(d.data, null, 2)) + '</pre>';
+        } else {
+          body += '<div>' + esc(String(d.data)).replace(/\n/g,'<br>') + '</div>';
+        }
+        body += '<div class="ai-footer">📊 第 ' + d.extracted_start + '~' + d.extracted_end + ' 行，共 ' + d.total_lines_sent + ' 行 | 第 ' + d.turns + ' 轮</div>';
+        _appendP3('assistant', body);
+        const info = document.getElementById('p3info');
+        if (info) info.textContent = '第 ' + d.turns + ' 轮';
+      }
+    } catch(e) {
+      _removeP3(lid);
+      _appendP3('error', '请求失败：' + esc(e.message));
+    }
+    sendBtn.disabled = false;
+  }
+  function _appendP3(role, html, id) {
+    const chat = document.getElementById('p3chat');
+    if (!chat) return;
+    const div = document.createElement('div');
+    div.className = 'p3msg p3msg-' + role;
+    if (id) div.id = id;
+    div.innerHTML = '<span class="p3lbl">' + (role==='user' ? '您' : (role==='assistant' ? 'AI' : '')) + '</span>' +
+      '<div class="p3body">' + html + '</div>';
+    chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
+  }
+  function _removeP3(id) {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+  }
+  async function clearP3() {
+    await fetch('/llm/custom_extract', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({clear: true}),
+    });
+    const chat = document.getElementById('p3chat');
+    if (chat) chat.innerHTML = '';
+    const info = document.getElementById('p3info');
+    if (info) info.textContent = '';
+  }
+  {% endif %}
+
+  // ── 增强版 / 基础版 模式切换 ────────────────────────────────
+  function _getLlmMode() { return localStorage.getItem('llmMode') || 'enhanced'; }
+
+  function _applyLlmMode(mode) {
+    document.body.classList.toggle('llm-basic', mode === 'basic');
+    const btn = document.getElementById('llmModeBtn');
+    if (btn) {
+      btn.textContent = mode === 'basic' ? '📋 基础版' : '🤖 增强版';
+      btn.className   = 'llm-mode-btn ' + (mode === 'basic' ? 'basic' : 'enhanced');
+      btn.title       = mode === 'basic' ? '点击切换回增强版（含AI功能）' : '点击切换至基础版（隐藏AI功能）';
+    }
+  }
+
+  function toggleLlmMode() {
+    const next = _getLlmMode() === 'enhanced' ? 'basic' : 'enhanced';
+    localStorage.setItem('llmMode', next);
+    _applyLlmMode(next);
+    document.getElementById('llmFailBar').style.display = 'none';
+  }
+
+  function switchToBasic() {
+    localStorage.setItem('llmMode', 'basic');
+    _applyLlmMode('basic');
+    document.getElementById('llmFailBar').style.display = 'none';
+  }
+
+  function _notifyLlmFail() {
+    if (_getLlmMode() === 'basic') return;
+    document.getElementById('llmFailBar').style.display = '';
+  }
+
+  // 页面加载时应用存储的模式
+  _applyLlmMode(_getLlmMode());
+
   async function writeBack(fileIdx, errorIdx, fileName, level, errorId, force) {
     const key    = fileIdx + '-' + errorIdx;
     const reason = document.getElementById('reason-' + key).value.trim();
@@ -781,5 +1064,28 @@
     }
   }
 </script>
+
+{% if llm_enabled and is_path_mode %}
+<div id="p3Modal" class="ai-modal" style="display:none">
+  <div class="ai-modal-backdrop" onclick="closeP3Modal()"></div>
+  <div class="ai-modal-box">
+    <div class="ai-modal-hdr">
+      <span>📋 AI日志问答</span>
+      <span id="p3info" class="ai-modal-info"></span>
+      <button class="ai-modal-close" onclick="closeP3Modal()">✕</button>
+    </div>
+    <div id="p3chat" class="ai-chat-area"></div>
+    <div class="ai-modal-footer">
+      <textarea id="p3input" class="ai-chat-input" rows="3"
+                placeholder="例如：列出所有 UVM_ERROR 的错误ID和位置"
+                onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendP3();}"></textarea>
+      <div class="ai-modal-actions">
+        <button class="btn btn-ai" onclick="sendP3()" id="p3sendBtn">发送</button>
+        <button class="btn btn-secondary" onclick="clearP3()">清空对话</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
 </body>
 </html>

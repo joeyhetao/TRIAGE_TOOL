@@ -232,12 +232,19 @@ def progress_status(job_id):
 
 @analysis_bp.route('/result')
 def result():
-    sid = state._sid()
+    sid        = state._sid()
     results, db_path = state._get_results(sid)
-    unique_counts = state._unique_error_counts(results)
+    unique_counts    = state._unique_error_counts(results)
+    file_paths       = state._get_file_paths(sid)
+    is_path_mode     = len(file_paths) > 0
+    is_single_file   = len(results) == 1
+    is_multi_file    = len(results) > 1
     return render_template('result.html', results=results, db_path=db_path,
                            unique_counts=unique_counts, os_username=state.OS_USERNAME,
-                           extra_patterns=state.EXTRA_PATTERNS)
+                           extra_patterns=state.EXTRA_PATTERNS,
+                           is_path_mode=is_path_mode,
+                           is_single_file=is_single_file,
+                           is_multi_file=is_multi_file)
 
 
 @analysis_bp.route('/errors')

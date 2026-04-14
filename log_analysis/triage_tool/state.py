@@ -212,6 +212,28 @@ def _set_results(sid: str, results: list, db_path: str, file_paths: list = None)
         }
 
 
+def _get_file_paths(sid: str) -> list:
+    """返回当前会话的文件路径列表（路径模式有值，上传模式为空）。"""
+    with _store_lock:
+        entry = _store.get(sid)
+        return list(entry.get('file_paths', [])) if entry else []
+
+
+def _get_p3_history(sid: str) -> list:
+    """返回 P3 多轮对话历史。"""
+    with _store_lock:
+        entry = _store.get(sid)
+        return list(entry.get('p3_history', [])) if entry else []
+
+
+def _set_p3_history(sid: str, history: list) -> None:
+    """更新 P3 多轮对话历史，不影响其他会话字段。"""
+    with _store_lock:
+        if sid in _store:
+            _store[sid]['p3_history'] = list(history)
+            _store[sid]['ts'] = time.time()
+
+
 def _sid() -> str:
     if 'sid' not in session:
         session['sid'] = str(uuid.uuid4())

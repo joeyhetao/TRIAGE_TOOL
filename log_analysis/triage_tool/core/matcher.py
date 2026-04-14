@@ -83,3 +83,27 @@ def run_match(parse_results: list, db_path: str, progress_cb=None) -> list:
             progress_cb(result.get('file', ''), matched, len(top_errors), i + 1, total)
 
     return parse_results
+
+
+def score_query(entries: list, text: str, level: str = '') -> list:
+    """
+    token 重叠打分，返回按分数降序的 (score, entry) 列表。
+    level 非空时仅包含匹配该错误类型的条目。
+    供 llm_bp 的 P4（similar_errors）和 P6（semantic_query）使用。
+    """
+    tokens = [t for t in re.split(r'[\s,，]+', text.lower()) if t] if text else []
+    _SEARCH_FIELDS = ['错误ID', '关键描述关键词', '报错原因', '解决方案', '所属模块', '根因分类']
+    scored = []
+    for entry in entries:
+        if level and str(entry.get('错误类型', '')).strip().upper() != level.upper():
+            continue
+        if tokens:
+            blob = ' '.join(str(entry.get(f, '')) for f in _SEARCH_FIELDS).lower()
+            score = sum(1 for t in tokens if t in blob)
+            if score == 0:
+                continue
+        else:
+            score = 1
+        scored.append((score, entry))
+    scored.sort(key=lambda x: -x[0])
+    return scored

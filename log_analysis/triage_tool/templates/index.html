@@ -32,6 +32,9 @@
       <button class="mode-tab" id="tabKeywords" onclick="switchMode('keywords')">
         ⚙ 解析配置
       </button>
+      <button class="mode-tab" id="tabAi" onclick="switchMode('ai')">
+        🤖 AI 功能
+      </button>
     </div>
 
     <!-- ── 上传文件模式 ─────────────────────────────── -->
@@ -190,6 +193,150 @@ D:\sim\run1\*.log"></textarea>
 
     </div>
 
+    <!-- ── AI 功能模式 ──────────────────────────────────── -->
+    <div id="modeAi" style="display:none">
+
+      <!-- P0: LLM 连接配置 -->
+      <div class="cfg-section">
+        <div class="cfg-section-title" style="display:flex;align-items:center;gap:10px">
+          🤖 LLM 连接配置
+          <button id="llmModeBtnIdx" class="llm-mode-btn enhanced" onclick="toggleLlmMode()"
+                  title="点击切换增强版/基础版"></button>
+        </div>
+
+        <!-- 未配置态：显示完整表单 -->
+        <div id="llmFormPanel">
+          <div class="form-grid" style="margin-top:10px">
+            <div class="fg-item">
+              <label>Endpoint <span style="color:#C00">*</span></label>
+              <input type="text" id="llmEndpoint" class="fi"
+                     placeholder="http://your-server/v1/chat/completions">
+            </div>
+            <div class="fg-item">
+              <label>API Key <span style="color:#999">（内网无鉴权可留空）</span></label>
+              <input type="password" id="llmApiKey" class="fi"
+                     placeholder="sk-xxxx / 内网留空">
+            </div>
+            <div class="fg-item">
+              <label>模型名称 <span style="color:#C00">*</span></label>
+              <input type="text" id="llmModel" class="fi"
+                     placeholder="如：qwen-max / gpt-4o">
+            </div>
+          </div>
+          <!-- 高级设置（折叠） -->
+          <div style="margin-top:8px">
+            <button type="button" class="btn btn-secondary" style="font-size:12px;padding:3px 10px"
+                    onclick="_toggleAdvanced()">
+              <span id="advToggleLabel">▶ 高级设置</span>
+            </button>
+            <div id="llmAdvanced" style="display:none;margin-top:10px">
+              <div class="form-grid">
+                <div class="fg-item">
+                  <label>超时秒数</label>
+                  <input type="number" id="llmTimeout" class="fi" value="30" min="5" max="300">
+                </div>
+                <div class="fg-item">
+                  <label>上下文窗口</label>
+                  <select id="llmCtxPreset" class="fi" onchange="_onCtxPresetChange()">
+                    <option value="128000">128K（标准大模型）</option>
+                    <option value="1000000">1M（超大上下文）</option>
+                    <option value="custom">自定义</option>
+                  </select>
+                  <input type="number" id="llmCtxCustom" class="fi" style="display:none;margin-top:4px"
+                         placeholder="自定义 token 数" min="1000" oninput="_autoP3MaxLines()">
+                </div>
+                <div class="fg-item">
+                  <label>AI日志问答最大行数</label>
+                  <input type="number" id="llmP3MaxLines" class="fi" value="2500" min="100" max="20000">
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <button class="btn-ai" onclick="saveLlmConfig()" id="llmSaveBtn">💾 保存配置</button>
+            <button class="btn-ai-sm" onclick="testLlmConnection()">🔌 连接测试</button>
+            <span id="llmSaveStatus" style="font-size:13px;color:#555"></span>
+          </div>
+        </div>
+
+        <!-- 已配置态：折叠摘要 -->
+        <div id="llmSummaryPanel" style="display:none">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px">
+            <span id="llmSummaryText" class="ai-hint" style="margin:0;padding:6px 12px">✅ 已配置</span>
+            <button class="btn btn-secondary" style="font-size:12px" onclick="showLlmForm()">✏ 修改配置</button>
+            <button class="btn-ai-sm" id="testConnBtn" onclick="testLlmConnection()">🔌 连接测试</button>
+            <button class="btn-ai-sm" onclick="reloadLlmConfig()">🔄 重载配置文件</button>
+          </div>
+        </div>
+
+        <!-- 连接测试 / 重载 状态反馈（两态通用） -->
+        <span id="llmConfigStatus" class="ai-hint" style="display:none;padding:5px 10px;margin:8px 0 0"></span>
+      </div>
+
+      <!-- LLM 连接失败提示条 -->
+      <div id="llmFailBarIdx" class="llm-fail-bar" style="display:none;margin-top:10px">
+        <span>⚠ LLM 连接失败，AI 功能暂时不可用。</span>
+        <button onclick="toggleLlmMode();document.getElementById('llmFailBarIdx').style.display='none'">切换至基础版</button>
+        <button onclick="document.getElementById('llmFailBarIdx').style.display='none'">忽略</button>
+      </div>
+
+      <!-- 未配置时提示 -->
+      <div id="llmUnconfiguredHint" style="display:none;margin-top:14px">
+        <div class="ai-hint">请先填写上方配置并保存，即可使用语义搜索和知识库检查功能。</div>
+      </div>
+
+      <!-- P6/P7 功能区（已配置时显示） -->
+      <div id="llmFeaturesArea" style="display:none">
+
+        <!-- P6: 语义知识库查询 -->
+        <div class="cfg-section" style="margin-top:14px">
+          <div class="cfg-section-title">🔍 语义知识库查询</div>
+          <div class="cfg-section-desc">用自然语言描述错误场景，AI 对搜索结果按语义相关度重排。</div>
+          <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input type="text" id="p6Text" class="fi" style="flex:1;min-width:200px"
+                   placeholder="如：clk 复位后时序违例"
+                   onkeydown="if(event.key==='Enter')runSemanticQuery()">
+            <button class="btn-ai" onclick="runSemanticQuery()">🤖 语义搜索</button>
+          </div>
+          <div id="p6Results" style="margin-top:10px"></div>
+        </div>
+
+        <!-- P7: 知识库质量检查 -->
+        <div class="cfg-section" style="margin-top:14px">
+          <div class="cfg-section-title">🔬 知识库质量检查</div>
+          <div class="cfg-section-desc">AI 分析知识库疑似重复条目，帮助维护知识库质量。</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">
+            <select id="p7Mode" class="fi" style="width:auto">
+              <option value="fast">快速模式（滑动窗口）</option>
+              <option value="deep">深度模式（全量对比）</option>
+            </select>
+            <button class="btn-ai" id="p7StartBtn" onclick="startKbReview()">🔬 开始检查</button>
+            <button class="btn btn-secondary" id="p7StopBtn" style="display:none" onclick="stopKbReview()">⏹ 停止</button>
+          </div>
+          <div id="p7Status" style="margin-top:10px"></div>
+          <div id="p7Results" style="margin-top:10px"></div>
+        </div>
+
+      </div>
+
+      <!-- P7 合并 Modal -->
+      <div id="p7MergeModal" class="ai-modal" style="display:none">
+        <div class="ai-modal-backdrop" onclick="_p7CloseMerge()"></div>
+        <div class="ai-modal-box" style="max-width:760px;width:95%">
+          <div class="ai-modal-hdr">🔀 合并知识库条目
+            <button onclick="_p7CloseMerge()" style="margin-left:auto;background:none;border:none;font-size:18px;cursor:pointer;color:#666">✕</button>
+          </div>
+          <div id="p7MergeBody" style="padding:12px;overflow-y:auto;max-height:62vh"></div>
+          <div class="ai-modal-footer" style="padding:10px 14px;display:flex;gap:8px;align-items:center">
+            <button class="btn-ai" id="p7MergeConfirmBtn" onclick="_p7ConfirmMerge()">✅ 确认合并</button>
+            <button class="btn btn-secondary" onclick="_p7CloseMerge()">取消</button>
+            <span id="p7MergeStatus" style="font-size:13px;margin-left:auto"></span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
     <div class="btn-row" id="analyzeBtnRow">
       <button class="btn btn-primary" id="analyzeBtn" onclick="startAnalyze()">
         <span id="btnText">开始分析</span>
@@ -249,21 +396,22 @@ D:\sim\run1\*.log"></textarea>
   let currentMode   = 'upload';
 
   // ── 模式切换 ──────────────────────────────────────
+  const _ALL_MODES = ['upload','path','query','add','keywords','ai'];
   function switchMode(mode) {
     currentMode = mode;
-    ['upload','path','query','add','keywords'].forEach(m => {
-      document.getElementById('tab' + m.charAt(0).toUpperCase() + m.slice(1))
-              .classList.toggle('active', m === mode);
-      document.getElementById('mode' + m.charAt(0).toUpperCase() + m.slice(1))
-              .style.display = m === mode ? '' : 'none';
+    _ALL_MODES.forEach(m => {
+      const tabEl  = document.getElementById('tab' + m.charAt(0).toUpperCase() + m.slice(1));
+      const modeEl = document.getElementById('mode' + m.charAt(0).toUpperCase() + m.slice(1));
+      if (tabEl)  tabEl.classList.toggle('active', m === mode);
+      if (modeEl) modeEl.style.display = m === mode ? '' : 'none';
     });
     document.getElementById('analyzeBtnRow').style.display = (mode === 'upload' || mode === 'path') ? '' : 'none';
     document.getElementById('queryBtnRow').style.display   = mode === 'query'    ? '' : 'none';
     document.getElementById('addBtnRow').style.display     = mode === 'add'      ? '' : 'none';
-    // 知识库路径选择框在「添加条目」模式仍需显示
     document.getElementById('errMsg').textContent = '';
     if (mode !== 'query') document.getElementById('queryResultsWrap').style.display = 'none';
     if (mode === 'keywords') { kwLoadList(); loadBackups(); }
+    if (mode === 'ai') loadLlmConfig();
     // 切换到非分析 Tab 时隐藏进度区；切换回时若分析仍在进行则恢复
     if (mode !== 'upload' && mode !== 'path') {
       document.getElementById('progressWrap').style.display = 'none';
@@ -837,6 +985,636 @@ D:\sim\run1\*.log"></textarea>
       }
     } catch(e) {
       alert('请求失败：' + e.message);
+    }
+  }
+
+  // ── 增强版 / 基础版 模式切换 ────────────────────────────────
+  function _getLlmMode() { return localStorage.getItem('llmMode') || 'enhanced'; }
+
+  function _applyLlmMode(mode) {
+    document.body.classList.toggle('llm-basic', mode === 'basic');
+    const btn = document.getElementById('llmModeBtnIdx');
+    if (btn) {
+      btn.textContent = mode === 'basic' ? '📋 基础版' : '🤖 增强版';
+      btn.className   = 'llm-mode-btn ' + (mode === 'basic' ? 'basic' : 'enhanced');
+      btn.title       = mode === 'basic' ? '点击切换回增强版（含AI功能）' : '点击切换至基础版（隐藏AI功能）';
+    }
+  }
+
+  function toggleLlmMode() {
+    const next = _getLlmMode() === 'enhanced' ? 'basic' : 'enhanced';
+    localStorage.setItem('llmMode', next);
+    _applyLlmMode(next);
+  }
+
+  function _notifyLlmFail() {
+    if (_getLlmMode() === 'basic') return;
+    const bar = document.getElementById('llmFailBarIdx');
+    if (bar) bar.style.display = '';
+  }
+
+  // 页面加载时应用存储的模式
+  _applyLlmMode(_getLlmMode());
+
+  // ── AI 配置管理 ─────────────────────────────────────────
+
+  function _setLlmConfigured(configured, model) {
+    const formPanel    = document.getElementById('llmFormPanel');
+    const summaryPanel = document.getElementById('llmSummaryPanel');
+    const featuresArea = document.getElementById('llmFeaturesArea');
+    const unconfigHint = document.getElementById('llmUnconfiguredHint');
+    if (configured) {
+      formPanel.style.display    = 'none';
+      summaryPanel.style.display = '';
+      featuresArea.style.display = '';
+      unconfigHint.style.display = 'none';
+      document.getElementById('llmSummaryText').textContent = '✅ 已配置  模型：' + esc(model || '—');
+    } else {
+      formPanel.style.display    = '';
+      summaryPanel.style.display = 'none';
+      featuresArea.style.display = 'none';
+      unconfigHint.style.display = '';
+    }
+  }
+
+  function showLlmForm() {
+    document.getElementById('llmFormPanel').style.display    = '';
+    document.getElementById('llmSummaryPanel').style.display = 'none';
+  }
+
+  function _toggleAdvanced() {
+    const adv = document.getElementById('llmAdvanced');
+    const lbl = document.getElementById('advToggleLabel');
+    if (adv.style.display === 'none') {
+      adv.style.display = '';
+      lbl.textContent = '▼ 高级设置';
+    } else {
+      adv.style.display = 'none';
+      lbl.textContent = '▶ 高级设置';
+    }
+  }
+
+  function _onCtxPresetChange() {
+    const sel = document.getElementById('llmCtxPreset');
+    document.getElementById('llmCtxCustom').style.display = sel.value === 'custom' ? '' : 'none';
+    if (sel.value !== 'custom') _autoP3MaxLines();
+  }
+
+  function _autoP3MaxLines() {
+    const sel = document.getElementById('llmCtxPreset');
+    let ctx;
+    if (sel.value === 'custom') {
+      ctx = parseInt(document.getElementById('llmCtxCustom').value) || 0;
+    } else {
+      ctx = parseInt(sel.value) || 0;
+    }
+    if (ctx > 0) {
+      const lines = Math.max(100, Math.min(20000, Math.round(ctx * 0.025 / 4)));
+      document.getElementById('llmP3MaxLines').value = lines;
+    }
+  }
+
+  async function loadLlmConfig() {
+    try {
+      const resp = await fetch('/llm/get_config');
+      const d = await resp.json();
+      if (!d.ok) return;
+      _setLlmConfigured(d.configured, d.config ? d.config.model : '');
+      if (d.configured && d.config) {
+        document.getElementById('llmEndpoint').value   = d.config.endpoint || '';
+        document.getElementById('llmApiKey').value     = d.config.api_key  || '';
+        document.getElementById('llmModel').value      = d.config.model    || '';
+        document.getElementById('llmTimeout').value    = d.config.timeout  || 30;
+        const ctx = d.config.context_window || 100000;
+        const sel = document.getElementById('llmCtxPreset');
+        if (ctx === 128000 || ctx === 1000000) {
+          sel.value = String(ctx);
+          document.getElementById('llmCtxCustom').style.display = 'none';
+        } else {
+          sel.value = 'custom';
+          document.getElementById('llmCtxCustom').style.display = '';
+          document.getElementById('llmCtxCustom').value = ctx;
+        }
+        document.getElementById('llmP3MaxLines').value = d.config.p3_max_lines || 2500;
+      }
+    } catch(e) { /* 静默失败 */ }
+  }
+
+  async function saveLlmConfig() {
+    const endpoint   = (document.getElementById('llmEndpoint').value || '').trim();
+    const apiKey     = (document.getElementById('llmApiKey').value || '').trim();
+    const model      = (document.getElementById('llmModel').value || '').trim();
+    const timeout    = parseInt(document.getElementById('llmTimeout').value) || 30;
+    const sel        = document.getElementById('llmCtxPreset');
+    const ctxWindow  = sel.value === 'custom'
+      ? (parseInt(document.getElementById('llmCtxCustom').value) || 100000)
+      : (parseInt(sel.value) || 100000);
+    const p3MaxLines = parseInt(document.getElementById('llmP3MaxLines').value) || 2500;
+
+    const statusEl = document.getElementById('llmSaveStatus');
+    const btn      = document.getElementById('llmSaveBtn');
+    statusEl.textContent = '⏳ 保存中…';
+    statusEl.style.color = '#555';
+    btn.disabled = true;
+    try {
+      const resp = await fetch('/llm/save_config', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          endpoint, api_key: apiKey, model,
+          timeout, context_window: ctxWindow, p3_max_lines: p3MaxLines,
+        }),
+      });
+      const d = await resp.json();
+      if (d.ok) {
+        statusEl.textContent = '✅ 保存成功';
+        statusEl.style.color = '#2E7D32';
+        _setLlmConfigured(true, d.model || model);
+      } else {
+        statusEl.textContent = '❌ ' + esc(d.reason || '保存失败');
+        statusEl.style.color = '#C00000';
+      }
+    } catch(e) {
+      statusEl.textContent = '❌ 请求失败：' + esc(e.message);
+      statusEl.style.color = '#C00000';
+    }
+    btn.disabled = false;
+  }
+
+  // ── P0: 热重载 LLM 配置 ─────────────────────────────────
+  async function reloadLlmConfig() {
+    const statusEl = document.getElementById('llmConfigStatus');
+    statusEl.style.display = '';
+    statusEl.textContent = '重载中…';
+    statusEl.style.color = '#555';
+    try {
+      const resp = await fetch('/llm/reload_config', {method:'POST'});
+      const d = await resp.json();
+      if (d.llm_enabled) {
+        statusEl.textContent = '✅ 已重载，模型：' + esc(d.model || '—');
+        statusEl.style.color = '#2E7D32';
+        _setLlmConfigured(true, d.model || '');
+      } else {
+        statusEl.textContent = '⚠ 配置文件无效或 LLM 未启用，请检查 llm_config.json';
+        statusEl.style.color = '#E65100';
+        _setLlmConfigured(false, '');
+      }
+    } catch(e) {
+      statusEl.textContent = '请求失败：' + esc(e.message);
+      statusEl.style.color = '#C00000';
+    }
+  }
+
+  // ── P0: 连接测试 ────────────────────────────────────────
+  async function testLlmConnection() {
+    const statusEl = document.getElementById('llmConfigStatus');
+    statusEl.style.display = '';
+    statusEl.style.color   = '#555';
+    statusEl.textContent   = '⏳ 测试中，请稍候…';
+    const btn = document.getElementById('testConnBtn');
+    if (btn) btn.disabled = true;
+    try {
+      const resp = await fetch('/llm/test_connection', {method: 'POST'});
+      const d    = await resp.json();
+      if (d.ok) {
+        statusEl.textContent = '✅ 连接成功  模型：' + esc(d.model||'—') +
+          '  延迟：' + d.elapsed_ms + ' ms' +
+          (d.reply ? '  回复："' + esc(d.reply) + '"' : '');
+        statusEl.style.color = '#2E7D32';
+      } else {
+        statusEl.textContent = '❌ 连接失败：' + esc(d.reason||'未知原因');
+        statusEl.style.color = '#C00000';
+        _notifyLlmFail();
+      }
+    } catch(e) {
+      statusEl.textContent = '❌ 请求失败：' + esc(e.message);
+      statusEl.style.color = '#C00000';
+      _notifyLlmFail();
+    }
+    if (btn) btn.disabled = false;
+  }
+
+  // ── P6: 语义知识库查询 ──────────────────────────────────
+  function _toggleP6Card(idx) {
+    const body = document.getElementById('p6body-' + idx);
+    const btn  = document.getElementById('p6toggle-' + idx);
+    if (!body) return;
+    const collapsed = body.style.display === 'none';
+    body.style.display = collapsed ? '' : 'none';
+    btn.textContent    = collapsed ? '▲ 收起' : '▼ 展开';
+  }
+
+  function _renderP6Results(entries, reasons, modeLabel) {
+    const total = entries.length;
+    // 超过 5 条时默认折叠后续卡片
+    const AUTO_COLLAPSE_AFTER = 5;
+    let html = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">' +
+      '<span class="ai-tag">' + esc(modeLabel) + '</span>' +
+      '<span style="font-size:13px;color:#555">共 <b>' + total + '</b> 条匹配</span>';
+    if (total > AUTO_COLLAPSE_AFTER) {
+      html += '<button class="btn btn-secondary" style="font-size:12px;padding:2px 10px" ' +
+        'onclick="_p6ExpandAll(' + total + ')">展开全部</button>' +
+        '<button class="btn btn-secondary" style="font-size:12px;padding:2px 10px" ' +
+        'onclick="_p6CollapseAll(' + total + ')">收起全部</button>';
+    }
+    html += '</div>';
+
+    entries.forEach((e, i) => {
+      const rank       = i + 1;
+      const reason     = (reasons[i] || '').trim();
+      const collapsed  = i >= AUTO_COLLAPSE_AFTER;
+      const lvl        = (e['错误类型'] || '').toLowerCase().replace(/\s/g, '_');
+      const lvlLabel   = e['错误类型'] || '—';
+      const errId      = e['错误ID']   || '—';
+      const kw         = e['关键描述关键词'] || '—';
+      const causeRaw   = e['报错原因']  || '—';
+      const sol        = e['解决方案']  || '—';
+      const module_    = e['所属模块']  || '—';
+      const rootCause  = e['根因分类']  || '—';
+      const testcase   = e['关联用例']  || '—';
+      const author     = e['录入人']    || '—';
+      const date       = e['录入日期']  || '—';
+
+      // 卡片头部（始终可见）
+      html += '<div class="qr-card" style="margin-bottom:8px">';
+
+      // ── 头部一行：序号 + badge + 错误ID + AI理由 + 展开按钮 ──
+      html += '<div class="qr-hdr" style="cursor:pointer" onclick="_toggleP6Card(' + i + ')">' +
+        '<span style="font-size:12px;font-weight:bold;color:#999;min-width:20px">#' + rank + '</span>' +
+        '<span class="badge badge-' + lvl + '">' + esc(lvlLabel) + '</span>' +
+        '<span class="qr-id mono">' + esc(errId) + '</span>';
+      if (reason) {
+        html += '<span class="ai-reason-tag" style="flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" title="' + esc(reason) + '">💡 ' + esc(reason) + '</span>';
+      } else {
+        html += '<span style="flex:1"></span>';
+      }
+      html += '<button id="p6toggle-' + i + '" class="btn btn-secondary" ' +
+        'style="font-size:11px;padding:1px 8px;white-space:nowrap" ' +
+        'onclick="event.stopPropagation();_toggleP6Card(' + i + ')">' +
+        (collapsed ? '▼ 展开' : '▲ 收起') + '</button></div>';
+
+      // ── 卡片主体（可折叠）──
+      html += '<div id="p6body-' + i + '" style="' + (collapsed ? 'display:none;' : '') + 'margin-top:8px">';
+
+      // 核心字段（2列）
+      html += '<div class="entry-grid">' +
+        '<div class="eg-kv full"><span class="eg-k">关键描述关键词</span><span class="eg-v">' + esc(kw) + '</span></div>' +
+        '<div class="eg-kv full"><span class="eg-k">报错原因</span><span class="eg-v">' + esc(causeRaw) + '</span></div>' +
+        '<div class="eg-kv full"><span class="eg-k">解决方案</span><span class="eg-v">' + esc(sol) + '</span></div>' +
+        '<div class="eg-kv"><span class="eg-k">所属模块</span><span class="eg-v">' + esc(module_) + '</span></div>' +
+        '<div class="eg-kv"><span class="eg-k">根因分类</span><span class="eg-v">' + esc(rootCause) + '</span></div>' +
+        '<div class="eg-kv full"><span class="eg-k">关联用例</span><span class="eg-v">' + esc(testcase) + '</span></div>' +
+        '</div>';
+
+      // 元信息行（录入人 + 录入日期，小字）
+      html += '<div style="margin-top:6px;padding-top:5px;border-top:1px solid #EEE;' +
+        'font-size:11px;color:#999;display:flex;gap:16px">' +
+        '<span>录入人：' + esc(author) + '</span>' +
+        '<span>录入日期：' + esc(date) + '</span>' +
+        '</div>';
+
+      html += '</div></div>';  // close p6body + qr-card
+    });
+
+    return html;
+  }
+
+  function _p6ExpandAll(n) {
+    for (let i = 0; i < n; i++) {
+      const b = document.getElementById('p6body-' + i);
+      const t = document.getElementById('p6toggle-' + i);
+      if (b) { b.style.display = ''; t.textContent = '▲ 收起'; }
+    }
+  }
+  function _p6CollapseAll(n) {
+    for (let i = 0; i < n; i++) {
+      const b = document.getElementById('p6body-' + i);
+      const t = document.getElementById('p6toggle-' + i);
+      if (b) { b.style.display = 'none'; t.textContent = '▼ 展开'; }
+    }
+  }
+
+  async function runSemanticQuery() {
+    const text = (document.getElementById('p6Text').value || '').trim();
+    if (!text) return;
+    const dbPathVal = document.getElementById('dbPath').value || '';
+    const resultEl  = document.getElementById('p6Results');
+    resultEl.innerHTML = '<span style="color:#999">⏳ AI 重排中…</span>';
+
+    // 第一步：关键词查询取候选；若无结果则取全库前 50 条让 LLM 做纯语义判断
+    let candidates = [];
+    let semanticOnly = false;
+    try {
+      // 先按关键词查
+      const qResp = await fetch('/query', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({level:'', error_id:'', text, db_path: dbPathVal}),
+      });
+      const qd = await qResp.json();
+      candidates = qd.entries || [];
+      // 关键词无命中 → 取全库前 50 条交给 LLM
+      if (!candidates.length) {
+        const allResp = await fetch('/query', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({level:'', error_id:'', text:'', db_path: dbPathVal}),
+        });
+        const allD = await allResp.json();
+        candidates = (allD.entries || []).slice(0, 50);
+        semanticOnly = true;
+      }
+    } catch(e) {
+      resultEl.innerHTML = '<span style="color:#C00">查询失败：' + esc(e.message) + '</span>';
+      return;
+    }
+    if (!candidates.length) {
+      resultEl.innerHTML = '<span style="color:#999">知识库为空，无可搜索内容</span>';
+      return;
+    }
+
+    // 调 P6 重排
+    try {
+      const sResp = await fetch('/llm/semantic_query', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({text, candidates}),
+      });
+      const sd = await sResp.json();
+      let ordered = candidates;
+      let reasons = [];
+      if (sd.ok && Array.isArray(sd.ranked)) {
+        if (sd.ranked.length === 0) {
+          // LLM 判定完全不相关
+          resultEl.innerHTML = '<div class="ai-hint" style="color:#666">' +
+            '🔍 AI 判断知识库中暂无与「' + esc(text) + '」语义相关的条目。</div>';
+          return;
+        }
+        ordered = sd.ranked.map(i => candidates[i]).filter(Boolean);
+        reasons = sd.reasons || [];
+      }
+      const modeLabel = semanticOnly ? 'AI纯语义搜索' : 'AI语义重排';
+      resultEl.innerHTML = _renderP6Results(ordered, reasons, modeLabel);
+    } catch(e) {
+      resultEl.innerHTML = '<span class="ai-hint">（AI重排失败，显示关键词结果）</span>' +
+        _renderP6Results(candidates, [], '关键词匹配');
+    }
+  }
+
+  // ── P7: 知识库质量检查 ──────────────────────────────────
+  let _p7JobId = null;
+  let _p7Poller = null;
+
+  async function startKbReview() {
+    const dbPathVal = document.getElementById('dbPath').value || '';
+    const mode = document.getElementById('p7Mode').value;
+    document.getElementById('p7StartBtn').disabled = true;
+    document.getElementById('p7StopBtn').style.display = '';
+    document.getElementById('p7Status').innerHTML = '<span style="color:#999">⏳ 正在启动…</span>';
+    document.getElementById('p7Results').innerHTML = '';
+    _p7JobId = null;
+    try {
+      const resp = await fetch('/llm/kb_review', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({db_path: dbPathVal, mode}),
+      });
+      const d = await resp.json();
+      if (!d.ok) {
+        document.getElementById('p7Status').innerHTML = '<span style="color:#C00">启动失败：' + esc(d.reason||'未知') + '</span>';
+        _p7ResetBtns();
+        return;
+      }
+      _p7JobId = d.job_id;
+      _p7Poller = setInterval(_p7Poll, 2000);
+    } catch(e) {
+      document.getElementById('p7Status').innerHTML = '<span style="color:#C00">请求失败：' + esc(e.message) + '</span>';
+      _p7ResetBtns();
+    }
+  }
+
+  async function stopKbReview() {
+    if (!_p7JobId) return;
+    clearInterval(_p7Poller);
+    await fetch('/llm/kb_review_stop', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({job_id: _p7JobId}),
+    }).catch(()=>{});
+    document.getElementById('p7Status').innerHTML += ' <span style="color:#E65100">（已停止）</span>';
+    _p7ResetBtns();
+  }
+
+  function _p7ResetBtns() {
+    document.getElementById('p7StartBtn').disabled = false;
+    document.getElementById('p7StopBtn').style.display = 'none';
+  }
+
+  async function _p7Poll() {
+    if (!_p7JobId) return;
+    try {
+      const resp = await fetch('/llm/kb_review_status?job_id=' + encodeURIComponent(_p7JobId));
+      const d = await resp.json();
+      if (d.status === 'running') {
+        const pct = d.total ? Math.round(d.done * 100 / d.total) : 0;
+        document.getElementById('p7Status').innerHTML =
+          '⏳ 检查中… ' + d.done + '/' + d.total + ' 组 (' + pct + '%)' +
+          (d.group ? '  当前：<code>' + esc(d.group) + '</code>' : '') +
+          (d.found ? '  发现疑似重复：<b>' + d.found + '</b> 对' : '');
+      } else if (d.status === 'done') {
+        clearInterval(_p7Poller);
+        _p7ResetBtns();
+        _p7ShowResults(d.suspect_pairs || [], d.skipped || 0);
+      } else if (d.status === 'error') {
+        clearInterval(_p7Poller);
+        _p7ResetBtns();
+        document.getElementById('p7Status').innerHTML = '<span style="color:#C00">检查失败：' + esc(d.reason||'未知') + '</span>';
+      }
+    } catch(e) { /* 网络抖动，忽略 */ }
+  }
+
+  function _p7EntryGrid(e, label) {
+    const fields = [
+      ['错误类型',       e['错误类型']       || '—'],
+      ['错误ID',         e['错误ID']         || '—'],
+      ['关键描述关键词', e['关键描述关键词'] || '—'],
+      ['报错原因',       e['报错原因']       || '—'],
+      ['所属模块',       e['所属模块']       || '—'],
+      ['根因分类',       e['根因分类']       || '—'],
+      ['解决方案',       e['解决方案']       || '—'],
+      ['关联用例',       e['关联用例']       || '—'],
+      ['录入人',         e['录入人']         || '—'],
+      ['录入日期',       e['录入日期']       || '—'],
+    ];
+    const lvl = (e['错误类型'] || '').toLowerCase().replace(/\s/g, '_');
+    return '<div class="asc-body" style="flex:1;min-width:0">' +
+      '<div class="asc-label" style="margin-bottom:6px">' + esc(label) + '</div>' +
+      '<div style="margin-bottom:6px">' +
+        '<span class="badge badge-' + lvl + '" style="margin-right:6px">' + esc(e['错误类型']||'—') + '</span>' +
+        '<span class="qr-id mono">' + esc(e['错误ID']||'—') + '</span>' +
+      '</div>' +
+      fields.slice(2).map(([k, v]) =>
+        '<div class="eg-kv" style="margin-bottom:3px">' +
+          '<span class="eg-k" style="min-width:90px;flex-shrink:0">' + esc(k) + '</span>' +
+          '<span class="eg-v">' + esc(v) + '</span>' +
+        '</div>'
+      ).join('') +
+      '<div style="margin-top:5px;padding-top:4px;border-top:1px solid #EEE;font-size:11px;color:#999">' +
+        '行号：' + (e['_row_idx'] || '?') +
+      '</div>' +
+    '</div>';
+  }
+
+  // P7 合并功能
+  const _P7_MERGE_FIELDS = ['错误类型','错误ID','关键描述关键词','报错原因',
+                             '所属模块','根因分类','解决方案','关联用例','录入人'];
+  let _p7MergePairIdx = null, _p7MergeRowA = null, _p7MergeRowB = null;
+  let _p7Pairs = [];  // 保存完整 pairs 数组供合并时使用
+
+  function _p7ShowResults(pairs, skipped) {
+    _p7Pairs = pairs;
+    const statusEl  = document.getElementById('p7Status');
+    const resultsEl = document.getElementById('p7Results');
+    statusEl.innerHTML = '✅ 检查完成，发现 <b>' + pairs.length + '</b> 对疑似重复' +
+      (skipped ? '（' + skipped + ' 批次LLM超时跳过）' : '') +
+      (pairs.length ? ' <a href="/llm/kb_review_export?job_id=' + encodeURIComponent(_p7JobId) +
+        '" class="btn btn-secondary btn-sm" style="margin-left:8px" download>⬇ 导出Excel</a>' : '');
+    if (!pairs.length) { resultsEl.innerHTML = ''; return; }
+    resultsEl.innerHTML = pairs.map((p, i) => {
+      const ra = p.row_a, rb = p.row_b;
+      return '<div class="ai-suggest-card" id="p7pair-' + i + '" style="margin-bottom:12px">' +
+        '<div class="asc-title" style="display:flex;align-items:center;gap:8px">' +
+          '<span style="color:#999;font-weight:bold">#' + (i+1) + '</span>' +
+          '<span>疑似重复 — <span class="asc-reason">' + esc(p.similarity_reason||'') + '</span></span>' +
+          '<button class="btn-ai btn-ai-sm" style="margin-left:auto;padding:3px 10px;font-size:12px" ' +
+            'onclick="_p7StartMerge(' + i + ', this)">🔀 AI辅助合并</button>' +
+        '</div>' +
+        '<div style="display:flex;gap:12px;margin-top:10px;align-items:flex-start">' +
+          _p7EntryGrid(ra, '条目 A') +
+          '<div style="width:1px;background:#E0E0E0;align-self:stretch;flex-shrink:0"></div>' +
+          _p7EntryGrid(rb, '条目 B') +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  async function _p7StartMerge(pairIdx, btn) {
+    const p = _p7Pairs[pairIdx];
+    if (!p) return;
+    _p7MergePairIdx = pairIdx;
+    _p7MergeRowA = p.row_a;
+    _p7MergeRowB = p.row_b;
+
+    const bodyEl = document.getElementById('p7MergeBody');
+    const modal  = document.getElementById('p7MergeModal');
+    const statusEl = document.getElementById('p7MergeStatus');
+    document.getElementById('p7MergeConfirmBtn').disabled = true;
+    statusEl.textContent = '';
+    bodyEl.innerHTML = '<div style="text-align:center;padding:30px;color:#666">⏳ AI 正在生成合并建议…</div>';
+    modal.style.display = 'flex';
+
+    let merged = {};
+    try {
+      const resp = await fetch('/llm/merge_suggest', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({row_a: p.row_a, row_b: p.row_b})
+      });
+      const d = await resp.json();
+      if (d.ok) merged = d.merged || {};
+      else statusEl.textContent = 'AI建议失败，已降级为A优先：' + (d.reason || '');
+    } catch(e) {
+      statusEl.textContent = '请求失败，已降级为A优先';
+    }
+    if (!Object.keys(merged).length) {
+      _P7_MERGE_FIELDS.forEach(f => { merged[f] = p.row_a[f] || p.row_b[f] || ''; });
+    }
+
+    // 渲染三列对比表格（A | 合并结果可编辑 | B）
+    const thStyle = 'padding:6px 8px;background:#F5F5F5;font-weight:600;font-size:12px;text-align:left;border-bottom:1px solid #DDD';
+    const tdStyle = 'padding:5px 8px;font-size:12px;vertical-align:top;border-bottom:1px solid #EEE;word-break:break-all';
+    const tdMStyle = tdStyle + ';background:#FFFDE7';
+    let rows = _P7_MERGE_FIELDS.map(f => {
+      const va = esc(p.row_a[f] || '—');
+      const vb = esc(p.row_b[f] || '—');
+      const vm = esc(merged[f] || '');
+      return '<tr>' +
+        '<td style="' + tdStyle + ';min-width:60px;color:#666;font-weight:600">' + esc(f) + '</td>' +
+        '<td style="' + tdStyle + '">' + va + '</td>' +
+        '<td style="' + tdMStyle + '"><input data-field="' + esc(f) + '" class="fi p7merge-input" ' +
+          'style="width:100%;box-sizing:border-box;font-size:12px;padding:2px 4px" value="' + vm + '"></td>' +
+        '<td style="' + tdStyle + '">' + vb + '</td>' +
+      '</tr>';
+    }).join('');
+    bodyEl.innerHTML =
+      '<table style="width:100%;border-collapse:collapse;table-layout:fixed">' +
+        '<colgroup><col style="width:90px"><col style="width:28%"><col style="width:34%"><col style="width:28%"></colgroup>' +
+        '<thead><tr>' +
+          '<th style="' + thStyle + '">字段</th>' +
+          '<th style="' + thStyle + '">条目 A（行' + (p.row_a._row_idx||'?') + '，将保留）</th>' +
+          '<th style="' + thStyle + ';background:#FFF9C4">合并结果（可编辑）</th>' +
+          '<th style="' + thStyle + '">条目 B（行' + (p.row_b._row_idx||'?') + '，将删除）</th>' +
+        '</tr></thead>' +
+        '<tbody>' + rows + '</tbody>' +
+      '</table>';
+    document.getElementById('p7MergeConfirmBtn').disabled = false;
+  }
+
+  function _p7CloseMerge() {
+    document.getElementById('p7MergeModal').style.display = 'none';
+    _p7MergePairIdx = null; _p7MergeRowA = null; _p7MergeRowB = null;
+  }
+
+  async function _p7ConfirmMerge() {
+    if (_p7MergeRowA === null || _p7MergeRowB === null) return;
+    const statusEl = document.getElementById('p7MergeStatus');
+    const btn = document.getElementById('p7MergeConfirmBtn');
+    btn.disabled = true;
+    statusEl.textContent = '提交中…';
+
+    // 从可编辑 input 读取合并后的值
+    const mergedData = {};
+    document.querySelectorAll('.p7merge-input').forEach(inp => {
+      mergedData[inp.dataset.field] = inp.value;
+    });
+
+    const dbPath = (document.getElementById('dbPath') || {}).value || '';
+
+    try {
+      // 1. 更新 row_a
+      const upResp = await fetch('/kb/update', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(Object.assign({row_idx: _p7MergeRowA._row_idx, force: true, db_path: dbPath || undefined}, mergedData))
+      });
+      const upData = await upResp.json();
+      if (!upData.success) {
+        statusEl.textContent = '更新失败：' + (upData.error || '未知');
+        btn.disabled = false;
+        return;
+      }
+
+      // 2. 删除 row_b
+      const delResp = await fetch('/kb/delete', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({row_idx: _p7MergeRowB._row_idx, db_path: dbPath || undefined})
+      });
+      const delData = await delResp.json();
+      if (!delData.success) {
+        statusEl.textContent = '删除失败：' + (delData.error || '未知');
+        btn.disabled = false;
+        return;
+      }
+
+      // 3. 成功：关闭 Modal，隐藏卡片
+      const hidePairIdx = _p7MergePairIdx;
+      _p7CloseMerge();
+      const card = document.getElementById('p7pair-' + hidePairIdx);
+      if (card) card.style.display = 'none';
+    } catch(e) {
+      statusEl.textContent = '网络错误：' + e.message;
+      btn.disabled = false;
     }
   }
 
