@@ -2,6 +2,7 @@
 
 > **状态**：功能已全部实现并集成到主工具中。本文档描述实际架构与实现细节，作为维护参考。
 > **版本说明**：v4.0 在 v3.2 基础上新增 P0 配置 GUI（消除手动编辑 JSON 的门槛）、增强/基础模式切换、Anthropic API 格式兼容、P7 AI 辅助合并（Merge Modal），并将 HTTP 层从 `requests` 替换为 stdlib `urllib`（适配零依赖内网部署）。
+> **v4.1**：P2 推荐用例新增 Testlist 导出功能——从 `focus_cases` 一键生成回归 Testlist，支持批量/单条参数配置、浏览器内预览、复制文本、下载（Chrome/Edge 可选保存路径，Firefox 降级到默认目录）。
 
 ---
 
@@ -225,6 +226,51 @@ AI 填写字段：关键描述关键词、报错原因、根因分类、解决�
 **响应**：`{ ok, ranked:[int,...], reasons:[str,...], focus_cases:[str,...] }`
 
 条目按 LLM 评分重排，每条显示推荐理由标签，顶部展示「重点关注用例」面板。
+
+#### P2 附加：Testlist 导出（纯前端）
+
+`focus_cases` 已在浏览器中，无需后端。点击「📋 导出 Testlist」弹出导出面板：
+
+**列定义（`TESTLIST_COLUMNS`，一处配置驱动所有逻辑，增删列只改此处）**：
+
+```javascript
+const TESTLIST_COLUMNS = [
+  { name: 'RUN_NUM', type: 'int',  default: 1,        min: 1 },
+  { name: 'WAVE',    type: 'enum', default: 'on',     options: ['off', 'on'] },
+  { name: 'COV',     type: 'enum', default: 'off',    options: ['off', 'on'] },
+  { name: 'SVSEED',  type: 'str',  default: 'random' },
+];
+```
+
+**参数编辑规则**：
+- **⚡ 批量设置行**（表头下方紫色行）：修改后立即覆盖所有用例；之后仍可对单条单独调整，单条修改优先
+- int 列：失焦/change 时校验 ≥ min，非法值自动纠正为 default
+- enum 列：`<select>` 限定合法值
+- str 列：自由输入
+
+**生成格式**：Tab 分隔（与 testlist demo 一致，在任何编辑器中 Tab 自动对齐）：
+```
+#TC_NAME	RUN_NUM	WAVE	COV	SVSEED
+tc_sanity	1	on	off	random
+```
+
+**预览**：HTML `<table>` 渲染（不依赖等宽字体，浏览器自动对齐列宽）
+
+**下载**：
+
+| 浏览器 | 行为 |
+|---|---|
+| Chrome / Edge | `showSaveFilePicker` 系统对话框，可选路径 + 文件名 |
+| Firefox / 其他 | 直接下载到浏览器默认目录，文件名用输入框值 |
+
+**文件名控制**（Modal footer 两个输入框）：
+- 主名输入框：默认 `regression_testlist`
+- 后缀输入框：默认**空**（无后缀，适配 Linux 内网习惯），可填 `.txt`、`.list` 等
+- 浏览器类型自动检测，旁边显示小字提示（`可选保存路径` 或 `保存至浏览器下载目录`）
+
+**操作**：📋 复制文本 / ⬇ 下载 / 关闭
+
+**文件位置**：仅修改 `templates/result.html`（纯前端，零后端改动）
 
 ---
 

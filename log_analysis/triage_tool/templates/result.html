@@ -850,8 +850,13 @@
         html += '</div>';
       });
       if (d.focus_cases && d.focus_cases.length) {
-        html += '<div class="ai-focus-cases"><span class="ai-tag">优先回归用例</span> ' +
-          d.focus_cases.map(c => '<span class="ai-case-chip">' + esc(c) + '</span>').join(' ') + '</div>';
+        const _casesJson = encodeURIComponent(JSON.stringify(d.focus_cases));
+        html += '<div class="ai-focus-cases" style="display:flex;align-items:center;flex-wrap:wrap;gap:4px">' +
+          '<span class="ai-tag">优先回归用例</span>' +
+          d.focus_cases.map(c => '<span class="ai-case-chip">' + esc(c) + '</span>').join('') +
+          '<button class="btn-ai-sm" style="margin-left:6px;font-size:11px;padding:2px 8px;flex-shrink:0" ' +
+            'onclick="_showTestlist(decodeURIComponent(\'' + _casesJson + '\'))">📋 导出 Testlist</button>' +
+          '</div>';
       }
       panel.innerHTML = html;
       panel.style.display = 'block';
@@ -972,6 +977,221 @@
     const info = document.getElementById('p3info');
     if (info) info.textContent = '';
   }
+  // ── Testlist 导出 ─────────────────────────────────────────
+  // 列定义驱动所有渲染和生成逻辑，如需修改格式只改此处
+  const TESTLIST_COLUMNS = [
+    { name: 'RUN_NUM', type: 'int',  default: 1,        min: 1 },
+    { name: 'WAVE',    type: 'enum', default: 'on',     options: ['off', 'on'] },
+    { name: 'COV',     type: 'enum', default: 'off',    options: ['off', 'on'] },
+    { name: 'SVSEED',  type: 'str',  default: 'random' },
+  ];
+  let _tlCases = [];
+  let _tlData  = {};  // { tc_name: { col_name: value } }
+
+  function _showTestlist(casesJsonStr) {
+    _tlCases = JSON.parse(casesJsonStr);
+    _tlData  = {};
+    _tlCases.forEach(tc => {
+      _tlData[tc] = {};
+      TESTLIST_COLUMNS.forEach(col => { _tlData[tc][col.name] = col.default; });
+    });
+    _renderTestlistBody();
+    document.getElementById('testlistModal').style.display = 'flex';
+    document.getElementById('tlFileName').value = 'regression_testlist';
+    document.getElementById('tlFileExt').value = '';
+    // 给 Firefox 用户显示说明
+    const noteEl = document.getElementById('tlBrowserNote');
+    if (noteEl) noteEl.textContent = window.showSaveFilePicker ? '（可选保存路径）' : '（保存至浏览器下载目录）';
+  }
+
+  function _tlSafeId(tc) { return tc.replace(/[^a-zA-Z0-9_]/g, '_'); }
+
+  // 更新单格（单条用例）并刷新预览
+  function _tlUpdateCell(tc, colName, val) {
+    const col = TESTLIST_COLUMNS.find(c => c.name === colName);
+    if (col && col.type === 'int') {
+      const n = parseInt(val, 10);
+      val = (isNaN(n) || n < (col.min || 1)) ? col.default : n;
+      const inp = document.getElementById('tl-inp-' + _tlSafeId(tc) + '-' + colName);
+      if (inp) inp.value = val;
+    }
+    _tlData[tc][colName] = val;
+    _refreshTestlistPreview();
+  }
+
+  // 批量设置：覆盖所有用例该列的值（优先级高于单条修改，之后再改单条则单条生效）
+  function _tlApplyAll(colName, val) {
+    const col = TESTLIST_COLUMNS.find(c => c.name === colName);
+    if (col && col.type === 'int') {
+      const n = parseInt(val, 10);
+      val = (isNaN(n) || n < (col.min || 1)) ? col.default : n;
+      const allInp = document.getElementById('tl-all-' + colName);
+      if (allInp) allInp.value = val;
+    }
+    _tlCases.forEach(tc => {
+      _tlData[tc][colName] = val;
+      const inp = document.getElementById('tl-inp-' + _tlSafeId(tc) + '-' + colName);
+      if (inp) inp.value = val;
+    });
+    _refreshTestlistPreview();
+  }
+
+  // 生成 Tab 分隔文本（与用户 demo 格式一致，在任何编辑器中 Tab 自动对齐）
+  function _generateTestlistText() {
+    const header = '#TC_NAME\t' + TESTLIST_COLUMNS.map(c => c.name).join('\t');
+    const rows = _tlCases.map(tc =>
+      tc + '\t' + TESTLIST_COLUMNS.map(c => String(_tlData[tc][c.name])).join('\t')
+    );
+    return [header, ...rows].join('\n');
+  }
+
+  function _renderTestlistBody() {
+    const thS  = 'padding:6px 10px;background:#F5F5F5;font-weight:600;font-size:12px;text-align:left;border-bottom:1px solid #DDD';
+    const tdS  = 'padding:5px 8px;font-size:12px;border-bottom:1px solid #EEE';
+    const tdAS = tdS + ';background:#EDE7F6';
+
+    const thCols = TESTLIST_COLUMNS.map(col => '<th style="' + thS + '">' + esc(col.name) + '</th>').join('');
+
+    // 批量设置行（修改立即覆盖所有用例；之后仍可单独调整各行）
+    const allCells = TESTLIST_COLUMNS.map(col => {
+      const id = 'tl-all-' + col.name;
+      let inp;
+      if (col.type === 'enum') {
+        inp = '<select id="' + id + '" style="font-size:12px;padding:2px 4px" ' +
+          'onchange="_tlApplyAll(' + JSON.stringify(col.name) + ',this.value)">' +
+          col.options.map(o => '<option value="' + o + '"' + (o === col.default ? ' selected' : '') + '>' + o + '</option>').join('') +
+          '</select>';
+      } else if (col.type === 'int') {
+        inp = '<input type="number" id="' + id + '" value="' + col.default + '" min="' + (col.min||1) + '" step="1" ' +
+          'style="font-size:12px;width:68px;padding:2px 4px" ' +
+          'onchange="_tlApplyAll(' + JSON.stringify(col.name) + ',this.value)" ' +
+          'onblur="_tlApplyAll(' + JSON.stringify(col.name) + ',this.value)">';
+      } else {
+        inp = '<input type="text" id="' + id + '" value="' + esc(String(col.default)) + '" ' +
+          'style="font-size:12px;width:88px;padding:2px 4px" ' +
+          'oninput="_tlApplyAll(' + JSON.stringify(col.name) + ',this.value)">';
+      }
+      return '<td style="' + tdAS + '">' + inp + '</td>';
+    }).join('');
+    const allRow = '<tr title="修改后立即覆盖所有用例；之后仍可对单条用例单独调整">' +
+      '<td style="' + tdAS + ';font-size:11px;color:#5E3BA4;font-weight:700;white-space:nowrap" ' +
+        'title="批量修改优先级：覆盖所有行；之后单独修改某行则该行以单独值为准">⚡ 批量设置</td>' +
+      allCells + '</tr>';
+
+    // 每条用例行
+    const dataRows = _tlCases.map(tc => {
+      const cells = TESTLIST_COLUMNS.map(col => {
+        const pfx = 'tl-inp-' + _tlSafeId(tc) + '-';
+        let inp;
+        if (col.type === 'enum') {
+          inp = '<select id="' + pfx + col.name + '" style="font-size:12px;padding:2px 4px" ' +
+            'onchange="_tlUpdateCell(' + JSON.stringify(tc) + ',' + JSON.stringify(col.name) + ',this.value)">' +
+            col.options.map(o => '<option value="' + o + '"' + (o === _tlData[tc][col.name] ? ' selected' : '') + '>' + o + '</option>').join('') +
+            '</select>';
+        } else if (col.type === 'int') {
+          inp = '<input type="number" id="' + pfx + col.name + '" value="' + _tlData[tc][col.name] + '" min="' + (col.min||1) + '" step="1" ' +
+            'style="font-size:12px;width:68px;padding:2px 4px" ' +
+            'onchange="_tlUpdateCell(' + JSON.stringify(tc) + ',' + JSON.stringify(col.name) + ',this.value)" ' +
+            'onblur="_tlUpdateCell(' + JSON.stringify(tc) + ',' + JSON.stringify(col.name) + ',this.value)">';
+        } else {
+          inp = '<input type="text" id="' + pfx + col.name + '" value="' + esc(String(_tlData[tc][col.name])) + '" ' +
+            'style="font-size:12px;width:88px;padding:2px 4px" ' +
+            'oninput="_tlUpdateCell(' + JSON.stringify(tc) + ',' + JSON.stringify(col.name) + ',this.value)">';
+        }
+        return '<td style="' + tdS + '">' + inp + '</td>';
+      }).join('');
+      return '<tr><td style="' + tdS + ';font-family:monospace;font-weight:600">' + esc(tc) + '</td>' + cells + '</tr>';
+    }).join('');
+
+    // 预览用 HTML 表格（永远对齐，不依赖等宽字体）
+    const pvThS = 'padding:4px 14px 4px 8px;font-family:monospace;font-size:12px;font-weight:700;' +
+                  'text-align:left;border-bottom:1px solid #CCC;color:#555;white-space:nowrap';
+    const pvTdS = 'padding:3px 14px 3px 8px;font-family:monospace;font-size:12px;' +
+                  'border-bottom:1px solid #EEE;white-space:nowrap';
+    const pvHeaders = ['#TC_NAME', ...TESTLIST_COLUMNS.map(c => c.name)];
+    const pvThRow = '<tr>' + pvHeaders.map(h => '<th style="' + pvThS + '">' + esc(h) + '</th>').join('') + '</tr>';
+    const pvDataRows = _tlCases.map(tc =>
+      '<tr><td style="' + pvTdS + '">' + esc(tc) + '</td>' +
+      TESTLIST_COLUMNS.map(col => '<td style="' + pvTdS + '">' + esc(String(_tlData[tc][col.name])) + '</td>').join('') +
+      '</tr>'
+    ).join('');
+
+    document.getElementById('testlistBody').innerHTML =
+      '<table style="width:100%;border-collapse:collapse;margin-bottom:12px">' +
+        '<thead><tr><th style="' + thS + '">TC_NAME</th>' + thCols + '</tr>' + allRow + '</thead>' +
+        '<tbody>' + dataRows + '</tbody>' +
+      '</table>' +
+      '<div style="font-size:12px;color:#666;margin-bottom:4px;font-weight:600">预览（Tab 分隔，下载后在编辑器中自动对齐）：</div>' +
+      '<div id="testlistPreview" style="overflow-x:auto;border:1px solid #DDD;border-radius:4px;background:#F8F8F8">' +
+        '<table style="border-collapse:collapse;white-space:nowrap">' +
+          '<thead>' + pvThRow + '</thead><tbody>' + pvDataRows + '</tbody>' +
+        '</table>' +
+      '</div>';
+  }
+
+  function _refreshTestlistPreview() {
+    const pvTdS = 'padding:3px 14px 3px 8px;font-family:monospace;font-size:12px;border-bottom:1px solid #EEE;white-space:nowrap';
+    const wrap  = document.getElementById('testlistPreview');
+    if (!wrap) return;
+    const tbl = wrap.querySelector('tbody');
+    if (!tbl) return;
+    tbl.innerHTML = _tlCases.map(tc =>
+      '<tr><td style="' + pvTdS + '">' + esc(tc) + '</td>' +
+      TESTLIST_COLUMNS.map(col => '<td style="' + pvTdS + '">' + esc(String(_tlData[tc][col.name])) + '</td>').join('') +
+      '</tr>'
+    ).join('');
+  }
+
+  function _copyTestlist() {
+    const text = _generateTestlistText();
+    const statusEl = document.getElementById('testlistStatus');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text)
+        .then(() => { statusEl.textContent = '✅ 已复制'; setTimeout(() => { statusEl.textContent = ''; }, 2000); })
+        .catch(() => prompt('请手动复制以下内容：', text));
+    } else {
+      prompt('请手动复制以下内容：', text);
+    }
+  }
+
+  async function _downloadTestlist() {
+    const text = _generateTestlistText();
+    const statusEl = document.getElementById('testlistStatus');
+    const fname    = (document.getElementById('tlFileName').value || '').trim() || 'regression_testlist';
+    const ext      = (document.getElementById('tlFileExt').value || '').trim();
+    const fileName = fname + ext;  // ext 为空则无后缀
+
+    // Chrome/Edge：系统文件保存对话框（可选路径 + 文件名）
+    if (window.showSaveFilePicker) {
+      try {
+        const fh = await window.showSaveFilePicker({
+          suggestedName: fileName,
+          types: [{ description: 'Text / Testlist Files', accept: { 'text/plain': ['.txt', '.list', ''] } }],
+        });
+        const writable = await fh.createWritable();
+        await writable.write(text);
+        await writable.close();
+        statusEl.textContent = '✅ 已保存';
+        setTimeout(() => { statusEl.textContent = ''; }, 2500);
+        return;
+      } catch(e) {
+        if (e.name === 'AbortError') return;
+      }
+    }
+    // Firefox / 其他浏览器：使用输入框文件名下载到浏览器默认目录
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const a    = document.createElement('a');
+    a.href     = URL.createObjectURL(blob);
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    statusEl.textContent = '✅ 已下载：' + fileName;
+    setTimeout(() => { statusEl.textContent = ''; }, 3000);
+  }
+
+  function _closeTestlist() {
+    document.getElementById('testlistModal').style.display = 'none';
+  }
   {% endif %}
 
   // ── 增强版 / 基础版 模式切换 ────────────────────────────────
@@ -1082,6 +1302,37 @@
       <div class="ai-modal-actions">
         <button class="btn btn-ai" onclick="sendP3()" id="p3sendBtn">发送</button>
         <button class="btn btn-secondary" onclick="clearP3()">清空对话</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if llm_enabled %}
+<div id="testlistModal" class="ai-modal" style="display:none">
+  <div class="ai-modal-backdrop" onclick="_closeTestlist()"></div>
+  <div class="ai-modal-box" style="max-width:720px;width:95%">
+    <div class="ai-modal-hdr">
+      <span>📋 导出回归用例 Testlist</span>
+      <button class="ai-modal-close" onclick="_closeTestlist()">✕</button>
+    </div>
+    <div id="testlistBody" style="padding:12px;overflow-y:auto;max-height:52vh"></div>
+    <div class="ai-modal-footer" style="display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;align-items:center;gap:6px">
+        <label style="font-size:12px;font-weight:600;color:#555;white-space:nowrap">文件名：</label>
+        <input type="text" id="tlFileName" value="regression_testlist"
+               style="flex:1;font-size:12px;padding:3px 8px;border:1px solid #CCC;border-radius:4px"
+               placeholder="regression_testlist">
+        <input type="text" id="tlFileExt" value=""
+               style="width:72px;font-size:12px;padding:3px 8px;border:1px solid #CCC;border-radius:4px"
+               placeholder="如 .txt">
+        <span style="font-size:11px;color:#AAA;white-space:nowrap" id="tlBrowserNote"></span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-ai" onclick="_copyTestlist()">📋 复制文本</button>
+        <button class="btn btn-ai" onclick="_downloadTestlist()">⬇ 下载</button>
+        <button class="btn btn-secondary" onclick="_closeTestlist()">关闭</button>
+        <span id="testlistStatus" style="font-size:13px;margin-left:auto;color:#2E7D32"></span>
       </div>
     </div>
   </div>
