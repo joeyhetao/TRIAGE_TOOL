@@ -3,6 +3,7 @@
 > **状态**：功能已全部实现并集成到主工具中。本文档描述实际架构与实现细节，作为维护参考。
 > **版本说明**：v4.0 在 v3.2 基础上新增 P0 配置 GUI（消除手动编辑 JSON 的门槛）、增强/基础模式切换、Anthropic API 格式兼容、P7 AI 辅助合并（Merge Modal），并将 HTTP 层从 `requests` 替换为 stdlib `urllib`（适配零依赖内网部署）。
 > **v4.1**：P2 推荐用例新增 Testlist 导出功能——从 `focus_cases` 一键生成回归 Testlist，支持批量/单条参数配置、浏览器内预览、复制文本、下载（Chrome/Edge 可选保存路径，Firefox 降级到默认目录）。
+> **v4.2**：P3 新增「日志原文侧边栏 + 导出」——Modal 改为左右分栏，右侧常驻展示 AI 参考的 log 原文（含原始行号），支持单段导出（`log_X_Y.log`）和全轮次合并导出（`log_all_turns.log`）。
 
 ---
 
@@ -279,7 +280,7 @@ tc_sanity	1	on	off	random
 **位置**：`result.html` 顶栏（仅 Path 模式 + 单文件时显示）
 **路由**：`POST /llm/custom_extract`
 **请求**：`{ query, line_start|null, line_end|null, clear:bool }`
-**响应**：`{ ok, format, data, extracted_start, extracted_end, total_lines_sent, turns, coverage_warning }`
+**响应**：`{ ok, format, data, extracted_start, extracted_end, total_lines_sent, turns, coverage_warning, raw_lines }`
 
 **预扫描关键点**：
 - `_UVM_REAL_PAT = re.compile(r'\bUVM_(?:ERROR|WARNING|FATAL)\b.*@')` — 要求 `@` 时间戳，排除文件末尾的统计汇总行
@@ -287,6 +288,27 @@ tc_sanity	1	on	off	random
 - `_extract_query_keywords()` — 按 `[\s\d\u4e00-\u9fff]+` 分割提取英文/ID 关键词（如 `uvm_error`、`ERR_001`）
 
 **Token 预算安全检查**：`P3_OVERHEAD_TOKENS=800`，超出时以密度中心对称收缩窗口（不跳行）。
+
+#### P3 附加：日志原文侧边栏 + 导出（v4.2）
+
+Modal 改为左右分栏：
+- **左侧**：聊天区 + 输入框（不变）
+- **右侧**（400px 固定宽）：`#p3Sidebar` 常驻展示 AI 参考的 log 原文
+
+`raw_lines` 字段由后端 `_read_lines_range()` 的返回值（`[(lineno, content)]`）转换为 `[{lineno, content}]` 对象数组，随 AI 回答一起返回给前端。
+
+**侧边栏行为**：
+- 每次 AI 回答后自动刷新，滚动到顶部，标题更新为「📄 日志原文 第X~Y行」
+- 行号用 6 位右对齐，灰色 `user-select:none`，不干扰内容复制
+
+**导出**：
+
+| 按钮 | 位置 | 文件名 | 内容 |
+|---|---|---|---|
+| ⬇ 导出此段 | 侧边栏头部（AI 首次回答后显示）| `log_X_Y.log` | 当前轮 log 原文，首行注释标明行范围 |
+| ⬇ 导出全部日志 | Modal 顶栏（AI 首次回答后显示）| `log_all_turns.log` | 所有轮次 log 段合并，段间以 `# 第N轮 第X~Y行` 注释分隔 |
+
+前端维护 `_p3LogHistory[]` 累积所有轮次的 `{turn, start, end, lines}`，清空对话时同步重置。
 
 ---
 

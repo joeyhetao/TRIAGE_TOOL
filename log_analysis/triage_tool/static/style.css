@@ -436,6 +436,21 @@ a.ed-filetag:hover { background: #C5D8F8; text-decoration: underline; }
 .asc-reason { color: #7B5EA7; font-style: italic; }
 
 /* P3 modal */
+/* P3 专用宽度（不影响 testlist 等其他 modal） */
+.p3-modal-box { width: min(1100px, 95vw) !important; }
+/* P3 左右分栏 */
+.p3-split     { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+.p3-left      { display: flex; flex-direction: column; flex: 1; min-width: 0; overflow: hidden; }
+.p3-sidebar   { width: 400px; flex-shrink: 0; border-left: 1px solid #E0E0E0;
+                display: flex; flex-direction: column; background: #FAFAFA; }
+.p3-sb-hdr    { padding: 7px 10px; background: #EDE7F6; font-size: 12px; font-weight: 700;
+                display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+                border-bottom: 1px solid #D0C8E8; }
+.p3-sb-body   { flex: 1; overflow-y: auto; padding: 8px 10px; }
+.p3-log-pre   { font-family: monospace; font-size: 11px; line-height: 1.6;
+                white-space: pre-wrap; word-break: break-all; color: #333; margin: 0; }
+.p3-log-lineno{ color: #999; user-select: none; }
+
 .ai-modal           { position: fixed; inset: 0; z-index: 10000;
                       display: flex; align-items: center; justify-content: center; }
 .ai-modal-backdrop  { position: absolute; inset: 0; background: rgba(0,0,0,.45); }

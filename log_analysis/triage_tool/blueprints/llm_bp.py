@@ -599,6 +599,7 @@ def custom_extract():
         'total_lines_sent': N,
         'turns':            turns,
         'coverage_warning': coverage_warning,
+        'raw_lines': [{'lineno': ln, 'content': content} for ln, content in raw_lines],
     })
 
 

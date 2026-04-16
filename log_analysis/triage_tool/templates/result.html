@@ -944,6 +944,9 @@
         _appendP3('assistant', body);
         const info = document.getElementById('p3info');
         if (info) info.textContent = '第 ' + d.turns + ' 轮';
+        if (d.raw_lines && d.raw_lines.length) {
+          _p3UpdateSidebar(d.raw_lines, d.extracted_start, d.extracted_end, d.turns);
+        }
       }
     } catch(e) {
       _removeP3(lid);
@@ -966,6 +969,58 @@
     const el = document.getElementById(id);
     if (el) el.remove();
   }
+  // ── P3 侧边栏 ─────────────────────────────────────────────
+  let _p3LogHistory = [];  // [{turn, start, end, lines:[{lineno,content}]}]
+  let _p3CurSeg = null;
+
+  function _p3UpdateSidebar(rawLines, start, end, turn) {
+    _p3CurSeg = {turn, start, end, lines: rawLines};
+    _p3LogHistory.push(_p3CurSeg);
+    const title = document.getElementById('p3SbTitle');
+    if (title) title.textContent = '📄 日志原文  第' + start + '~' + end + '行';
+    const body = document.getElementById('p3SbBody');
+    if (body) {
+      body.innerHTML = '<pre class="p3-log-pre">' +
+        rawLines.map(function(r) {
+          return '<span class="p3-log-lineno">' + String(r.lineno).padStart(6, ' ') + ' | </span>' + esc(r.content);
+        }).join('\n') + '</pre>';
+      body.scrollTop = 0;
+    }
+    const curBtn = document.getElementById('p3ExportCurBtn');
+    if (curBtn) curBtn.style.display = '';
+    const allBtn = document.getElementById('p3ExportAllBtn');
+    if (allBtn) allBtn.style.display = '';
+  }
+
+  function _p3ExportCurrent() {
+    if (!_p3CurSeg) return;
+    const text = '# 日志原文  第' + _p3CurSeg.start + '~' + _p3CurSeg.end + '行\n' +
+      _p3CurSeg.lines.map(function(r) {
+        return String(r.lineno).padStart(6, ' ') + ' | ' + r.content;
+      }).join('\n');
+    _p3Download(text, 'log_' + _p3CurSeg.start + '_' + _p3CurSeg.end + '.log');
+  }
+
+  function _p3ExportAll() {
+    if (!_p3LogHistory.length) return;
+    const text = _p3LogHistory.map(function(seg) {
+      return '# 第' + seg.turn + '轮  第' + seg.start + '~' + seg.end + '行\n' +
+        seg.lines.map(function(r) {
+          return String(r.lineno).padStart(6, ' ') + ' | ' + r.content;
+        }).join('\n');
+    }).join('\n\n');
+    _p3Download(text, 'log_all_turns.log');
+  }
+
+  function _p3Download(text, filename) {
+    const blob = new Blob([text], {type: 'text/plain;charset=utf-8'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
   async function clearP3() {
     await fetch('/llm/custom_extract', {
       method: 'POST',
@@ -976,6 +1031,16 @@
     if (chat) chat.innerHTML = '';
     const info = document.getElementById('p3info');
     if (info) info.textContent = '';
+    _p3LogHistory = [];
+    _p3CurSeg = null;
+    const sbBody = document.getElementById('p3SbBody');
+    if (sbBody) sbBody.innerHTML = '<div style="color:#AAA;font-size:12px;padding:4px">发送问题后，此处显示 AI 参考的日志原文</div>';
+    const sbTitle = document.getElementById('p3SbTitle');
+    if (sbTitle) sbTitle.textContent = '📄 日志原文';
+    ['p3ExportCurBtn', 'p3ExportAllBtn'].forEach(function(id) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
   }
   // ── Testlist 导出 ─────────────────────────────────────────
   // 列定义驱动所有渲染和生成逻辑，如需修改格式只改此处
@@ -1004,22 +1069,7 @@
     if (noteEl) noteEl.textContent = window.showSaveFilePicker ? '（可选保存路径）' : '（保存至浏览器下载目录）';
   }
 
-  function _tlSafeId(tc) { return tc.replace(/[^a-zA-Z0-9_]/g, '_'); }
-
-  // 更新单格（单条用例）并刷新预览
-  function _tlUpdateCell(tc, colName, val) {
-    const col = TESTLIST_COLUMNS.find(c => c.name === colName);
-    if (col && col.type === 'int') {
-      const n = parseInt(val, 10);
-      val = (isNaN(n) || n < (col.min || 1)) ? col.default : n;
-      const inp = document.getElementById('tl-inp-' + _tlSafeId(tc) + '-' + colName);
-      if (inp) inp.value = val;
-    }
-    _tlData[tc][colName] = val;
-    _refreshTestlistPreview();
-  }
-
-  // 批量设置：覆盖所有用例该列的值（优先级高于单条修改，之后再改单条则单条生效）
+  // 批量设置：覆盖所有用例该列的值并刷新预览
   function _tlApplyAll(colName, val) {
     const col = TESTLIST_COLUMNS.find(c => c.name === colName);
     if (col && col.type === 'int') {
@@ -1028,31 +1078,44 @@
       const allInp = document.getElementById('tl-all-' + colName);
       if (allInp) allInp.value = val;
     }
-    _tlCases.forEach(tc => {
-      _tlData[tc][colName] = val;
-      const inp = document.getElementById('tl-inp-' + _tlSafeId(tc) + '-' + colName);
-      if (inp) inp.value = val;
-    });
+    _tlCases.forEach(tc => { _tlData[tc][colName] = val; });
     _refreshTestlistPreview();
   }
 
-  // 生成 Tab 分隔文本（与用户 demo 格式一致，在任何编辑器中 Tab 自动对齐）
+  // 生成空格补齐文本（列宽动态计算，任何编辑器下都对齐）
   function _generateTestlistText() {
-    const header = '#TC_NAME\t' + TESTLIST_COLUMNS.map(c => c.name).join('\t');
+    const headers = ['#TC_NAME', ...TESTLIST_COLUMNS.map(c => c.name)];
+    // 计算每列最大宽度
+    const widths = headers.map((h, i) => {
+      if (i === 0) return Math.max(h.length, ..._tlCases.map(tc => tc.length));
+      const col = TESTLIST_COLUMNS[i - 1];
+      return Math.max(h.length, ..._tlCases.map(tc => String(_tlData[tc][col.name]).length));
+    });
+    function pad(s, w) { return String(s) + ' '.repeat(Math.max(0, w - String(s).length)); }
+    const header = headers.map((h, i) => pad(h, widths[i])).join('  ');
     const rows = _tlCases.map(tc =>
-      tc + '\t' + TESTLIST_COLUMNS.map(c => String(_tlData[tc][c.name])).join('\t')
+      widths.map((w, i) => {
+        const v = i === 0 ? tc : String(_tlData[tc][TESTLIST_COLUMNS[i - 1].name]);
+        return pad(v, w);
+      }).join('  ')
     );
     return [header, ...rows].join('\n');
   }
 
+  // 下载/复制前同步所有输入框的当前值到 _tlData（防止焦点未离开时值未更新）
+  function _syncInputsToData() {
+    TESTLIST_COLUMNS.forEach(col => {
+      const inp = document.getElementById('tl-all-' + col.name);
+      if (inp) _tlApplyAll(col.name, inp.value);
+    });
+  }
+
   function _renderTestlistBody() {
     const thS  = 'padding:6px 10px;background:#F5F5F5;font-weight:600;font-size:12px;text-align:left;border-bottom:1px solid #DDD';
-    const tdS  = 'padding:5px 8px;font-size:12px;border-bottom:1px solid #EEE';
-    const tdAS = tdS + ';background:#EDE7F6';
+    const tdAS = 'padding:5px 8px;font-size:12px;border-bottom:1px solid #EEE;background:#EDE7F6';
 
+    // 批量设置表：一行参数控制所有用例
     const thCols = TESTLIST_COLUMNS.map(col => '<th style="' + thS + '">' + esc(col.name) + '</th>').join('');
-
-    // 批量设置行（修改立即覆盖所有用例；之后仍可单独调整各行）
     const allCells = TESTLIST_COLUMNS.map(col => {
       const id = 'tl-all-' + col.name;
       let inp;
@@ -1064,7 +1127,7 @@
       } else if (col.type === 'int') {
         inp = '<input type="number" id="' + id + '" value="' + col.default + '" min="' + (col.min||1) + '" step="1" ' +
           'style="font-size:12px;width:68px;padding:2px 4px" ' +
-          'onchange="_tlApplyAll(' + JSON.stringify(col.name) + ',this.value)" ' +
+          'oninput="_tlApplyAll(' + JSON.stringify(col.name) + ',this.value)" ' +
           'onblur="_tlApplyAll(' + JSON.stringify(col.name) + ',this.value)">';
       } else {
         inp = '<input type="text" id="' + id + '" value="' + esc(String(col.default)) + '" ' +
@@ -1073,37 +1136,8 @@
       }
       return '<td style="' + tdAS + '">' + inp + '</td>';
     }).join('');
-    const allRow = '<tr title="修改后立即覆盖所有用例；之后仍可对单条用例单独调整">' +
-      '<td style="' + tdAS + ';font-size:11px;color:#5E3BA4;font-weight:700;white-space:nowrap" ' +
-        'title="批量修改优先级：覆盖所有行；之后单独修改某行则该行以单独值为准">⚡ 批量设置</td>' +
-      allCells + '</tr>';
 
-    // 每条用例行
-    const dataRows = _tlCases.map(tc => {
-      const cells = TESTLIST_COLUMNS.map(col => {
-        const pfx = 'tl-inp-' + _tlSafeId(tc) + '-';
-        let inp;
-        if (col.type === 'enum') {
-          inp = '<select id="' + pfx + col.name + '" style="font-size:12px;padding:2px 4px" ' +
-            'onchange="_tlUpdateCell(' + JSON.stringify(tc) + ',' + JSON.stringify(col.name) + ',this.value)">' +
-            col.options.map(o => '<option value="' + o + '"' + (o === _tlData[tc][col.name] ? ' selected' : '') + '>' + o + '</option>').join('') +
-            '</select>';
-        } else if (col.type === 'int') {
-          inp = '<input type="number" id="' + pfx + col.name + '" value="' + _tlData[tc][col.name] + '" min="' + (col.min||1) + '" step="1" ' +
-            'style="font-size:12px;width:68px;padding:2px 4px" ' +
-            'onchange="_tlUpdateCell(' + JSON.stringify(tc) + ',' + JSON.stringify(col.name) + ',this.value)" ' +
-            'onblur="_tlUpdateCell(' + JSON.stringify(tc) + ',' + JSON.stringify(col.name) + ',this.value)">';
-        } else {
-          inp = '<input type="text" id="' + pfx + col.name + '" value="' + esc(String(_tlData[tc][col.name])) + '" ' +
-            'style="font-size:12px;width:88px;padding:2px 4px" ' +
-            'oninput="_tlUpdateCell(' + JSON.stringify(tc) + ',' + JSON.stringify(col.name) + ',this.value)">';
-        }
-        return '<td style="' + tdS + '">' + inp + '</td>';
-      }).join('');
-      return '<tr><td style="' + tdS + ';font-family:monospace;font-weight:600">' + esc(tc) + '</td>' + cells + '</tr>';
-    }).join('');
-
-    // 预览用 HTML 表格（永远对齐，不依赖等宽字体）
+    // 预览表格（HTML table，永远对齐）
     const pvThS = 'padding:4px 14px 4px 8px;font-family:monospace;font-size:12px;font-weight:700;' +
                   'text-align:left;border-bottom:1px solid #CCC;color:#555;white-space:nowrap';
     const pvTdS = 'padding:3px 14px 3px 8px;font-family:monospace;font-size:12px;' +
@@ -1118,10 +1152,13 @@
 
     document.getElementById('testlistBody').innerHTML =
       '<table style="width:100%;border-collapse:collapse;margin-bottom:12px">' +
-        '<thead><tr><th style="' + thS + '">TC_NAME</th>' + thCols + '</tr>' + allRow + '</thead>' +
-        '<tbody>' + dataRows + '</tbody>' +
+        '<thead><tr><th style="' + thS + '">TC_NAME</th>' + thCols + '</tr></thead>' +
+        '<tbody><tr>' +
+          '<td style="' + tdAS + ';font-size:11px;color:#5E3BA4;font-weight:700;white-space:nowrap">⚡ 所有用例</td>' +
+          allCells +
+        '</tr></tbody>' +
       '</table>' +
-      '<div style="font-size:12px;color:#666;margin-bottom:4px;font-weight:600">预览（Tab 分隔，下载后在编辑器中自动对齐）：</div>' +
+      '<div style="font-size:12px;color:#666;margin-bottom:4px;font-weight:600">预览（Tab 分隔，在编辑器中自动对齐）：</div>' +
       '<div id="testlistPreview" style="overflow-x:auto;border:1px solid #DDD;border-radius:4px;background:#F8F8F8">' +
         '<table style="border-collapse:collapse;white-space:nowrap">' +
           '<thead>' + pvThRow + '</thead><tbody>' + pvDataRows + '</tbody>' +
@@ -1143,6 +1180,7 @@
   }
 
   function _copyTestlist() {
+    _syncInputsToData();
     const text = _generateTestlistText();
     const statusEl = document.getElementById('testlistStatus');
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -1155,6 +1193,7 @@
   }
 
   async function _downloadTestlist() {
+    _syncInputsToData();
     const text = _generateTestlistText();
     const statusEl = document.getElementById('testlistStatus');
     const fname    = (document.getElementById('tlFileName').value || '').trim() || 'regression_testlist';
@@ -1166,7 +1205,6 @@
       try {
         const fh = await window.showSaveFilePicker({
           suggestedName: fileName,
-          types: [{ description: 'Text / Testlist Files', accept: { 'text/plain': ['.txt', '.list', ''] } }],
         });
         const writable = await fh.createWritable();
         await writable.write(text);
@@ -1288,20 +1326,36 @@
 {% if llm_enabled and is_path_mode %}
 <div id="p3Modal" class="ai-modal" style="display:none">
   <div class="ai-modal-backdrop" onclick="closeP3Modal()"></div>
-  <div class="ai-modal-box">
+  <div class="ai-modal-box p3-modal-box">
     <div class="ai-modal-hdr">
       <span>📋 AI日志问答</span>
       <span id="p3info" class="ai-modal-info"></span>
+      <button class="btn-ai-sm" onclick="_p3ExportAll()" id="p3ExportAllBtn"
+              style="display:none;margin-left:auto">⬇ 导出全部日志</button>
       <button class="ai-modal-close" onclick="closeP3Modal()">✕</button>
     </div>
-    <div id="p3chat" class="ai-chat-area"></div>
-    <div class="ai-modal-footer">
-      <textarea id="p3input" class="ai-chat-input" rows="3"
-                placeholder="例如：列出所有 UVM_ERROR 的错误ID和位置"
-                onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendP3();}"></textarea>
-      <div class="ai-modal-actions">
-        <button class="btn btn-ai" onclick="sendP3()" id="p3sendBtn">发送</button>
-        <button class="btn btn-secondary" onclick="clearP3()">清空对话</button>
+    <div class="p3-split">
+      <div class="p3-left">
+        <div id="p3chat" class="ai-chat-area"></div>
+        <div class="ai-modal-footer">
+          <textarea id="p3input" class="ai-chat-input" rows="3"
+                    placeholder="例如：列出所有 UVM_ERROR 的错误ID和位置"
+                    onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendP3();}"></textarea>
+          <div class="ai-modal-actions">
+            <button class="btn btn-ai" onclick="sendP3()" id="p3sendBtn">发送</button>
+            <button class="btn btn-secondary" onclick="clearP3()">清空对话</button>
+          </div>
+        </div>
+      </div>
+      <div class="p3-sidebar" id="p3Sidebar">
+        <div class="p3-sb-hdr">
+          <span id="p3SbTitle">📄 日志原文</span>
+          <button class="btn-ai-sm" onclick="_p3ExportCurrent()" id="p3ExportCurBtn"
+                  style="display:none;margin-left:auto">⬇ 导出此段</button>
+        </div>
+        <div class="p3-sb-body" id="p3SbBody">
+          <div style="color:#AAA;font-size:12px;padding:4px">发送问题后，此处显示 AI 参考的日志原文</div>
+        </div>
       </div>
     </div>
   </div>
