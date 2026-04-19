@@ -4,6 +4,86 @@
 
 ---
 
+## BUG-027 LLM 连接测试秒回"未返回内容"：reasoning model content 字段为 null
+
+**发现日期**：2026-04-19
+**状态**：已修复
+
+### 现象
+
+配置内网 LLM（`gpt-oss-120b`，gpustack 部署），点击连接测试后几乎立刻返回：
+
+> 连接失败：LLM 未返回内容，请检查端点/密钥/模型名称
+
+无具体错误信息，且响应极快（说明 HTTP 请求本身已到达服务器并收到 200）。
+
+### 调试过程
+
+1. 先用 curl 验证模型列表和鉴权：
+   ```bash
+   curl http://<host>/v1/models -H "Authorization: Bearer <key>"
+   ```
+2. 确认 key 有效后，直接 curl 对话接口查看原始响应：
+   ```bash
+   curl -X POST http://<host>/v1/chat/completions \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <key>" \
+     -d '{"model":"gpt-oss-120b","messages":[{"role":"user","content":"hi"}],"max_tokens":20}'
+   ```
+3. 发现响应中 `"content": null`，实际输出在 `"reasoning"` 字段——该模型是思考型（reasoning model），推理过程存于 `reasoning`，`content` 为空。
+
+### 根因分析
+
+`_parse_response`（`core/llm_client.py`）直接读取 `choices[0].message.content`，当该字段为 `null` 时 Python 得到 `None`，返回空字符串，调用方判定为未返回内容。代码未考虑 reasoning model 的 `reasoning` 兜底字段。
+
+```python
+# 修复前
+if 'choices' in data:
+    return data['choices'][0]['message']['content']  # null → None → ""
+```
+
+### 修复方案
+
+```python
+# 修复后：content 为 null 时回落到 reasoning 字段
+if 'choices' in data:
+    msg = data['choices'][0]['message']
+    return msg.get('content') or msg.get('reasoning') or ''
+```
+
+### 顺带排查的前置问题
+
+| 症状 | 原因 | 解决 |
+|---|---|---|
+| 连接测试 404 | endpoint 填了 `/v1`（缺少 `/chat/completions`）| 填完整路径 `http://host/v1/chat/completions` |
+| 连接测试 401 | 内网服务有鉴权，curl 查模型列表也返回 401 | 向服务管理员获取 API Key 填入配置 |
+
+---
+
+## BUG-026 Testlist 空格对齐失效 + 批量 RUN_NUM 不生效
+
+**发现日期**：2026-04-16
+**状态**：已修复
+
+### 现象
+
+1. 导出的 Testlist 文件中列不对齐：`tc_sanity1` 紧连，`tc_perf_test` 行与其他行不对齐
+2. 在批量设置行修改 RUN_NUM 为 3，下载的文件仍显示默认值 1
+
+### 根因分析
+
+**对齐问题**：生成函数 `_generateTestlistText()` 原使用 Tab 分隔，但浏览器预览字体非等宽，Tab 宽度不固定导致视觉不对齐；下载文件在部分编辑器（tab stop 非整数倍时）也会错位。
+
+**RUN_NUM 不生效**：`<input type="number">` 绑定的是 `onchange`（失焦才触发），用户修改数值后直接点下载按钮，输入框焦点未离开，`_tlData` 未更新，仍为旧值。
+
+### 修复方案
+
+1. `_generateTestlistText()` 改为动态计算各列最大宽度，用空格补齐（固定2空格列间距），任何编辑器下对齐
+2. `<input type="number">` 改为 `oninput`（实时触发）
+3. `_copyTestlist()` 和 `_downloadTestlist()` 调用前增加 `_syncInputsToData()`，强制从当前 DOM 读值同步到 `_tlData`
+
+---
+
 ## BUG-025 切换 Tab 后返回，进度日志丢失只见转圈
 
 **发现日期**：2026-04-03

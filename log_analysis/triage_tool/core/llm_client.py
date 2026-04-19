@@ -127,14 +127,17 @@ def _is_anthropic_endpoint(endpoint: str) -> bool:
 
 def _normalize_endpoint(endpoint: str, use_anthropic: bool) -> str:
     """
-    Anthropic 格式的完整调用路径必须以 /v1/messages 结尾。
-    用户常见误操作：只填写了 base URL（如 .../api/anthropic），自动补全。
+    自动补全 endpoint 路径：
+    - Anthropic 格式：末尾补全为 /v1/messages
+    - OpenAI 兼容格式：若末尾为 /v1 或 /v1/，自动追加 /chat/completions
     """
-    if not use_anthropic:
-        return endpoint
     clean = endpoint.rstrip('/')
-    if not clean.endswith('/messages'):
-        clean = clean + '/v1/messages'
+    if use_anthropic:
+        if not clean.endswith('/messages'):
+            clean = clean + '/v1/messages'
+    else:
+        if clean.endswith('/v1'):
+            clean = clean + '/chat/completions'
     return clean
 
 
@@ -181,7 +184,8 @@ def _parse_response(data: dict) -> str:
     失败时抛出 ValueError 含响应字段列表。
     """
     if 'choices' in data:
-        return data['choices'][0]['message']['content']
+        msg = data['choices'][0]['message']
+        return msg.get('content') or msg.get('reasoning') or ''
     if 'content' in data:
         parts = data['content']
         if isinstance(parts, list):
