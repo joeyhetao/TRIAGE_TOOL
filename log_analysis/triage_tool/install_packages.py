@@ -1,130 +1,225 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 离线依赖安装脚本 — 仿真日志分类分诊工具
-将 packages/ 目录中的 wheel 包离线安装到用户目录，无需联网。
+
+预检并安装两类依赖：
+  1. pip wheel  (packages/*.whl)        — flask、openpyxl 及其传递依赖
+  2. 系统包     (packages/*.deb / *.rpm) — python3-tk（提供 tkinter）
+
+为什么 tkinter 不在 wheel 里：tkinter 是 Python 与系统 Tcl/Tk 共享库
+的 C 绑定，pip 永远装不了；必须用 apt/dnf/yum 装系统包。
 
 用法：
-    python install_packages.py
+    python3 install_packages.py            # 仅安装当前用户能装的部分（pip wheel）
+    sudo  python3 install_packages.py      # 同时尝试安装系统包（.deb/.rpm）
 
-目标安装路径：/share/home/melo.liao/.local/lib/python3.6/site-packages
+如何为目标机预先准备离线包（在和目标机同发行版的联网机上执行）：
+    pip download flask openpyxl -d ./packages
+    # Debian/Ubuntu:
+    apt-get download python3-tk libtk8.6 libtcl8.6   # 版本号视目标机而定
+    mv *.deb ./packages/
+    # RHEL/CentOS/openEuler:
+    dnf download --resolve --destdir ./packages python3-tkinter
+    #   或老系统：yumdownloader --resolve --destdir ./packages python3-tkinter
+
+注意：tkinter 系统包跨发行版和大版本不通用——目标机若是 Ubuntu 22.04，
+就要在 Ubuntu 22.04 联网机上下载；CentOS 7 不能用 RHEL 9 的 .rpm。
 """
 import sys
 import os
+import shutil
+import site
 import subprocess
+from pathlib import Path
 
-SCRIPT_DIR       = os.path.dirname(os.path.abspath(__file__))
-PACKAGES_DIR     = os.path.join(SCRIPT_DIR, 'packages')
-EXPECTED_PREFIX  = '/share/home/melo.liao/.local/lib/python3.6'
+SCRIPT_DIR   = Path(__file__).resolve().parent
+PACKAGES_DIR = SCRIPT_DIR / 'packages'
 
-# 需要安装的主包（依赖由 --find-links 自动解决）
-MAIN_PACKAGES = ['flask', 'openpyxl']
-
-# packages/ 中所有包，用于预检
-ALL_PACKAGES = [
-    'flask', 'openpyxl', 'werkzeug', 'jinja2', 'markupsafe',
-    'click', 'itsdangerous', 'colorama', 'et-xmlfile',
-]
+PIP_PACKAGES = ['flask', 'openpyxl']
 
 
-def pip_show(pkg):
-    """返回 (已安装: bool, 安装路径: str)"""
-    result = subprocess.run(
-        [sys.executable, '-m', 'pip', 'show', pkg],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE
-    )
-    if result.returncode != 0:
+# ── 工具函数 ──────────────────────────────────────────────
+
+def _header(title):
+    print('\n' + '=' * 60)
+    print(title)
+    print('=' * 60)
+
+
+def _is_root():
+    return hasattr(os, 'geteuid') and os.geteuid() == 0
+
+
+def _detect_distro_family():
+    """返回 'debian' / 'rpm' / 'unknown'。"""
+    if shutil.which('dpkg') and shutil.which('apt-get'):
+        return 'debian'
+    if shutil.which('rpm') and (shutil.which('dnf') or shutil.which('yum')):
+        return 'rpm'
+    return 'unknown'
+
+
+def _check_tkinter():
+    try:
+        import tkinter  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def _pip_show(pkg):
+    """返回 (已安装: bool, 安装路径: str)。"""
+    res = subprocess.run([sys.executable, '-m', 'pip', 'show', pkg],
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if res.returncode != 0:
         return False, ''
-    for line in result.stdout.decode('utf-8', errors='replace').splitlines():
+    for line in res.stdout.decode('utf-8', 'replace').splitlines():
         if line.startswith('Location:'):
             return True, line.split(':', 1)[1].strip()
     return True, ''
 
 
-def main():
-    print('=' * 60)
-    print('仿真日志分类分诊工具 — 离线依赖安装脚本')
-    print('=' * 60)
+# ── 步骤 1：tkinter 系统包安装 ────────────────────────────
 
-    # ── Python 版本检查 ────────────────────────────────────
-    ver = sys.version_info
-    print('\nPython 版本: {}.{}.{}'.format(ver.major, ver.minor, ver.micro))
-    if not (ver.major == 3 and ver.minor == 6):
-        print('警告: 当前 Python {}.{}，wheel 包针对 Python 3.6 编译，'
-              '可能不兼容'.format(ver.major, ver.minor))
+def install_tkinter():
+    _header('步骤 1 / 2  tkinter（系统包）')
+    if _check_tkinter():
+        print('  [ OK   ] tkinter 已可用')
+        return True
 
-    # ── packages/ 目录检查 ────────────────────────────────
-    if not os.path.isdir(PACKAGES_DIR):
-        print('\n错误: 未找到 packages/ 目录: {}'.format(PACKAGES_DIR))
-        print('请将 packages/ 文件夹与本脚本放在同一目录下。')
-        sys.exit(1)
+    print('  [ 缺失 ] import tkinter 失败')
+    family = _detect_distro_family()
+    print('  当前系统：{}'.format(family))
 
-    wheels = sorted(f for f in os.listdir(PACKAGES_DIR) if f.endswith('.whl'))
-    print('\npackages/ 目录共 {} 个 wheel 文件:'.format(len(wheels)))
-    for w in wheels:
-        print('    {}'.format(w))
-
-    # ── 预检：已安装但不在预期路径的包 ────────────────────
-    print('\n--- 预检已安装包 ---')
-    warn_pkgs = []
-    for pkg in ALL_PACKAGES:
-        installed, location = pip_show(pkg)
-        if not installed:
-            print('  [ 未安装 ] {}'.format(pkg))
-        elif EXPECTED_PREFIX in location:
-            print('  [   OK   ] {} → {}'.format(pkg, location))
-        else:
-            warn_pkgs.append((pkg, location))
-            print('  [ 警告   ] {} 已安装，但不在预期路径！'.format(pkg))
-            print('             当前路径: {}'.format(location))
-            print('             预期路径: {}'.format(EXPECTED_PREFIX))
-
-    if warn_pkgs:
-        print('\n注意：以上 {} 个包的安装位置与预期不符，'
-              '可能引起版本冲突。'.format(len(warn_pkgs)))
-        print('仍将继续安装到用户目录（--user），'
-              '若运行时出现 ImportError 请检查 PYTHONPATH。\n')
-
-    # ── 安装 ──────────────────────────────────────────────
-    print('--- 开始安装 ---')
-    cmd = [
-        sys.executable, '-m', 'pip', 'install',
-        '--no-index',
-        '--find-links', PACKAGES_DIR,
-        '--user',
-    ] + MAIN_PACKAGES
-
-    print('执行命令: {}\n'.format(' '.join(cmd)))
-    ret = subprocess.call(cmd)
-
-    if ret != 0:
-        print('\n安装失败，请检查上方错误信息。')
-        sys.exit(1)
-
-    # ── 安装后验证 ────────────────────────────────────────
-    print('\n--- 安装验证 ---')
-    all_ok = True
-    for pkg in MAIN_PACKAGES:
-        installed, location = pip_show(pkg)
-        if installed:
-            if EXPECTED_PREFIX in location:
-                print('  [   OK   ] {} → {}'.format(pkg, location))
-            else:
-                print('  [ 警告   ] {} 安装在: {}（非预期路径）'.format(
-                    pkg, location))
-                all_ok = False
-        else:
-            print('  [ 失败   ] {} 未能正常安装'.format(pkg))
-            all_ok = False
-
-    print('\n' + '=' * 60)
-    if all_ok:
-        print('安装完成！启动应用：')
-        print('    python app.py')
-        print('    python app.py --host 0.0.0.0 --port 5000')
+    if family == 'debian':
+        debs = sorted(PACKAGES_DIR.glob('*.deb'))
+        if debs:
+            return _install_offline_debs(debs)
+        _print_install_hint_debian()
+    elif family == 'rpm':
+        rpms = sorted(PACKAGES_DIR.glob('*.rpm'))
+        if rpms:
+            return _install_offline_rpms(rpms)
+        _print_install_hint_rpm()
     else:
-        print('安装完成，但存在警告，请检查上方输出。')
-    print('=' * 60)
+        print('  无法识别发行版，请手动安装 tkinter：')
+        print('    Debian/Ubuntu :  sudo apt install -y python3-tk')
+        print('    RHEL/CentOS   :  sudo dnf install -y python3-tkinter')
+
+    return False
+
+
+def _install_offline_debs(debs):
+    print('  发现 {} 个 .deb 离线包'.format(len(debs)))
+    for d in debs:
+        print('    {}'.format(d.name))
+    if not _is_root():
+        print('  [ 跳过 ] 需要 root 权限。请用 sudo 重新运行此脚本。')
+        return False
+    cmd = ['dpkg', '-i'] + [str(p) for p in debs]
+    print('  执行：{}'.format(' '.join(cmd)))
+    if subprocess.call(cmd) != 0:
+        print('  dpkg 报错，尝试 apt-get install -f 修复依赖 ...')
+        subprocess.call(['apt-get', 'install', '-f', '-y'])
+    return _check_tkinter()
+
+
+def _install_offline_rpms(rpms):
+    print('  发现 {} 个 .rpm 离线包'.format(len(rpms)))
+    for r in rpms:
+        print('    {}'.format(r.name))
+    if not _is_root():
+        print('  [ 跳过 ] 需要 root 权限。请用 sudo 重新运行此脚本。')
+        return False
+    cmd = ['rpm', '-Uvh'] + [str(p) for p in rpms]
+    print('  执行：{}'.format(' '.join(cmd)))
+    subprocess.call(cmd)
+    return _check_tkinter()
+
+
+def _print_install_hint_debian():
+    print('  packages/ 中无 .deb 离线包。两种安装方式：')
+    print('    在线安装          :  sudo apt install -y python3-tk')
+    print('    离线安装（推荐内网）:')
+    print('      在同版本 Ubuntu/Debian 联网机上执行：')
+    print('        apt-get download python3-tk libtk8.6 libtcl8.6')
+    print('        cp *.deb <项目>/log_analysis/triage_tool/packages/')
+    print('      然后在内网机：sudo python3 install_packages.py')
+
+
+def _print_install_hint_rpm():
+    print('  packages/ 中无 .rpm 离线包。两种安装方式：')
+    print('    在线安装          :  sudo dnf install -y python3-tkinter')
+    print('    离线安装（推荐内网）:')
+    print('      在同版本 RHEL/CentOS 联网机上执行：')
+    print('        dnf download --resolve --destdir ./packages python3-tkinter')
+    print('      然后在内网机：sudo python3 install_packages.py')
+
+
+# ── 步骤 2：pip wheel 离线安装 ────────────────────────────
+
+def install_pip_wheels():
+    _header('步骤 2 / 2  pip wheel（flask / openpyxl）')
+    wheels = sorted(PACKAGES_DIR.glob('*.whl'))
+    if not wheels:
+        print('  packages/ 中无 .whl 文件，跳过。')
+        return False
+
+    print('  Python   : {}.{}.{}'.format(*sys.version_info[:3]))
+    print('  USER_SITE: {}'.format(site.USER_SITE))
+    print('  发现 {} 个 wheel：'.format(len(wheels)))
+    for w in wheels:
+        print('    {}'.format(w.name))
+
+    cmd = [sys.executable, '-m', 'pip', 'install',
+           '--no-index',
+           '--find-links', str(PACKAGES_DIR),
+           '--user'] + PIP_PACKAGES
+    print('\n  执行：{}'.format(' '.join(cmd)))
+    if subprocess.call(cmd) != 0:
+        print('  pip 安装失败，请检查上方错误信息。')
+        print('  常见原因：wheel 文件 cpython 版本与当前 Python 不匹配。')
+        print('    当前 Python: cp{}{}'.format(*sys.version_info[:2]))
+        print('    需要在同版本 Python 联网机上重新 pip download。')
+        return False
+
+    print('\n  验证：')
+    all_ok = True
+    for pkg in PIP_PACKAGES:
+        installed, location = _pip_show(pkg)
+        marker = '  [ OK ]' if installed else '  [FAIL]'
+        print('  {} {} → {}'.format(marker, pkg, location or '(未找到)'))
+        all_ok = all_ok and installed
+    return all_ok
+
+
+# ── main ─────────────────────────────────────────────────
+
+def main():
+    _header('仿真日志分类分诊工具 — 离线依赖安装脚本')
+    print('Python   : {}'.format(sys.version.replace('\n', ' ')))
+    print('Packages : {}'.format(PACKAGES_DIR))
+    print('Root     : {}'.format('yes' if _is_root() else 'no（系统包安装需 sudo）'))
+
+    if not PACKAGES_DIR.is_dir():
+        print('\n错误：packages/ 目录不存在，无法继续。')
+        sys.exit(1)
+
+    tk_ok  = install_tkinter()
+    pip_ok = install_pip_wheels()
+
+    _header('安装总结')
+    print('  tkinter        : {}'.format('OK' if tk_ok else '缺失（按上方提示手动安装）'))
+    print('  flask/openpyxl : {}'.format('OK' if pip_ok else 'FAIL'))
+
+    if tk_ok and pip_ok:
+        print('\n全部依赖就位。启动应用：')
+        print('  python3 app.py')
+    elif pip_ok and not tk_ok:
+        print('\npip 依赖 OK；tkinter 缺失不阻塞核心功能。')
+        print('"选择文件" 按钮会自动 fallback 到提示用户手输绝对路径。')
+    sys.exit(0 if pip_ok else 1)
 
 
 if __name__ == '__main__':

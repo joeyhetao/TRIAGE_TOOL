@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
 import re
+import sys
+import json
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from flask import Blueprint, request, jsonify
@@ -8,7 +11,56 @@ import state
 from core.db_manager import (load_db, find_duplicates, append_entry,
                               update_entry, delete_entry, restore_backup)
 
+_PICKER_TIMEOUT = 30   # 秒；用户没在 30 秒内交互对话框就 fallback
+_PICKER_SCRIPT  = state.BASE_DIR / 'core' / 'file_picker.py'
+
 kb_bp = Blueprint('kb', __name__)
+
+
+@kb_bp.route('/pick_db_file', methods=['GET'])
+def pick_db_file():
+    """弹原生文件对话框选 KB 文件。tkinter 跑在子进程里，避免挂死请求线程。
+
+    子进程脚本：core/file_picker.py。stdout 单行 JSON，30s 超时强制兜底。
+    无 GUI / tkinter 缺失 / WSLg 未起 / 用户长时间不交互 — 任一情况
+    都会通过 fallback 返回，前端 alert 提示手输绝对路径。
+    """
+    initial = (request.args.get('initial') or '').strip()
+    if initial:
+        p = Path(initial)
+        initial_dir = str(p.parent if p.parent.exists() else state.BASE_DIR)
+    else:
+        initial_dir = str(state.BASE_DIR)
+
+    try:
+        result = subprocess.run(
+            [sys.executable, str(_PICKER_SCRIPT), initial_dir],
+            capture_output=True,
+            text=True,
+            timeout=_PICKER_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return jsonify({'ok': False,
+                        'reason': '弹窗超时（{}s）：未在桌面找到对话框或长时间未交互'.format(_PICKER_TIMEOUT)})
+    except Exception as e:
+        return jsonify({'ok': False, 'reason': '弹窗启动失败: {}'.format(e)})
+
+    out = (result.stdout or '').strip()
+    err = (result.stderr or '').strip()
+    try:
+        data = json.loads(out)
+    except Exception:
+        snippet = (err or out)[:200]
+        return jsonify({'ok': False, 'reason': '弹窗返回不可解析: ' + snippet})
+
+    if not data.get('ok'):
+        return jsonify({'ok': False, 'reason': data.get('reason', '未知错误')})
+
+    path = data.get('path') or ''
+    if not path:
+        return jsonify({'ok': False, 'cancelled': True})
+
+    return jsonify({'ok': True, 'path': str(Path(path).resolve())})
 
 
 @kb_bp.route('/query', methods=['POST'])

@@ -77,6 +77,8 @@ pip install --no-index --find-links=./packages flask openpyxl   # intranet machi
 
 Do not introduce new third-party dependencies. `core/log_parser.py`, `core/matcher.py`, and `core/llm_client.py` are intentionally stdlib-only (no `requests`). On Linux intranet machines, use `install_packages.py`.
 
+**注意**：`install_packages.py` 现在同时处理 pip wheels (`*.whl`) 和系统包 (`*.deb` / `*.rpm`，主要是 `python3-tk` 提供 tkinter)。**有 `.deb`/`.rpm` 时必须 `sudo` 运行**，因为系统包要写 `/usr/lib`。tkinter 仅"选择文件"按钮的原生弹窗用——缺失时自动 fallback 到提示用户手输绝对路径，不阻塞核心功能。完整内网部署流程见 [log_analysis/triage_tool/DEPLOYMENT.md](log_analysis/triage_tool/DEPLOYMENT.md)。
+
 ## Architecture
 
 This is a Flask web app for triaging UVM simulation log files against an Excel knowledge base, with an optional LLM enhancement layer.
@@ -205,6 +207,7 @@ _FileLock       →  serializes across processes/machines (stdlib only)
 
 ## Key Reference Documents
 
+- [log_analysis/triage_tool/DEPLOYMENT.md](log_analysis/triage_tool/DEPLOYMENT.md) — Intranet 源码模式部署完整流程（联网机准备 packages、tkinter 系统包离线、sudo 运行 install_packages.py、Firefox 验证、敏感文件处理）
 - [log_analysis/triage_tool/PRD.md](log_analysis/triage_tool/PRD.md) — Full product requirements; update when adding/changing features
 - [log_analysis/triage_tool/BUGLOG.md](log_analysis/triage_tool/BUGLOG.md) — Historical bug fixes with root cause analysis; update when fixing bugs
 - [log_analysis/triage_tool/LLM_INTEGRATION_PLAN.md](log_analysis/triage_tool/LLM_INTEGRATION_PLAN.md) — Original design spec for the LLM layer (now implemented on this branch)

@@ -140,8 +140,7 @@ D:\sim\run1\*.log"></textarea>
     <div class="form-row">
       <label class="form-label">📋 知识库路径</label>
       <input type="text" id="dbPath" class="form-input" value="{{ db_default }}" placeholder="error_db.xlsx 路径">
-      <label for="dbInput" class="btn btn-secondary">选择文件</label>
-      <input type="file" id="dbInput" accept=".xlsx" style="display:none">
+      <button type="button" id="dbPickBtn" class="btn btn-secondary">选择文件</button>
     </div>
 
     <!-- 提交按钮 -->
@@ -390,7 +389,7 @@ D:\sim\run1\*.log"></textarea>
   const dropZone  = document.getElementById('dropZone');
   const fileInput = document.getElementById('fileInput');
   const fileList  = document.getElementById('fileList');
-  const dbInput   = document.getElementById('dbInput');
+  const dbPickBtn = document.getElementById('dbPickBtn');
   const dbPath    = document.getElementById('dbPath');
   let selectedFiles = [];
   let currentMode   = 'upload';
@@ -431,7 +430,19 @@ D:\sim\run1\*.log"></textarea>
     addFiles(fileInput.files);
     fileInput.value = '';
   });
-  dbInput.addEventListener('change', () => { if (dbInput.files[0]) dbPath.value = dbInput.files[0].name; });
+  dbPickBtn.addEventListener('click', async () => {
+    try {
+      const resp = await fetch('/pick_db_file?initial=' + encodeURIComponent(dbPath.value || ''));
+      const data = await resp.json();
+      if (data.ok) {
+        dbPath.value = data.path;
+      } else if (!data.cancelled) {
+        alert('打开文件对话框失败：' + (data.reason || '未知错误') + '\n请在输入框中手动输入绝对路径。');
+      }
+    } catch (e) {
+      alert('打开文件对话框失败：' + e.message + '\n请在输入框中手动输入绝对路径。');
+    }
+  });
 
   function addFiles(files) {
     const rejected = [];
