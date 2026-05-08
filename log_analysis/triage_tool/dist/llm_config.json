@@ -1,8 +1,0 @@
-{
-  "endpoint": "https://open.bigmodel.cn/api/anthropic",
-  "api_key": "62d82433cd324ee097ccb57909dd16a1.xv1ZFtRKlWaov1ks",
-  "model": "GLM-4.7",
-  "timeout": 30,
-  "context_window": 128000,
-  "p3_max_lines": 2500
-}
