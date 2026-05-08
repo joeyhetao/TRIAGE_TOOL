@@ -374,19 +374,7 @@
               {% elif ematch.status == 'unmatched' %}
               <div class="match-box unmatched">
                 <div class="match-header">❌ 未匹配 — 建议将该报错条目添加至错误数据库
-                  {% if llm_enabled %}
-                  <button class="btn-ai-sm" id="p1btn-{{ ri }}-{{ ei }}"
-                          data-key="{{ ri }}-{{ ei }}"
-                          data-level="{{ elevel }}"
-                          data-errorid="{{ err.error_id }}"
-                          data-loc="{{ err.location }}"
-                          data-desc="{{ (err.description or '')[:300] }}"
-                          onclick="aiAnalyzeError(this)">🤖 AI 分析</button>
-                  {% endif %}
                 </div>
-                {% if llm_enabled %}
-                <div id="p1result-{{ ri }}-{{ ei }}" class="ai-hint" style="display:none"></div>
-                {% endif %}
                 <!-- 回写表单 -->
                 <div class="writeback-form" id="form-{{ ri }}-{{ ei }}">
                   <div class="form-grid">
@@ -780,52 +768,7 @@
   })();
 
   {% if llm_enabled %}
-  // ── P1: AI 分析未匹配错误 ──────────────────────────────────
-  async function aiAnalyzeError(btn) {
-    const key = btn.dataset.key;
-    btn.disabled = true;
-    btn.textContent = '⏳…';
-    try {
-      const resp = await fetch('/llm/analyze_error', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          level:       btn.dataset.level,
-          error_id:    btn.dataset.errorid,
-          location:    btn.dataset.loc,
-          description: btn.dataset.desc,
-        }),
-      });
-      const d = await resp.json();
-      const hint = document.getElementById('p1result-' + key);
-      if (!d.ok) {
-        btn.textContent = '🤖 失败';
-        if (hint) { hint.style.display='block'; hint.innerHTML='<span style="color:#c00">AI分析失败：' + esc(d.reason||'未知') + '</span>'; }
-        _notifyLlmFail();
-        return;
-      }
-      const setVal = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
-      setVal('kw-'       + key, d.keywords);
-      setVal('reason-'   + key, d.reason);
-      setVal('module-'   + key, d.module);
-      setVal('solution-' + key, d.solution);
-      const ctEl = document.getElementById('category-' + key);
-      if (ctEl && d.category) {
-        for (const opt of ctEl.options) { if (opt.value === d.category) { opt.selected = true; break; } }
-      }
-      if (hint) {
-        hint.style.display = 'block';
-        hint.innerHTML = '<span class="ai-tag">AI建议</span> 已自动填入分析结果，请核对后写回知识库。';
-      }
-      btn.textContent = '🤖 已分析';
-    } catch(e) {
-      btn.disabled = false;
-      btn.textContent = '🤖 AI 分析';
-      _notifyLlmFail();
-    }
-  }
-
-  // ── P2: 多条匹配智能推荐 ───────────────────────────────────
+  // ── P1: 多条匹配智能推荐 ───────────────────────────────────
   async function aiRankEntries(key) {
     const btn = document.getElementById('p2btn-' + key);
     if (!btn) return;
@@ -864,7 +807,7 @@
     } catch(e) { btn.disabled = false; btn.textContent = '🤖 智能推荐'; _notifyLlmFail(); }
   }
 
-  // ── P4: 相似错误推荐 ──────────────────────────────────────
+  // ── P3: 相似错误推荐 ──────────────────────────────────────
   async function aiSimilarErrors(btn) {
     const key = btn.dataset.key;
     btn.disabled = true;
@@ -903,7 +846,7 @@
     } catch(e) { btn.disabled = false; btn.textContent = '🔍 查找相似错误'; _notifyLlmFail(); }
   }
 
-  // ── P3: AI日志问答 ────────────────────────────────────────
+  // ── P2: AI日志问答 ────────────────────────────────────────
   function openP3Modal() {
     const m = document.getElementById('p3Modal');
     if (m) { m.style.display = 'flex'; document.getElementById('p3input').focus(); }
@@ -969,7 +912,7 @@
     const el = document.getElementById(id);
     if (el) el.remove();
   }
-  // ── P3 侧边栏 ─────────────────────────────────────────────
+  // ── P2 侧边栏 ─────────────────────────────────────────────
   let _p3LogHistory = [];  // [{turn, start, end, lines:[{lineno,content}]}]
   let _p3CurSeg = null;
 

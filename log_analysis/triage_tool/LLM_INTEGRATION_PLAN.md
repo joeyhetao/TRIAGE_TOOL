@@ -1,9 +1,10 @@
 # triage_tool — LLM 集成方案 v4.0（已实现）
 
 > **状态**：功能已全部实现并集成到主工具中。本文档描述实际架构与实现细节，作为维护参考。
-> **版本说明**：v4.0 在 v3.2 基础上新增 P0 配置 GUI（消除手动编辑 JSON 的门槛）、增强/基础模式切换、Anthropic API 格式兼容、P7 AI 辅助合并（Merge Modal），并将 HTTP 层从 `requests` 替换为 stdlib `urllib`（适配零依赖内网部署）。
-> **v4.1**：P2 推荐用例新增 Testlist 导出功能——从 `focus_cases` 一键生成回归 Testlist，支持批量/单条参数配置、浏览器内预览、复制文本、下载（Chrome/Edge 可选保存路径，Firefox 降级到默认目录）。
-> **v4.2**：P3 新增「日志原文侧边栏 + 导出」——Modal 改为左右分栏，右侧常驻展示 AI 参考的 log 原文（含原始行号），支持单段导出（`log_X_Y.log`）和全轮次合并导出（`log_all_turns.log`）。
+> **版本说明**：v4.0 在 v3.2 基础上新增 P0 配置 GUI（消除手动编辑 JSON 的门槛）、增强/基础模式切换、Anthropic API 格式兼容、P6 AI 辅助合并（Merge Modal），并将 HTTP 层从 `requests` 替换为 stdlib `urllib`（适配零依赖内网部署）。
+> **v4.1**：P1 推荐用例新增 Testlist 导出功能——从 `focus_cases` 一键生成回归 Testlist，支持批量/单条参数配置、浏览器内预览、复制文本、下载（Chrome/Edge 可选保存路径，Firefox 降级到默认目录）。
+> **v4.2**：P2 新增「日志原文侧边栏 + 导出」——Modal 改为左右分栏，右侧常驻展示 AI 参考的 log 原文（含原始行号），支持单段导出（`log_X_Y.log`）和全轮次合并导出（`log_all_turns.log`）。
+> **v4.3**：移除「未匹配错误自动分析」（原 P1，AI 推断 5 字段预填回写表单）——日志原文用户自有，AI 推断价值低且需人工核对，反而增加流程；后续 P 编号顺延（原 P2~P7 → P1~P6）。
 
 ---
 
@@ -12,7 +13,7 @@
 triage_tool 是一个基于规则的 UVM 仿真日志分类分诊工具，在规则引擎基础上叠加了可选的 LLM 增强层：
 
 - **基础版**（无 LLM）：与原工具完全一致，所有 AI 按钮隐藏
-- **增强版**（含 LLM）：AI Tab 始终显示，配置 LLM 后解锁 P1~P7 全部 AI 功能
+- **增强版**（含 LLM）：AI Tab 始终显示，配置 LLM 后解锁 P1~P6 全部 AI 功能
 
 两种模式可在界面中一键切换，选择持久化到 `localStorage`，刷新后保留。
 
@@ -22,13 +23,12 @@ triage_tool 是一个基于规则的 UVM 仿真日志分类分诊工具，在规
 
 | 功能模块 | 基础版（无 LLM） | 增强版（含 LLM） |
 |---------|-----------------|-----------------|
-| **未匹配错误** | 手动填写回写表单 | P1：一键 AI 分析 + 自动预填 |
-| **多条匹配** | 按录入日期降序展示 | P2：LLM 按相关性重排 + 推荐理由 + 重点关注用例列表 |
-| **自定义提取** | 不支持 | P3：自然语言查询 + 行号范围提取（Path 模式单文件） |
-| **相似错误** | 无 | P4：语义相似 KB 条目推荐，辅助写回 |
-| **批量分析** | 人工扫描统计 | P5：AI 自动归纳 3~7 个失败模式 |
-| **知识库查询** | 关键词/ID 模糊匹配 | P6：语义搜索（规则预筛选 + LLM 重排，全库兜底） |
-| **知识库维护** | 基于字符串规则去重 | P7：AI 语义重复检测 + AI 辅助合并（Merge Modal） |
+| **多条匹配** | 按录入日期降序展示 | P1：LLM 按相关性重排 + 推荐理由 + 重点关注用例列表 |
+| **自定义提取** | 不支持 | P2：自然语言查询 + 行号范围提取（Path 模式单文件） |
+| **相似错误** | 无 | P3：语义相似 KB 条目推荐，辅助写回 |
+| **批量分析** | 人工扫描统计 | P4：AI 自动归纳 3~7 个失败模式 |
+| **知识库查询** | 关键词/ID 模糊匹配 | P5：语义搜索（规则预筛选 + LLM 重排，全库兜底） |
+| **知识库维护** | 基于字符串规则去重 | P6：AI 语义重复检测 + AI 辅助合并（Merge Modal） |
 
 ---
 
@@ -54,8 +54,8 @@ log_analysis/triage_tool/
 │   ├── reporter.py         # 报告生成
 │   └── llm_client.py       # ← 新增：LLM API 客户端（纯 stdlib）
 └── templates/ static/
-    ├── index.html          # 修改：AI Tab + P6/P7 + Config GUI
-    └── result.html         # 修改：P1/P2/P3/P4/P5 + 模式切换按钮
+    ├── index.html          # 修改：AI Tab + P5/P6 + Config GUI
+    └── result.html         # 修改：P1/P2/P3/P4 + 模式切换按钮
 ```
 
 ### 2.2 app.py 改动（3 处）
@@ -170,7 +170,7 @@ body.llm-basic .ai-modal  { display: none !important; }
 切换逻辑：
 - `localStorage.getItem('llmMode')` 读取上次选择（`'enhanced'` 或 `'basic'`）
 - 页面加载时自动应用（`index.html` + `result.html` 均支持）
-- LLM 调用失败（P1/P2/P4）时，页面顶部显示黄色提示条（`.llm-fail-bar`），提示切换到基础版
+- LLM 调用失败（P1/P3）时，页面顶部显示黄色提示条（`.llm-fail-bar`），提示切换到基础版
 - `_notifyLlmFail()` 函数连续失败 N 次后自动建议切换
 
 ---
@@ -207,19 +207,7 @@ POST /llm/reload_config
 
 ---
 
-### P1 — 未匹配错误自动分析
-
-**位置**：`result.html` → 未匹配错误块
-**路由**：`POST /llm/analyze_error`
-**请求**：`{ file_name, error_idx, level, error_id, location, description }`
-**响应**：`{ ok, keywords, reason, category, solution, module }`
-
-AI 填写字段：关键描述关键词、报错原因、根因分类、解决方案、所属模块（共5个）。
-失败时按钮恢复、表单保持空白（静默降级）。
-
----
-
-### P2 — 多条命中智能推荐
+### P1 — 多条命中智能推荐
 
 **位置**：`result.html` → 命中 ≥2 条的匹配块
 **路由**：`POST /llm/rank_entries`
@@ -228,7 +216,7 @@ AI 填写字段：关键描述关键词、报错原因、根因分类、解决�
 
 条目按 LLM 评分重排，每条显示推荐理由标签，顶部展示「重点关注用例」面板。
 
-#### P2 附加：Testlist 导出（纯前端）
+#### P1 附加：Testlist 导出（纯前端）
 
 `focus_cases` 已在浏览器中，无需后端。点击「📋 导出 Testlist」弹出导出面板：
 
@@ -275,7 +263,7 @@ tc_sanity	1	on	off	random
 
 ---
 
-### P3 — AI 日志问答
+### P2 — AI 日志问答
 
 **位置**：`result.html` 顶栏（仅 Path 模式 + 单文件时显示）
 **路由**：`POST /llm/custom_extract`
@@ -289,7 +277,7 @@ tc_sanity	1	on	off	random
 
 **Token 预算安全检查**：`P3_OVERHEAD_TOKENS=800`，超出时以密度中心对称收缩窗口（不跳行）。
 
-#### P3 附加：日志原文侧边栏 + 导出（v4.2）
+#### P2 附加：日志原文侧边栏 + 导出（v4.2）
 
 Modal 改为左右分栏：
 - **左侧**：聊天区 + 输入框（不变）
@@ -312,7 +300,7 @@ Modal 改为左右分栏：
 
 ---
 
-### P4 — 相似错误推荐
+### P3 — 相似错误推荐
 
 **位置**：`result.html` → 未匹配错误回写表单下方
 **路由**：`POST /llm/similar_errors`
@@ -323,7 +311,7 @@ Modal 改为左右分栏：
 
 ---
 
-### P5 — 批量错误模式分析
+### P4 — 批量错误模式分析
 
 **位置**：`result.html` 顶栏（仅多文件时显示）
 **路由**：`POST /llm/batch_patterns`
@@ -334,7 +322,7 @@ Modal 改为左右分栏：
 
 ---
 
-### P6 — 语义知识库搜索
+### P5 — 语义知识库搜索
 
 **位置**：`index.html` → AI 功能 Tab → 语义知识库查询区
 **路由**：`POST /llm/semantic_query`
@@ -352,7 +340,7 @@ Modal 改为左右分栏：
 
 ---
 
-### P7 — 知识库语义去重 + AI 辅助合并
+### P6 — 知识库语义去重 + AI 辅助合并
 
 **位置**：`index.html` → AI 功能 Tab → 知识库质量检查区
 **路由**：
@@ -378,7 +366,7 @@ AI 失败降级：以"A字段非空优先"作为兜底，用户仍可在表格�
 **Merge Modal 交互**：
 
 ```
-P7 结果卡片（每对）：
+P6 结果卡片（每对）：
   └── [🔀 AI辅助合并] 按钮（id="p7pair-N" 用于合并后隐藏）
         ↓ 点击
       Merge Modal 弹出
@@ -402,7 +390,7 @@ P7 结果卡片（每对）：
 - **存储**：模块级 `_cache dict`（内存，重启清空）
 - **Key**：`md5(json.dumps(messages))[:16]`（含所有字段，键排序）
 - **TTL**：`cache_ttl` 秒，`0` 禁用
-- **使用**：`call_llm_with_cache()`；P7 等幂等场景推荐
+- **使用**：`call_llm_with_cache()`；P6 等幂等场景推荐
 
 ### 超时重试
 
@@ -421,11 +409,11 @@ P7 结果卡片（每对）：
 | 文件 | 变更类型 | 说明 |
 |------|----------|------|
 | `core/llm_client.py` | **新增** | LLM API 客户端，纯 stdlib urllib，约 300 行 |
-| `blueprints/llm_bp.py` | **新增** | Flask Blueprint，14 条 LLM 路由，约 1000 行 |
+| `blueprints/llm_bp.py` | **新增** | Flask Blueprint，14 条 LLM 路由，约 950 行 |
 | `core/matcher.py` | **修改** | 新增 `score_query()` 函数 |
 | `app.py` | **修改** | 3 处：llm_client.init、Blueprint 注册、Jinja 全局注入 |
-| `templates/result.html` | **修改** | P1/P2/P3/P4/P5 按钮 + JS + 模式切换按钮 + 失败提示条 |
-| `templates/index.html` | **修改** | AI Tab（常显）+ Config GUI + P6/P7 + Merge Modal + JS |
+| `templates/result.html` | **修改** | P1/P2/P3/P4 按钮 + JS + 模式切换按钮 + 失败提示条 |
+| `templates/index.html` | **修改** | AI Tab（常显）+ Config GUI + P5/P6 + Merge Modal + JS |
 | `static/style.css` | **修改** | 新增 AI CSS 类（见下） |
 
 ### 已实现路由汇总（共 14 条）
@@ -436,28 +424,27 @@ P7 结果卡片（每对）：
 | `POST /llm/save_config` | P0 保存配置到 llm_config.json |
 | `POST /llm/reload_config` | P0 热重载配置 |
 | `POST /llm/test_connection` | P0 连接测试 |
-| `POST /llm/analyze_error` | P1 未匹配自动分析 |
-| `POST /llm/rank_entries` | P2 多条匹配智能推荐 |
-| `POST /llm/custom_extract` | P3 AI 日志问答 |
-| `POST /llm/similar_errors` | P4 相似错误推荐 |
-| `POST /llm/batch_patterns` | P5 批量错误模式分析 |
-| `POST /llm/semantic_query` | P6 语义知识库查询重排 |
-| `POST /llm/kb_review` | P7 启动知识库质量检查（后台任务）|
-| `GET  /llm/kb_review_status` | P7 查询检查进度 |
-| `GET  /llm/kb_review_export` | P7 导出检查结果 Excel |
-| `POST /llm/merge_suggest` | P7 AI 建议合并两条重复条目 |
+| `POST /llm/rank_entries` | P1 多条匹配智能推荐 |
+| `POST /llm/custom_extract` | P2 AI 日志问答 |
+| `POST /llm/similar_errors` | P3 相似错误推荐 |
+| `POST /llm/batch_patterns` | P4 批量错误模式分析 |
+| `POST /llm/semantic_query` | P5 语义知识库查询重排 |
+| `POST /llm/kb_review` | P6 启动知识库质量检查（后台任务）|
+| `GET  /llm/kb_review_status` | P6 查询检查进度 |
+| `GET  /llm/kb_review_export` | P6 导出检查结果 Excel |
+| `POST /llm/merge_suggest` | P6 AI 建议合并两条重复条目 |
 
 ### 主要 CSS 类
 
 | 类名 | 用途 |
 |------|------|
 | `.btn-ai`, `.btn-ai-sm` | AI 操作按钮（紫色系）|
-| `.ai-hint` | P1 AI 建议提示条（浅黄色）|
-| `.ai-reason-tag` | P2/P4/P6 推荐理由标签 |
+| `.ai-hint` | AI 提示条（浅黄色，用于 LLM 配置状态、失败兜底等通用场景）|
+| `.ai-reason-tag` | P1/P3/P5 推荐理由标签 |
 | `.ai-modal`, `.ai-modal-backdrop`, `.ai-modal-box` | 通用模态框 |
 | `.ai-modal-hdr`, `.ai-modal-footer` | 模态框头部/底部 |
-| `.ai-suggest-card`, `.asc-title`, `.asc-body` | P4/P7 条目卡片 |
-| `.ai-pattern-card` | P5 模式分析结果卡片 |
+| `.ai-suggest-card`, `.asc-title`, `.asc-body` | P3/P6 条目卡片 |
+| `.ai-pattern-card` | P4 模式分析结果卡片 |
 | `.llm-mode-btn.enhanced`, `.llm-mode-btn.basic` | 增强/基础模式切换按钮 |
 | `.llm-fail-bar` | LLM 失败黄色提示条 |
 | `body.llm-basic .llm-only` | 基础模式下隐藏所有 AI 元素 |
@@ -468,15 +455,14 @@ P7 结果卡片（每对）：
 
 | 场景 | 行为 |
 |------|------|
-| `llm_config.json` 不存在 | `is_configured()=False`；AI Tab 显示配置表单；P6/P7 显示"请先配置"灰色提示 |
+| `llm_config.json` 不存在 | `is_configured()=False`；AI Tab 显示配置表单；P5/P6 显示"请先配置"灰色提示 |
 | LLM 接口超时/失败 | 路由返回 `{ok:false}`，前端按钮恢复，不影响手工流程；连续失败时提示切换基础版 |
 | LLM 返回非 JSON | `_parse_json_safe()` 正则提取 `\{.*\}`，失败返回 `None`，调用方使用降级值 |
-| LLM 返回非法 category（P1）| 枚举归一化，无匹配默认「其他问题」 |
-| P6 关键词过滤返回 0 条 | 直接读全库作为候选发 LLM（兜底，不显示"无结果"）|
-| P6 LLM 返回空数组 | 前端显示「语义搜索未找到相关条目」（不展示无关结果）|
-| Upload 模式（P3）| 不显示「AI日志问答」按钮 |
-| 单文件模式（P5）| 不显示「AI 模式分析」按钮 |
-| P7 合并 AI 失败 | 降级为「A字段非空优先」填入表格，用户可继续编辑后确认 |
-| P7 删除后悔 | `/kb/delete` 有 Toast 8 秒撤销（`/kb/undo_delete`），误删可恢复 |
+| P5 关键词过滤返回 0 条 | 直接读全库作为候选发 LLM（兜底，不显示"无结果"）|
+| P5 LLM 返回空数组 | 前端显示「语义搜索未找到相关条目」（不展示无关结果）|
+| Upload 模式（P2）| 不显示「AI日志问答」按钮 |
+| 单文件模式（P4）| 不显示「AI 模式分析」按钮 |
+| P6 合并 AI 失败 | 降级为「A字段非空优先」填入表格，用户可继续编辑后确认 |
+| P6 删除后悔 | `/kb/delete` 有 Toast 8 秒撤销（`/kb/undo_delete`），误删可恢复 |
 | Anthropic 404 | `_normalize_endpoint()` 自动追加 `/v1/messages`，对用户透明 |
 | 系统代理干扰 | `ProxyHandler({})` 绕过 `http_proxy`，内网 LLM 直连不受代理影响 |

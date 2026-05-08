@@ -284,10 +284,10 @@ D:\sim\run1\*.log"></textarea>
         <div class="ai-hint">请先填写上方配置并保存，即可使用语义搜索和知识库检查功能。</div>
       </div>
 
-      <!-- P6/P7 功能区（已配置时显示） -->
+      <!-- P5/P6 功能区（已配置时显示） -->
       <div id="llmFeaturesArea" style="display:none">
 
-        <!-- P6: 语义知识库查询 -->
+        <!-- P5: 语义知识库查询 -->
         <div class="cfg-section" style="margin-top:14px">
           <div class="cfg-section-title">🔍 语义知识库查询</div>
           <div class="cfg-section-desc">用自然语言描述错误场景，AI 对搜索结果按语义相关度重排。</div>
@@ -300,7 +300,7 @@ D:\sim\run1\*.log"></textarea>
           <div id="p6Results" style="margin-top:10px"></div>
         </div>
 
-        <!-- P7: 知识库质量检查 -->
+        <!-- P6: 知识库质量检查 -->
         <div class="cfg-section" style="margin-top:14px">
           <div class="cfg-section-title">🔬 知识库质量检查</div>
           <div class="cfg-section-desc">AI 分析知识库疑似重复条目，帮助维护知识库质量。</div>
@@ -318,7 +318,7 @@ D:\sim\run1\*.log"></textarea>
 
       </div>
 
-      <!-- P7 合并 Modal -->
+      <!-- P6 合并 Modal -->
       <div id="p7MergeModal" class="ai-modal" style="display:none">
         <div class="ai-modal-backdrop" onclick="_p7CloseMerge()"></div>
         <div class="ai-modal-box" style="max-width:760px;width:95%">
@@ -1205,7 +1205,7 @@ D:\sim\run1\*.log"></textarea>
     if (btn) btn.disabled = false;
   }
 
-  // ── P6: 语义知识库查询 ──────────────────────────────────
+  // ── P5: 语义知识库查询 ──────────────────────────────────
   function _toggleP6Card(idx) {
     const body = document.getElementById('p6body-' + idx);
     const btn  = document.getElementById('p6toggle-' + idx);
@@ -1344,7 +1344,7 @@ D:\sim\run1\*.log"></textarea>
       return;
     }
 
-    // 调 P6 重排
+    // 调 P5 重排
     try {
       const sResp = await fetch('/llm/semantic_query', {
         method: 'POST',
@@ -1372,7 +1372,7 @@ D:\sim\run1\*.log"></textarea>
     }
   }
 
-  // ── P7: 知识库质量检查 ──────────────────────────────────
+  // ── P6: 知识库质量检查 ──────────────────────────────────
   let _p7JobId = null;
   let _p7Poller = null;
 
@@ -1476,7 +1476,7 @@ D:\sim\run1\*.log"></textarea>
     '</div>';
   }
 
-  // P7 合并功能
+  // P6 合并功能
   const _P7_MERGE_FIELDS = ['错误类型','错误ID','关键描述关键词','报错原因',
                              '所属模块','根因分类','解决方案','关联用例','录入人'];
   let _p7MergePairIdx = null, _p7MergeRowA = null, _p7MergeRowB = null;

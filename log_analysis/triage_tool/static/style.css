@@ -404,7 +404,7 @@ a.ed-filetag:hover { background: #C5D8F8; text-decoration: underline; }
               border-radius: 5px; padding: 6px 10px; margin-bottom: 8px;
               font-size: 12px; color: #795548; }
 
-/* P2 rank panel */
+/* P1 rank panel */
 .ai-rank-panel  { background: #F9F5FF; border: 1px solid #D1C4E9;
                   border-radius: 6px; padding: 10px 12px; margin: 8px 0; }
 .ai-rank-header { font-size: 12px; color: #666; margin-bottom: 8px; }
@@ -422,7 +422,7 @@ a.ed-filetag:hover { background: #C5D8F8; text-decoration: underline; }
                   border-radius: 10px; padding: 2px 8px; margin: 2px 3px;
                   font-size: 11px; font-family: monospace; }
 
-/* P4 similar errors */
+/* P3 similar errors */
 .ai-similar-section { background: #F3F8FF; border: 1px solid #BBDEFB;
                       border-radius: 6px; padding: 10px 12px; margin: 8px 0 10px; }
 .ai-similar-title   { font-size: 12px; font-weight: 700; color: #1565C0;
@@ -435,10 +435,10 @@ a.ed-filetag:hover { background: #C5D8F8; text-decoration: underline; }
 .asc-label  { font-weight: 600; color: #1565C0; }
 .asc-reason { color: #7B5EA7; font-style: italic; }
 
-/* P3 modal */
-/* P3 专用宽度（不影响 testlist 等其他 modal） */
+/* P2 modal */
+/* P2 专用宽度（不影响 testlist 等其他 modal） */
 .p3-modal-box { width: min(1100px, 95vw) !important; }
-/* P3 左右分栏 */
+/* P2 左右分栏 */
 .p3-split     { display: flex; flex: 1; overflow: hidden; min-height: 0; }
 .p3-left      { display: flex; flex-direction: column; flex: 1; min-width: 0; overflow: hidden; }
 .p3-sidebar   { width: 400px; flex-shrink: 0; border-left: 1px solid #E0E0E0;
@@ -472,7 +472,7 @@ a.ed-filetag:hover { background: #C5D8F8; text-decoration: underline; }
 .ai-chat-input:focus { border-color: #7B5EA7; outline: none; }
 .ai-modal-actions   { display: flex; gap: 8px; margin-top: 8px; }
 
-/* P3 chat messages */
+/* P2 chat messages */
 .p3msg       { display: flex; gap: 10px; margin-bottom: 12px; }
 .p3msg-user  { flex-direction: row-reverse; }
 .p3lbl       { display: inline-flex; align-items: center; justify-content: center;
@@ -500,9 +500,8 @@ body.llm-basic .result-page .btn-ai,
 body.llm-basic .result-page .btn-ai-sm    { display: none !important; }
 body.llm-basic .result-page #p3Modal      { display: none !important; }
 body.llm-basic .result-page .p2result-area,
-body.llm-basic .result-page .p1result-area,
 body.llm-basic .result-page .p4sec        { display: none !important; }
-/* index.html：隐藏 P6/P7 功能区（保留配置表单） */
+/* index.html：隐藏 P5/P6 功能区（保留配置表单） */
 body.llm-basic #llmFeaturesArea           { display: none !important; }
 body.llm-basic #llmUnconfiguredHint       { display: none !important; }
 

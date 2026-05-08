@@ -89,7 +89,7 @@ def score_query(entries: list, text: str, level: str = '') -> list:
     """
     token 重叠打分，返回按分数降序的 (score, entry) 列表。
     level 非空时仅包含匹配该错误类型的条目。
-    供 llm_bp 的 P4（similar_errors）和 P6（semantic_query）使用。
+    供 llm_bp 的 P3（similar_errors）和 P5（semantic_query）使用。
     """
     tokens = [t for t in re.split(r'[\s,，]+', text.lower()) if t] if text else []
     _SEARCH_FIELDS = ['错误ID', '关键描述关键词', '报错原因', '解决方案', '所属模块', '根因分类']

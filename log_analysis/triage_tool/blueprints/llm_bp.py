@@ -7,17 +7,16 @@ LLM 功能 Blueprint — 所有 AI 辅助路由。
   GET  /llm/get_config         P0: 获取当前配置（api_key 脱敏）
   POST /llm/save_config        P0: 保存配置到 llm_config.json
   POST /llm/test_connection    P0: 连接测试
-  POST /llm/analyze_error      P1: 未匹配错误自动分析
-  POST /llm/rank_entries       P2: 多条匹配智能推荐
-  POST /llm/custom_extract     P3: 自定义提取（路径模式单文件，多轮对话）
-  POST /llm/similar_errors     P4: 相似错误推荐（写回辅助）
-  POST /llm/batch_patterns     P5: 批量错误模式分析
-  POST /llm/semantic_query     P6: 语义知识库查询重排
-  POST /llm/kb_review          P7: 启动知识库质量检查（后台任务）
-  GET  /llm/kb_review_status   P7: 查询检查进度
-  POST /llm/kb_review_stop     P7: 停止检查
-  GET  /llm/kb_review_export   P7: 导出检查结果 Excel
-  POST /llm/merge_suggest      P7: AI 建议合并两条重复条目
+  POST /llm/rank_entries       P1: 多条匹配智能推荐
+  POST /llm/custom_extract     P2: 自定义提取（路径模式单文件，多轮对话）
+  POST /llm/similar_errors     P3: 相似错误推荐（写回辅助）
+  POST /llm/batch_patterns     P4: 批量错误模式分析
+  POST /llm/semantic_query     P5: 语义知识库查询重排
+  POST /llm/kb_review          P6: 启动知识库质量检查（后台任务）
+  GET  /llm/kb_review_status   P6: 查询检查进度
+  POST /llm/kb_review_stop     P6: 停止检查
+  GET  /llm/kb_review_export   P6: 导出检查结果 Excel
+  POST /llm/merge_suggest      P6: AI 建议合并两条重复条目
 """
 import re
 import io
@@ -35,7 +34,7 @@ from core.matcher import score_query
 
 llm_bp = Blueprint('llm', __name__)
 
-# ── P7 后台任务存储（独立于 state._jobs，字段结构不同） ──────
+# ── P6 后台任务存储（独立于 state._jobs，字段结构不同） ──────
 _review_jobs = {}        # job_id -> {...}
 _review_lock = threading.Lock()
 _REVIEW_JOB_TTL = 3600  # 1 小时后自动清理
@@ -51,8 +50,6 @@ _P3_SYSTEM_PROMPT = (
     '2. 如果所问信息在日志中找不到，必须明确回答「日志中未找到相关内容」，不得猜测\n'
     '3. 每条结论后必须标注原始行号，格式：（L行号） 或 L行号'
 )
-
-_VALID_CATEGORIES = ['DUT Bug', 'TB Bug', '用例问题', '工具问题', '其他问题']
 
 # 匹配真实 UVM 错误行：含时间戳 @ 或文件路径（排除末尾汇总统计行）
 _UVM_SCAN_PAT = re.compile(r'\bUVM_(?:ERROR|WARNING|FATAL)\b')
@@ -341,62 +338,7 @@ def save_config():
 
 
 # ══════════════════════════════════════════════════════════
-# P1 — 未匹配错误自动分析
-# ══════════════════════════════════════════════════════════
-
-@llm_bp.route('/llm/analyze_error', methods=['POST'])
-def analyze_error():
-    if not llm_client.is_configured():
-        return jsonify({'ok': False, 'reason': 'LLM 未配置'})
-    data        = request.get_json() or {}
-    level       = data.get('level', '')
-    error_id    = data.get('error_id', '')
-    location    = data.get('location', '')
-    description = str(data.get('description', ''))[:500]
-
-    system_prompt = (
-        '你是一名经验丰富的芯片验证工程师，专注于 UVM 仿真日志分析。\n'
-        '请严格以 JSON 格式回答，不包含任何其他文字。\n'
-        '信息不足的字段返回空字符串 ""，不要编造内容。'
-    )
-    user_prompt = (
-        '分析以下 UVM 仿真错误，返回 JSON：\n'
-        '{\n'
-        '  "keywords": "3~5个关键词，英文逗号分隔，最能定位此错误的技术词汇",\n'
-        '  "reason":   "根本原因，信息不足返回 \\"\\"",\n'
-        '  "category": "DUT Bug | TB Bug | 用例问题 | 工具问题 | 其他问题",\n'
-        '  "solution": "建议解决方案，信息不足返回 \\"\\"",\n'
-        '  "module":   "从 location 推断的出错模块名，无法判断返回 \\"\\""  \n'
-        '}\n\n'
-        f'错误级别：{level}\n'
-        f'错误 ID：{error_id}\n'
-        f'位置：{location}\n'
-        f'描述：{description}'
-    )
-    messages = [
-        {'role': 'system', 'content': system_prompt},
-        {'role': 'user',   'content': user_prompt},
-    ]
-    raw = llm_client.call_llm(messages, temperature=0.2, max_tokens=400)
-    if not raw:
-        return jsonify({'ok': False, 'reason': 'LLM 调用失败'})
-
-    parsed   = _parse_json_safe(raw) or {}
-    raw_cat  = parsed.get('category', '')
-    category = next((c for c in _VALID_CATEGORIES
-                     if c.lower() == str(raw_cat).lower()), '其他问题')
-    return jsonify({
-        'ok':       True,
-        'keywords': str(parsed.get('keywords', '')),
-        'reason':   str(parsed.get('reason',   '')),
-        'category': category,
-        'solution': str(parsed.get('solution', '')),
-        'module':   str(parsed.get('module',   '')),
-    })
-
-
-# ══════════════════════════════════════════════════════════
-# P2 — 多条匹配智能推荐
+# P1 — 多条匹配智能推荐
 # ══════════════════════════════════════════════════════════
 
 @llm_bp.route('/llm/rank_entries', methods=['POST'])
@@ -459,7 +401,7 @@ def rank_entries():
 
 
 # ══════════════════════════════════════════════════════════
-# P3 — 自定义提取（路径模式单文件，多轮对话）
+# P2 — 自定义提取（路径模式单文件，多轮对话）
 # ══════════════════════════════════════════════════════════
 
 @llm_bp.route('/llm/custom_extract', methods=['POST'])
@@ -604,7 +546,7 @@ def custom_extract():
 
 
 # ══════════════════════════════════════════════════════════
-# P4 — 相似错误推荐（写回辅助）
+# P3 — 相似错误推荐（写回辅助）
 # ══════════════════════════════════════════════════════════
 
 @llm_bp.route('/llm/similar_errors', methods=['POST'])
@@ -675,7 +617,7 @@ def similar_errors():
 
 
 # ══════════════════════════════════════════════════════════
-# P5 — 批量错误模式分析
+# P4 — 批量错误模式分析
 # ══════════════════════════════════════════════════════════
 
 @llm_bp.route('/llm/batch_patterns', methods=['POST'])
@@ -735,7 +677,7 @@ def batch_patterns():
 
 
 # ══════════════════════════════════════════════════════════
-# P6 — 语义知识库查询增强
+# P5 — 语义知识库查询增强
 # ══════════════════════════════════════════════════════════
 
 @llm_bp.route('/llm/semantic_query', methods=['POST'])
@@ -787,7 +729,7 @@ def semantic_query():
 
 
 # ══════════════════════════════════════════════════════════
-# P7 — 知识库语义去重质量检查
+# P6 — 知识库语义去重质量检查
 # ══════════════════════════════════════════════════════════
 
 def _run_review_job(job_id: str, db_path: str, mode: str, cfg: dict):
@@ -894,7 +836,7 @@ def _run_review_job(job_id: str, db_path: str, mode: str, cfg: dict):
 
 @llm_bp.route('/llm/merge_suggest', methods=['POST'])
 def merge_suggest():
-    """P7 合并建议：给定两条疑似重复条目，返回 AI 建议合并后的字段值。"""
+    """P6 合并建议：给定两条疑似重复条目，返回 AI 建议合并后的字段值。"""
     data = request.get_json() or {}
     ra = data.get('row_a', {})
     rb = data.get('row_b', {})

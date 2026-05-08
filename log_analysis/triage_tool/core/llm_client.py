@@ -10,7 +10,7 @@ LLM API 客户端 — 无 Flask 依赖，可在任何线程调用。
   call_llm_verbose(messages, ...)              — 同上，返回 (result, error_str) 供调试
   call_llm_with_cache(messages, ...)           — 内存缓存包装（md5 key，TTL 可配置）
   reload_config() -> bool                      — 热重载 llm_config.json，返回是否已配置
-  get_config() -> dict | None                  — 当前配置快照（用于 P3 参数读取）
+  get_config() -> dict | None                  — 当前配置快照（用于 P2 参数读取）
   save_config(cfg: dict) -> None               — 写入 llm_config.json 并热重载
 
 支持 API 格式（自动检测）：

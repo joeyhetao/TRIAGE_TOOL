@@ -16,7 +16,7 @@ log_analysis/triage_tool/
 │   ├── kb.py           # /query, /kb/add, /kb/update, /kb/delete (+ undo)
 │   ├── config_bp.py    # /extra_patterns/*, /pass_patterns/* (live-reload)
 │   ├── export.py       # /export/excel, /export/html
-│   └── llm_bp.py       # 14 LLM routes (P0–P7), independent of analyze/result flow
+│   └── llm_bp.py       # 14 LLM routes (P0–P6), independent of analyze/result flow
 ├── core/
 │   ├── log_parser.py   # UVM streaming parser + ThreadPoolExecutor dispatch
 │   ├── matcher.py      # Two-stage KB matching per top_errors entry; exposes score_query
@@ -127,7 +127,7 @@ Live-reload globals, no restart needed:
 
 Both live in `state.py`, module-level:
 
-- `_store[sid] = {'results', 'db_path', 'file_paths', 'p3_history', 'p3_tokens', 'ts'}` — TTL 2 h. `file_paths` populated only in path mode (used by `/llm/custom_extract` for single-file LLM Q&A). `p3_history` stores the multi-turn LLM conversation for the P3 feature, accessed via `state._get_p3_history` / `_set_p3_history`. State is lost on restart by design.
+- `_store[sid] = {'results', 'db_path', 'file_paths', 'p3_history', 'p3_tokens', 'ts'}` — TTL 2 h. `file_paths` populated only in path mode (used by `/llm/custom_extract` for single-file LLM Q&A). `p3_history` (legacy key name; corresponds to current P2 feature) stores the multi-turn LLM conversation, accessed via `state._get_p3_history` / `_set_p3_history`. State is lost on restart by design.
 - `_jobs[job_id]` — analyze background jobs. Phase sequence: `scanning` → `parsing` → `matching` → `done|error`. TTL 1 h. SSE generator adds `sleep(1)` before closing on terminal phases to avoid Linux TCP FIN race. `sid` must be extracted before the thread starts — Flask's session proxy is not thread-safe.
 
 ### LLM integration layer (this branch's distinguishing feature)
@@ -144,7 +144,7 @@ app.jinja_env.globals['llm_enabled'] = llm_client.is_configured()
 ```
 Templates branch on `llm_enabled` to hide AI buttons in "basic" mode. `/llm/save_config` and `/llm/reload_config` mutate this Jinja global at runtime.
 
-**Config resolution** — `llm_config.json` next to `BASE_DIR`, then env-var overrides (`LLM_ENDPOINT`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_TIMEOUT`). Treat `llm_config.json` as sensitive — it may hold a real API key in dev; in production prefer env vars. Defaults are merged from `llm_client._DEFAULTS` (timeout=30, context_window=100000, p3_max_lines=2500, cache_ttl=3600, retry x2, P7 window/step/batch sizes).
+**Config resolution** — `llm_config.json` next to `BASE_DIR`, then env-var overrides (`LLM_ENDPOINT`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_TIMEOUT`). Treat `llm_config.json` as sensitive — it may hold a real API key in dev; in production prefer env vars. Defaults are merged from `llm_client._DEFAULTS` (timeout=30, context_window=100000, p3_max_lines=2500 [legacy key, used by P2], cache_ttl=3600, retry x2, P6 window/step/batch sizes).
 
 **API format auto-detection** — `'anthropic' in endpoint.lower()` selects the Anthropic format:
 - OpenAI: `Authorization: Bearer <key>`, payload includes `temperature`, `messages` carries `system` role, response from `choices[0].message.content`. Endpoints ending in `/v1` get `/chat/completions` auto-appended.
@@ -158,15 +158,14 @@ Templates branch on `llm_enabled` to hide AI buttons in "basic" mode. `/llm/save
 
 **The 14 LLM routes** (`blueprints/llm_bp.py`):
 - **P0** config: `/llm/reload_config`, `/llm/get_config` (api_key masked), `/llm/save_config`, `/llm/test_connection`
-- **P1** `/llm/analyze_error` — given an unmatched error, returns JSON `{keywords, reason, category, solution, module}`; `category` snapped to one of `_VALID_CATEGORIES`
-- **P2** `/llm/rank_entries` — ranks N candidate KB entries against current error, returns `{ranked, reasons, focus_cases}` (focus_cases ≤ 5)
-- **P3** `/llm/custom_extract` — multi-turn log Q&A on the **single file** in `state._store[sid]['file_paths'][0]` (path mode only). Pre-scans the file with `_p3_prescan` (sliding-window over UVM/extra/keyword anchors) to fit `p3_max_lines`; `_apply_token_budget` further trims by `context_window - P3_OVERHEAD_TOKENS`. History capped at first 2 + last 10 messages; `clear=true` resets. Re-anchors when current query keywords are absent from first message.
-- **P4** `/llm/similar_errors` — pre-filters DB to top 50 with `score_query`, then asks LLM for top-K similar (default 5)
-- **P5** `/llm/batch_patterns` — dedups across-files by `(level, error_id)`, sends top 20 to LLM, returns 3–7 failure-pattern summaries
-- **P6** `/llm/semantic_query` — semantic re-rank of KB candidates; intentionally allows empty result (no padding) so unrelated entries are dropped
-- **P7** KB quality review (background job): `/llm/kb_review` (start, returns `job_id`), `/llm/kb_review_status`, `/llm/kb_review_stop`, `/llm/kb_review_export` (Excel with 3 sheets: pairs + full A/B detail), `/llm/merge_suggest` (AI-merge two duplicates)
+- **P1** `/llm/rank_entries` — ranks N candidate KB entries against current error, returns `{ranked, reasons, focus_cases}` (focus_cases ≤ 5)
+- **P2** `/llm/custom_extract` — multi-turn log Q&A on the **single file** in `state._store[sid]['file_paths'][0]` (path mode only). Pre-scans the file with `_p3_prescan` (sliding-window over UVM/extra/keyword anchors) to fit `p3_max_lines`; `_apply_token_budget` further trims by `context_window - P3_OVERHEAD_TOKENS`. History capped at first 2 + last 10 messages; `clear=true` resets. Re-anchors when current query keywords are absent from first message. (Internal symbols still use the legacy `p3` prefix.)
+- **P3** `/llm/similar_errors` — pre-filters DB to top 50 with `score_query`, then asks LLM for top-K similar (default 5)
+- **P4** `/llm/batch_patterns` — dedups across-files by `(level, error_id)`, sends top 20 to LLM, returns 3–7 failure-pattern summaries
+- **P5** `/llm/semantic_query` — semantic re-rank of KB candidates; intentionally allows empty result (no padding) so unrelated entries are dropped
+- **P6** KB quality review (background job): `/llm/kb_review` (start, returns `job_id`), `/llm/kb_review_status`, `/llm/kb_review_stop`, `/llm/kb_review_export` (Excel with 3 sheets: pairs + full A/B detail), `/llm/merge_suggest` (AI-merge two duplicates)
 
-**P7 background-job state lives in `llm_bp._review_jobs`, NOT `state._jobs`** — the schemas differ (review jobs track `suspect_pairs`, `skipped`, `group`, `stop`). Two modes: `fast` (sliding window of `kb_review_window_size` with `kb_review_step_size`) and `deep` (non-overlapping batches of `kb_review_batch_size`). Pairs deduped by `frozenset({_row_idx_a, _row_idx_b})` across the whole run.
+**P6 background-job state lives in `llm_bp._review_jobs`, NOT `state._jobs`** — the schemas differ (review jobs track `suspect_pairs`, `skipped`, `group`, `stop`). Two modes: `fast` (sliding window of `kb_review_window_size` with `kb_review_step_size`) and `deep` (non-overlapping batches of `kb_review_batch_size`). Pairs deduped by `frozenset({_row_idx_a, _row_idx_b})` across the whole run.
 
 ### PyInstaller path handling
 
@@ -211,6 +210,6 @@ _FileLock       →  serializes across processes/machines (stdlib only)
 - [log_analysis/triage_tool/PRD.md](log_analysis/triage_tool/PRD.md) — Full product requirements; update when adding/changing features
 - [log_analysis/triage_tool/BUGLOG.md](log_analysis/triage_tool/BUGLOG.md) — Historical bug fixes with root cause analysis; update when fixing bugs
 - [log_analysis/triage_tool/LLM_INTEGRATION_PLAN.md](log_analysis/triage_tool/LLM_INTEGRATION_PLAN.md) — Original design spec for the LLM layer (now implemented on this branch)
-- [log_analysis/triage_tool/LLM_USAGE_GUIDE.md](log_analysis/triage_tool/LLM_USAGE_GUIDE.md) — End-user setup and feature reference for the LLM layer (config fields, model presets, P0–P7 walkthroughs)
+- [log_analysis/triage_tool/LLM_USAGE_GUIDE.md](log_analysis/triage_tool/LLM_USAGE_GUIDE.md) — End-user setup and feature reference for the LLM layer (config fields, model presets, P0–P6 walkthroughs)
 - [log_analysis/triage_tool/velvety-wishing-dewdrop.md](log_analysis/triage_tool/velvety-wishing-dewdrop.md) — Earlier LLM design draft (v1.0); superseded by `LLM_INTEGRATION_PLAN.md`
 - [log_analysis/triage_tool/CLAUDE.md](log_analysis/triage_tool/CLAUDE.md) — Inner per-directory guidance (overlaps with this file; this root file is canonical)
