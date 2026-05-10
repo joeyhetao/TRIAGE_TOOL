@@ -92,13 +92,9 @@ def _run_analysis(job_id: str, sid: str, input_data: list,
                              extra_keywords=state.EXTRA_PATTERNS,
                              pass_patterns=state.PASS_PATTERNS)
 
-        # 上传模式：解析后立即删除临时文件
-        if not path_mode:
-            for fp in saved_paths:
-                try:
-                    Path(fp).unlink()
-                except OSError:
-                    pass
+        # 注意：上传文件不再"解析完即删"——保留以支持 P2 AI 日志问答
+        # 多余文件由 state._cleanup_old_files()（启动时扫 uploads/）24h 后清理
+        # 会话级 _store TTL 是 2h，过期后用户已经看不到结果页
 
         # 还原显示文件名，path_mode 下同时保存完整路径供查看功能使用
         for r in results:
@@ -112,7 +108,8 @@ def _run_analysis(job_id: str, sid: str, input_data: list,
         job['logs'].append(f"[{_ts()}] 开始知识库匹配...")
         results = run_match(results, db_path, progress_cb=_match_cb)
 
-        file_paths = saved_paths if path_mode else []
+        # 两种模式都填 file_paths——上传模式现在保留文件，让 P2 能拿到
+        file_paths = saved_paths
         state._set_results(sid, results, db_path, file_paths=file_paths)
         job['pct']      = 100
         job['logs'].append(f"[{_ts()}] 分析完成，共处理 {total} 个文件")
@@ -236,13 +233,19 @@ def result():
     results, db_path = state._get_results(sid)
     unique_counts    = state._unique_error_counts(results)
     file_paths       = state._get_file_paths(sid)
-    is_path_mode     = len(file_paths) > 0
+    # 区分路径模式 vs 上传模式：上传文件总在 UPLOAD_DIR 下，
+    # 路径模式是用户的 server-local 路径，不会落到那里。
+    upload_prefix    = str(state.UPLOAD_DIR)
+    is_path_mode     = bool(file_paths) and not all(
+        p.startswith(upload_prefix) for p in file_paths)
+    has_files        = bool(file_paths)   # 任一模式只要有文件，P2 即可用
     is_single_file   = len(results) == 1
     is_multi_file    = len(results) > 1
     return render_template('result.html', results=results, db_path=db_path,
                            unique_counts=unique_counts, os_username=state.OS_USERNAME,
                            extra_patterns=state.EXTRA_PATTERNS,
                            is_path_mode=is_path_mode,
+                           has_files=has_files,
                            is_single_file=is_single_file,
                            is_multi_file=is_multi_file)
 

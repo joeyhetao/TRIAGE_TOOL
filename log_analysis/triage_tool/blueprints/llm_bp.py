@@ -2,11 +2,15 @@
 """
 LLM 功能 Blueprint — 所有 AI 辅助路由。
 
-路由列表（共 14 条）：
+路由列表（共 18 条）：
   POST /llm/reload_config      P0: 热重载配置
-  GET  /llm/get_config         P0: 获取当前配置（api_key 脱敏）
-  POST /llm/save_config        P0: 保存配置到 llm_config.json
+  GET  /llm/get_config         P0: 获取当前配置（api_key 脱敏，含 profile 列表）
+  POST /llm/save_config        P0: 更新当前激活 profile（含运行任务检测）
   POST /llm/test_connection    P0: 连接测试
+  POST /llm/profile/add        P0: 新增 profile
+  POST /llm/profile/update     P0: 更新指定 profile（含 rename）
+  POST /llm/profile/delete     P0: 删除 profile（拒绝最后一个）
+  POST /llm/profile/activate   P0: 切换激活 profile（含运行任务检测）
   POST /llm/rank_entries       P1: 多条匹配智能推荐
   POST /llm/custom_extract     P2: 自定义提取（路径模式单文件，多轮对话）
   POST /llm/similar_errors     P3: 相似错误推荐（写回辅助）
@@ -58,21 +62,94 @@ _UVM_REAL_PAT = re.compile(r'\bUVM_(?:ERROR|WARNING|FATAL)\b.*@')
 P3_OVERHEAD_TOKENS = 800   # System Prompt + User Message 模板 + 多轮历史估算
 
 
+# 中文停用词：常见虚词 + 元查询词（"列出""为什么"等只描述意图，不是真锚点）
+_CN_STOPWORDS = frozenset([
+    '的', '和', '与', '及', '或', '但', '了', '是', '在', '有', '被', '把', '将', '并',
+    '对', '为', '从', '到', '给', '让', '使', '请', '一个', '一些', '这个', '这些',
+    '所有', '列出', '汇总', '统计', '分析', '描述', '出现', '发生', '看看', '查看',
+    '什么', '为什么', '怎么', '如何', '哪些', '哪个', '是否', '能否', '可否',
+    '日志', '内容', '信息', '里面', '中间', '附近', '前后', '上下文',
+])
+
+# 中文 → 英文同义词映射：让纯中文 query 也能匹配到日志中的英文 UVM token
+_CN_SYNONYMS = {
+    '报错':   ['error', 'err', 'fatal', 'warning'],
+    '错误':   ['error', 'err'],
+    '致命':   ['fatal'],
+    '严重':   ['fatal', 'severe'],
+    '警告':   ['warning', 'warn'],
+    '失败':   ['fail', 'failure', 'fault'],
+    '崩溃':   ['crash', 'abort', 'segfault'],
+    '超时':   ['timeout', 'timed out'],
+    '断言':   ['assert', 'assertion'],
+    '复位':   ['reset', 'rst'],
+    '时钟':   ['clock', 'clk'],
+    '配置':   ['config', 'cfg', 'setting'],
+    '初始化': ['init', 'initialize', 'reset'],
+    '启动':   ['start', 'startup', 'launch', 'boot'],
+    '驱动':   ['driver', 'drv'],
+    '检查器': ['checker', 'chk'],
+    '监视器': ['monitor', 'mon'],
+    '记分板': ['scoreboard', 'sb', 'scb'],
+    '测试':   ['test', 'tc', 'testcase'],
+    '环境':   ['env', 'environment'],
+    '事务':   ['txn', 'transaction', 'trans'],
+    '阶段':   ['phase'],
+    '寄存器': ['reg', 'register'],
+    '总线':   ['bus'],
+    '中断':   ['interrupt', 'irq', 'intr'],
+    '溢出':   ['overflow', 'over'],
+    '欠溢':   ['underflow', 'under'],
+    '握手':   ['handshake'],
+    '通道':   ['channel', 'chan'],
+    '地址':   ['addr', 'address'],
+    '数据':   ['data'],
+    '使能':   ['enable', 'en'],
+    '有效':   ['valid', 'vld'],
+    '就绪':   ['ready', 'rdy'],
+}
+
+
 def _extract_query_keywords(query: str) -> list:
     """
     从查询文本中提取关键词，用于预扫描锚定。
-    支持中文混合查询：按中文字符、数字、空白符分割后再提取英文/符号 token。
+    覆盖：引号短语、ALL_CAPS 错误 ID、英文/下划线 token、中文连续片段、中→英同义词。
     """
     kws = []
-    kws += re.findall(r'"([^"]+)"', query)                       # 引号内短语
-    kws += re.findall(r'\b[A-Z][A-Z0-9_]{2,}\b', query)         # 形似错误ID（大写）
+    kws += re.findall(r'"([^"]+)"', query)                           # 引号内短语
+    kws += re.findall(r'\b[A-Z][A-Z0-9_]{2,}\b', query)                          # 形似错误ID（大写）
     stripped = re.sub(r'"[^"]*"', ' ', query)
     stripped = re.sub(r'\b[A-Z][A-Z0-9_]{2,}\b', ' ', stripped)
-    # 按中文字符 + 数字 + 空白切分，提取英文/符号 token（如 uvm_error）
-    for w in re.split(r'[\s\d\u4e00-\u9fff\uff00-\uffef]+', stripped):
+
+    # 英文 / 下划线 token（如 uvm_error）—— 按中文/数字/空白切分后取剩余 token
+    for w in re.split(r'[\s\d一-鿿＀-￯]+', stripped):
         w = w.strip('_- ')
         if len(w) > 2:
             kws.append(w)
+
+    # 中文连续片段（≥2 字）+ 滑窗子片段 + 同义词扩展。
+    # 锚点扫描是 substring match：query 里"报错"能匹配日志中"报错原因"；
+    # 同义词扩出 'error'/'fatal' 等英文 token 帮匹配 UVM 行。
+    _CN_PARTICLES = '的了是在有被把将并对为从到给让使请和与及或但'  # 单字虚词
+    for chunk in re.findall(r'[一-鿿]{2,}', query):
+        candidates = {chunk}
+        for size in (2, 3, 4):
+            for i in range(len(chunk) - size + 1):
+                candidates.add(chunk[i:i + size])
+        for c in candidates:
+            if c in _CN_STOPWORDS:
+                continue
+            # 过滤：以单字虚词开头/结尾的子片段（"的报"、"分析最"等噪声）
+            if c[0] in _CN_PARTICLES or c[-1] in _CN_PARTICLES:
+                continue
+            # 过滤：整体是停用词的前缀/后缀扩展（"分析最"含"分析"，已是噪声）
+            if any(c.startswith(sw) or c.endswith(sw)
+                   for sw in _CN_STOPWORDS if len(sw) >= 2 and sw != c):
+                continue
+            kws.append(c)
+            if c in _CN_SYNONYMS:
+                kws.extend(_CN_SYNONYMS[c])
+
     return list(dict.fromkeys(kws))   # 去重保序
 
 
@@ -92,7 +169,15 @@ def _get_format_instruction(query: str) -> tuple:
 
 
 _PREFER_START_PAT = re.compile(
-    r'前\s*\d|第\s*[一1]|^first|^top\s*\d|earliest|最早|最前', re.IGNORECASE)
+    r'前\s*\d|第\s*[一1]|^first|^top\s*\d|earliest|最早|最前|'
+    r'初始化|开头|起始|开始|启动|first\s+few|at the beginning|from the start|'
+    r'最先|刚开始',
+    re.IGNORECASE)
+
+_PREFER_END_PAT = re.compile(
+    r'后\s*\d|最后|末尾|结尾|结束|尾部|临结束|失败时|失败前|崩溃前|'
+    r'last\s+\d?|^last\b|final|^end\b|tail|最末|最终|刚结束',
+    re.IGNORECASE)
 
 
 def _query_prefers_start(query: str) -> bool:
@@ -100,19 +185,35 @@ def _query_prefers_start(query: str) -> bool:
     return bool(_PREFER_START_PAT.search(query))
 
 
+def _query_prefers_end(query: str) -> bool:
+    """判断查询是否意图获取文件末尾的内容（最后N个、结束前等）。"""
+    return bool(_PREFER_END_PAT.search(query))
+
+
 def _p3_prescan(filepath: str, query: str, extra_patterns: list,
                 max_lines: int) -> tuple:
     """
-    单次流式扫描文件，用滑动窗口找密度最高的连续 max_lines 行区间。
-    若查询含"前N个/第一/first/top"等意图，优先从首个锚点开始。
+    单次流式扫描文件，给每行算锚点权重，用加权滑动窗口找密度最高的连续 max_lines 行区间。
+
+    权重表（B + E）：
+      UVM_FATAL（带 @）          : 5
+      UVM_ERROR（带 @）          : 3
+      UVM_WARNING（带 @）        : 1
+      extra_patterns 命中        : +2
+      查询关键词 substring 命中  : +6
+      文件路径命中（kw.sv / /kw）: 在关键词命中基础上额外 +2
+
+    若查询含"前N个/第一/初始化/开头/first/earliest"等意图，优先从首锚点开始；
+    "最后/结束前/last" 等意图从末锚点回退。
+
     返回 (win_start, win_end, total_span, first_anchor, last_anchor, total_lines)
     所有行号均为 1-based。
     """
-    keywords   = [kw.lower() for kw in _extract_query_keywords(query)]
+    keywords    = [kw.lower() for kw in _extract_query_keywords(query)]
     extra_lower = [p.lower() for p in extra_patterns]
 
-    uvm_nos = []
-    kw_nos  = []
+    weights    = {}      # 所有锚点行号 -> 权重（UVM/extra/kw 全集）
+    kw_weights = {}      # 仅"查询关键词命中"的子集 -> 权重
     total_lines = 0
 
     try:
@@ -120,21 +221,48 @@ def _p3_prescan(filepath: str, query: str, extra_patterns: list,
             for lineno, line in enumerate(f, 1):
                 total_lines = lineno
                 ll = line.lower()
-                if _UVM_REAL_PAT.search(line) or any(p in ll for p in extra_lower):
-                    uvm_nos.append(lineno)
+                w = 0
+                # B: UVM 真实错误（带 @ 时间戳，排除末尾汇总行），按严重度加权
+                if _UVM_REAL_PAT.search(line):
+                    if 'UVM_FATAL' in line:
+                        w += 5
+                    elif 'UVM_ERROR' in line:
+                        w += 3
+                    else:
+                        w += 1
+                # extra_patterns（用户配置的额外关键词）
+                if any(p in ll for p in extra_lower):
+                    w += 2
+                # 查询关键词 substring 命中（最高优先级）
+                kw_hit = False
                 if keywords and any(kw in ll for kw in keywords):
-                    kw_nos.append(lineno)
+                    w += 6
+                    kw_hit = True
+                # E: 文件路径命中（如 axi_driver.sv 或 /axi_driver/）—— 比普通 substring 更强信号
+                if kw_hit:
+                    for kw in keywords:
+                        if kw + '.sv' in ll or '/' + kw in ll:
+                            w += 2
+                            break
+                if w > 0:
+                    weights[lineno] = w
+                if kw_hit:
+                    kw_weights[lineno] = w
     except Exception:
         return 1, min(max_lines, 1), 0, 0, 0, 1
 
-    anchor_nos = kw_nos if kw_nos else uvm_nos
+    # 若 query 关键词在文件中至少有一处命中，只在 kw 锚点中找窗口——
+    # 避免 50 个无关 WARNING 把孤立的 FATAL 锚点挤出窗口。
+    # 否则用 UVM/extra 全集做密度兜底。
+    active_weights = kw_weights if kw_weights else weights
 
-    if not anchor_nos:
+    if not active_weights:
         end = min(max_lines, total_lines)
         return 1, end, 0, 0, 0, total_lines
 
-    first_anchor = min(anchor_nos)
-    last_anchor  = max(anchor_nos)
+    sorted_nos = sorted(active_weights.keys())
+    first_anchor = sorted_nos[0]
+    last_anchor  = sorted_nos[-1]
     total_span   = last_anchor - first_anchor + 1
 
     if total_span <= max_lines:
@@ -150,24 +278,176 @@ def _p3_prescan(filepath: str, query: str, extra_patterns: list,
         win_end   = min(total_lines, win_start + max_lines - 1)
         return win_start, win_end, total_span, first_anchor, last_anchor, total_lines
 
-    # 滑动窗口：找包含最多锚点的连续 max_lines 行
-    sorted_a  = sorted(anchor_nos)
-    best_count = 0
-    best_win_s = sorted_a[0]
+    # 若查询意图是"最后N个/结束前"，从末锚点回退取段
+    if _query_prefers_end(query):
+        win_end   = min(total_lines, last_anchor + 50)
+        win_start = max(1, win_end - max_lines + 1)
+        return win_start, win_end, total_span, first_anchor, last_anchor, total_lines
+
+    # 加权滑动窗口：找累计权重最大的连续 max_lines 行
+    best_score = 0
+    best_win_s = sorted_nos[0]
     left = 0
-    for i, ra in enumerate(sorted_a):
+    cur_sum = 0
+    for i, ra in enumerate(sorted_nos):
         win_s = ra - max_lines + 1
-        while left < len(sorted_a) and sorted_a[left] < win_s:
+        cur_sum += active_weights[ra]
+        while left < len(sorted_nos) and sorted_nos[left] < win_s:
+            cur_sum -= active_weights[sorted_nos[left]]
             left += 1
-        count = i - left + 1
-        if count > best_count:
-            best_count = count
+        if cur_sum > best_score:
+            best_score = cur_sum
             best_win_s = max(1, win_s)
 
     win_start = best_win_s
     win_end   = min(total_lines, win_start + max_lines - 1)
     win_start = max(1, win_end - max_lines + 1)
     return win_start, win_end, total_span, first_anchor, last_anchor, total_lines
+
+
+# ══════════════════════════════════════════════════════════
+# Phase 3 — 多块聚簇辅助
+# ══════════════════════════════════════════════════════════
+
+def _cluster_anchors(weights: dict, gap_threshold: int) -> list:
+    """
+    把锚点按行号 gap 切簇：连续锚点间距 > gap_threshold 时分簇。
+    返回 [(cluster_start, cluster_end, total_weight), ...] 按起始行号升序。
+    """
+    if not weights:
+        return []
+    sorted_nos = sorted(weights.keys())
+    clusters = []
+    cur_start = sorted_nos[0]
+    cur_end = sorted_nos[0]
+    cur_weight = weights[cur_start]
+    for ln in sorted_nos[1:]:
+        if ln - cur_end > gap_threshold:
+            clusters.append((cur_start, cur_end, cur_weight))
+            cur_start = ln
+            cur_end = ln
+            cur_weight = weights[ln]
+        else:
+            cur_end = ln
+            cur_weight += weights[ln]
+    clusters.append((cur_start, cur_end, cur_weight))
+    return clusters
+
+
+def _allocate_blocks(clusters: list, max_lines: int, total_lines: int,
+                     padding: int = 50, min_block: int = 100) -> list:
+    """
+    在 max_lines 预算内贪心选取簇生成块。按权重降序选，每块自然跨度 = 簇跨度 + 2×padding。
+    超额时按块整体收缩，单簇过大会被截断。最后按起始行号排序，相邻/重叠块合并。
+    返回 [(block_start, block_end, total_weight), ...]
+    """
+    if not clusters:
+        return []
+    by_weight = sorted(clusters, key=lambda c: -c[2])
+    selected = []
+    used = 0
+    for cs, ce, cw in by_weight:
+        block_span = (ce - cs + 1) + 2 * padding
+        if used >= max_lines:
+            break
+        remaining = max_lines - used
+        if block_span > remaining:
+            if remaining < min_block:
+                break
+            block_span = remaining
+        block_start = max(1, cs - padding)
+        block_end   = min(total_lines, block_start + block_span - 1)
+        block_start = max(1, block_end - block_span + 1)
+        selected.append((block_start, block_end, cw))
+        used += block_span
+    if not selected:
+        return []
+    # 按起始行号排序后合并相邻/重叠块
+    selected.sort(key=lambda b: b[0])
+    merged = [selected[0]]
+    for s, e, w in selected[1:]:
+        ms, me, mw = merged[-1]
+        if s <= me + 1:
+            merged[-1] = (ms, max(me, e), mw + w)
+        else:
+            merged.append((s, e, w))
+    return merged
+
+
+def _p3_prescan_blocks(filepath: str, query: str, extra_patterns: list,
+                       max_lines: int) -> tuple:
+    """
+    扫描文件 + 多块取段。基于权重表（B+E）+ 聚簇（C）+ 意图分支（D）。
+    返回 (blocks, first_anchor, last_anchor, total_lines)
+      blocks = [(start, end, weight)]，至少 1 块（无锚点时是首 max_lines）。
+    """
+    keywords    = [kw.lower() for kw in _extract_query_keywords(query)]
+    extra_lower = [p.lower() for p in extra_patterns]
+
+    weights    = {}
+    kw_weights = {}
+    total_lines = 0
+
+    try:
+        with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
+            for lineno, line in enumerate(f, 1):
+                total_lines = lineno
+                ll = line.lower()
+                w = 0
+                if _UVM_REAL_PAT.search(line):
+                    if 'UVM_FATAL' in line:
+                        w += 5
+                    elif 'UVM_ERROR' in line:
+                        w += 3
+                    else:
+                        w += 1
+                if any(p in ll for p in extra_lower):
+                    w += 2
+                kw_hit = False
+                if keywords and any(kw in ll for kw in keywords):
+                    w += 6
+                    kw_hit = True
+                if kw_hit:
+                    for kw in keywords:
+                        if kw + '.sv' in ll or '/' + kw in ll:
+                            w += 2
+                            break
+                if w > 0:
+                    weights[lineno] = w
+                if kw_hit:
+                    kw_weights[lineno] = w
+    except Exception:
+        return [(1, min(max_lines, 1), 0)], 0, 0, 1
+
+    active = kw_weights if kw_weights else weights
+    if not active:
+        end = min(max_lines, total_lines)
+        return [(1, end, 0)], 0, 0, total_lines
+
+    sorted_nos = sorted(active.keys())
+    first_anchor = sorted_nos[0]
+    last_anchor  = sorted_nos[-1]
+
+    gap_threshold = max(max_lines // 4, 50)
+    clusters = _cluster_anchors(active, gap_threshold)
+
+    # 意图分支（D）：START / END 限定簇
+    prefers_start = _query_prefers_start(query)
+    prefers_end   = _query_prefers_end(query)
+    if prefers_start and not prefers_end and clusters:
+        clusters = clusters[:1]
+    elif prefers_end and not prefers_start and clusters:
+        clusters = clusters[-1:]
+    elif prefers_start and prefers_end and len(clusters) >= 2:
+        # 同时含两端意图：保留首末两簇
+        clusters = [clusters[0], clusters[-1]]
+
+    blocks = _allocate_blocks(clusters, max_lines, total_lines)
+    if not blocks:
+        end = min(max_lines, total_lines)
+        return [(1, end, 0)], first_anchor, last_anchor, total_lines
+    return blocks, first_anchor, last_anchor, total_lines
+
 
 
 def _read_lines_range(filepath: str, start: int, end: int) -> list:
@@ -218,6 +498,38 @@ def _apply_token_budget(lines: list, cfg: dict,
     return trimmed, new_start, new_end, True
 
 
+# 启发式常量
+_AVG_LINE_CHARS = 100   # UVM 行典型字符数（粗估）
+_OUTPUT_RESERVE = 0.7   # 给 LLM 输出 + 多轮历史 + 系统提示留 30% 余量
+_MIN_LINES_FLOOR = 100  # 即使 context 极小也至少给这么多行
+
+
+def _validate_file_index(idx: int, n_files: int) -> bool:
+    """检查 0 <= idx < n_files。n_files=0 时永远 False。"""
+    return isinstance(idx, int) and 0 <= idx < n_files
+
+
+def _adaptive_max_lines(cfg: dict) -> int:
+    """
+    根据 context_window 反推安全行数上限，再与用户配置 p3_max_lines 取小。
+
+    既是"安全阀"（用户把 p3_max_lines 调到 50000 也不会真送爆 LLM），
+    也是"自适应"（用户换更大 context 的模型时，自动放大；不必手动改）。
+
+    估算公式：
+      可用字符数 = (context_window - P3_OVERHEAD_TOKENS) × chars_per_token × _OUTPUT_RESERVE
+      可装行数  = 可用字符数 / 平均行字符数
+      返回值    = clamp(可装行数, _MIN_LINES_FLOOR, p3_max_lines)
+    """
+    ctx_tokens = int(cfg.get('context_window', 100000))
+    cpt        = float(cfg.get('p3_chars_per_token', 4))
+    user_cap   = int(cfg.get('p3_max_lines', 2500))
+
+    safe_chars   = max(0, (ctx_tokens - P3_OVERHEAD_TOKENS)) * cpt * _OUTPUT_RESERVE
+    fitting_lines = int(safe_chars / _AVG_LINE_CHARS) if _AVG_LINE_CHARS > 0 else 0
+    return max(_MIN_LINES_FLOOR, min(fitting_lines, user_cap))
+
+
 def _parse_json_safe(text: str, array: bool = False):
     """从 LLM 返回文本中提取第一个 JSON 对象或数组，解析失败返回 None。"""
     pattern = r'\[.*\]' if array else r'\{.*\}'
@@ -237,6 +549,26 @@ def _cleanup_review_jobs():
                  if now - v.get('ts', 0) > _REVIEW_JOB_TTL]
         for k in stale:
             del _review_jobs[k]
+
+
+def _running_jobs_summary() -> list:
+    """
+    扫所有后台任务，返回正在运行的任务摘要列表。
+    当前覆盖：P6 知识库质检（_review_jobs）。
+    每条返回 {'kind', 'job_id', 'phase', 'progress'}。
+    """
+    summary = []
+    with _review_lock:
+        for jid, job in _review_jobs.items():
+            phase = job.get('phase', '')
+            if phase and phase not in ('done', 'error', 'stopped'):
+                summary.append({
+                    'kind':     'P6_kb_review',
+                    'job_id':   jid,
+                    'phase':    phase,
+                    'progress': job.get('pct', 0),
+                })
+    return summary
 
 
 # ══════════════════════════════════════════════════════════
@@ -272,61 +604,98 @@ def test_connection():
 
 
 # ══════════════════════════════════════════════════════════
-# P0 — 获取当前配置（api_key 脱敏）
+# P0 — 获取当前配置（api_key 脱敏，含 profile 列表）
 # ══════════════════════════════════════════════════════════
+
+def _mask_api_key(raw: str) -> str:
+    if raw and len(raw) > 4:
+        return raw[:4] + '***'
+    return '***' if raw else ''
+
+
+def _profile_to_payload(p: dict) -> dict:
+    """把内部 profile 转成响应格式（api_key 脱敏，仅暴露 UI 需要的字段）。"""
+    return {
+        'name':           p.get('name', ''),
+        'endpoint':       p.get('endpoint', ''),
+        'api_key':        _mask_api_key(p.get('api_key', '')),
+        'model':          p.get('model', ''),
+        'timeout':        p.get('timeout', 30),
+        'context_window': p.get('context_window', 100000),
+        'p3_max_lines':   p.get('p3_max_lines', 2500),
+    }
+
 
 @llm_bp.route('/llm/get_config', methods=['GET'])
 def get_config():
     cfg = llm_client.get_config()
     configured = cfg is not None
-    if not configured:
-        return jsonify({'ok': True, 'configured': False, 'config': {}})
-    # api_key 脱敏：保留前4位 + ***
-    raw_key = cfg.get('api_key', '')
-    if raw_key and len(raw_key) > 4:
-        masked_key = raw_key[:4] + '***'
-    elif raw_key:
-        masked_key = '***'
-    else:
-        masked_key = ''
+    profiles = llm_client.get_all_profiles()
+    active   = llm_client.get_active_profile_name()
+
+    # 兼容字段：旧前端从 .config 读，新前端从 .profiles + .active_profile 读
+    cur_payload = _profile_to_payload(cfg) if cfg else {}
+    cur_payload.pop('name', None)   # 老 .config 不含 name 字段
     return jsonify({
-        'ok': True,
-        'configured': True,
-        'config': {
-            'endpoint':       cfg.get('endpoint', ''),
-            'api_key':        masked_key,
-            'model':          cfg.get('model', ''),
-            'timeout':        cfg.get('timeout', 30),
-            'context_window': cfg.get('context_window', 100000),
-            'p3_max_lines':   cfg.get('p3_max_lines', 2500),
-        }
+        'ok':              True,
+        'configured':      configured,
+        'config':          cur_payload,                                      # 旧字段，激活 profile 快照
+        'active_profile':  active,
+        'profiles':        [_profile_to_payload(p) for p in profiles],
     })
 
 
 # ══════════════════════════════════════════════════════════
-# P0 — 保存配置到 llm_config.json
+# P0 — 保存配置（更新当前激活 profile）
 # ══════════════════════════════════════════════════════════
 
-@llm_bp.route('/llm/save_config', methods=['POST'])
-def save_config():
-    data = request.get_json(force=True) or {}
+def _validate_profile_payload(data: dict) -> tuple:
+    """返回 (cfg, error)。cfg 含规整后的字段；error='' 表示通过。"""
     endpoint = (data.get('endpoint') or '').strip()
     model    = (data.get('model') or '').strip()
     if not endpoint:
-        return jsonify({'ok': False, 'reason': 'endpoint 不能为空'})
+        return None, 'endpoint 不能为空'
     if not endpoint.startswith('http'):
-        return jsonify({'ok': False, 'reason': 'endpoint 必须以 http 开头'})
+        return None, 'endpoint 必须以 http 开头'
     if not model:
-        return jsonify({'ok': False, 'reason': '模型名称不能为空'})
+        return None, '模型名称不能为空'
+    try:
+        cfg = {
+            'endpoint':       endpoint,
+            'api_key':        (data.get('api_key') or '').strip(),
+            'model':          model,
+            'timeout':        int(data.get('timeout', 30)),
+            'context_window': int(data.get('context_window', 100000)),
+            'p3_max_lines':   int(data.get('p3_max_lines', 2500)),
+        }
+    except (TypeError, ValueError):
+        return None, '数值字段（timeout/context_window/p3_max_lines）必须为整数'
+    name = (data.get('name') or '').strip()
+    if name:
+        cfg['name'] = name
+    return cfg, ''
 
-    cfg = {
-        'endpoint':       endpoint,
-        'api_key':        (data.get('api_key') or '').strip(),
-        'model':          model,
-        'timeout':        int(data.get('timeout', 30)),
-        'context_window': int(data.get('context_window', 100000)),
-        'p3_max_lines':   int(data.get('p3_max_lines', 2500)),
-    }
+
+@llm_bp.route('/llm/save_config', methods=['POST'])
+def save_config():
+    """更新当前激活 profile。若有正在运行的 LLM 后台任务，禁止保存（除非 force）。"""
+    data = request.get_json(force=True) or {}
+    cfg, err = _validate_profile_payload(data)
+    if err:
+        return jsonify({'ok': False, 'reason': err})
+
+    # 运行中任务检测——保存可能改变 endpoint/model，影响进行中的 LLM 调用
+    if not data.get('force'):
+        running = _running_jobs_summary()
+        if running:
+            return jsonify({
+                'ok':      False,
+                'reason': f'有 {len(running)} 个 AI 后台任务正在运行，'
+                         '保存配置可能会影响其结果。请等待完成或先停止任务后再保存。',
+                'running_jobs': running,
+                'need_force':   True,
+            })
+
     try:
         llm_client.save_config(cfg)
     except Exception as e:
@@ -334,7 +703,123 @@ def save_config():
 
     ok = llm_client.is_configured()
     current_app.jinja_env.globals['llm_enabled'] = ok
-    return jsonify({'ok': True, 'llm_enabled': ok, 'model': model})
+    return jsonify({'ok': True, 'llm_enabled': ok,
+                    'model':          cfg['model'],
+                    'active_profile': llm_client.get_active_profile_name()})
+
+
+# ══════════════════════════════════════════════════════════
+# P0 — 多 profile 管理
+# ══════════════════════════════════════════════════════════
+
+@llm_bp.route('/llm/profile/add', methods=['POST'])
+def profile_add():
+    """新增 profile（不切换激活；除非当前没有任何 profile）。"""
+    data = request.get_json(force=True) or {}
+    cfg, err = _validate_profile_payload(data)
+    if err:
+        return jsonify({'ok': False, 'reason': err})
+    if not cfg.get('name'):
+        return jsonify({'ok': False, 'reason': 'profile 名不能为空'})
+
+    err = llm_client.add_profile(cfg)
+    if err:
+        return jsonify({'ok': False, 'reason': err})
+
+    current_app.jinja_env.globals['llm_enabled'] = llm_client.is_configured()
+    return jsonify({'ok': True, 'active_profile': llm_client.get_active_profile_name()})
+
+
+@llm_bp.route('/llm/profile/update', methods=['POST'])
+def profile_update():
+    """更新指定 profile（含 rename）。若更新的是激活 profile 且有运行任务，禁止。"""
+    data = request.get_json(force=True) or {}
+    target_name = (data.get('target_name') or '').strip()
+    if not target_name:
+        return jsonify({'ok': False, 'reason': '需要指定 target_name'})
+
+    cfg, err = _validate_profile_payload(data)
+    if err:
+        return jsonify({'ok': False, 'reason': err})
+
+    if target_name == llm_client.get_active_profile_name() and not data.get('force'):
+        running = _running_jobs_summary()
+        if running:
+            return jsonify({
+                'ok': False,
+                'reason': f'有 {len(running)} 个 AI 后台任务正在运行，'
+                         '修改激活 profile 可能影响其结果。请等待完成或先停止任务。',
+                'running_jobs': running,
+                'need_force':   True,
+            })
+
+    err = llm_client.update_profile(target_name, cfg)
+    if err:
+        return jsonify({'ok': False, 'reason': err})
+
+    current_app.jinja_env.globals['llm_enabled'] = llm_client.is_configured()
+    return jsonify({'ok': True, 'active_profile': llm_client.get_active_profile_name()})
+
+
+@llm_bp.route('/llm/profile/delete', methods=['POST'])
+def profile_delete():
+    """删除 profile（拒绝删最后一个）。删激活时若有运行任务，禁止。"""
+    data = request.get_json(force=True) or {}
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({'ok': False, 'reason': '需要 name'})
+
+    if name == llm_client.get_active_profile_name() and not data.get('force'):
+        running = _running_jobs_summary()
+        if running:
+            return jsonify({
+                'ok': False,
+                'reason': f'有 {len(running)} 个 AI 后台任务正在运行，'
+                         '删除激活 profile 会切换到其他配置并影响其结果。请先停止任务。',
+                'running_jobs': running,
+                'need_force':   True,
+            })
+
+    err = llm_client.delete_profile(name)
+    if err:
+        return jsonify({'ok': False, 'reason': err})
+
+    current_app.jinja_env.globals['llm_enabled'] = llm_client.is_configured()
+    return jsonify({'ok': True, 'active_profile': llm_client.get_active_profile_name()})
+
+
+@llm_bp.route('/llm/profile/activate', methods=['POST'])
+def profile_activate():
+    """切换激活 profile。若有运行任务，禁止（除非 force）。"""
+    data = request.get_json(force=True) or {}
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({'ok': False, 'reason': '需要 name'})
+
+    if name == llm_client.get_active_profile_name():
+        return jsonify({'ok': True, 'active_profile': name, 'no_op': True})
+
+    if not data.get('force'):
+        running = _running_jobs_summary()
+        if running:
+            return jsonify({
+                'ok': False,
+                'reason': f'有 {len(running)} 个 AI 后台任务正在运行，'
+                         '切换 profile 会让它们使用新配置并出现"半路换道"。'
+                         '请等待完成或先停止任务。',
+                'running_jobs': running,
+                'need_force':   True,
+            })
+
+    err = llm_client.activate_profile(name)
+    if err:
+        return jsonify({'ok': False, 'reason': err})
+
+    current_app.jinja_env.globals['llm_enabled'] = llm_client.is_configured()
+    cfg = llm_client.get_config()
+    return jsonify({'ok':             True,
+                    'active_profile': llm_client.get_active_profile_name(),
+                    'model':          cfg.get('model', '') if cfg else ''})
 
 
 # ══════════════════════════════════════════════════════════
@@ -426,13 +911,25 @@ def custom_extract():
     file_paths = state._get_file_paths(sid)
     if not file_paths:
         return jsonify({'ok': False,
-                        'reason': '当前会话无文件路径（仅路径模式单文件分析支持自定义提取）'})
-    filepath  = file_paths[0]
-    cfg       = llm_client.get_config()
-    max_lines = int(cfg.get('p3_max_lines', 2500))
+                        'reason': '当前会话无可分析的文件（请先在首页上传或指定路径）'})
 
-    # ── 定位片段 ──────────────────────────────────────────
+    # 多文件场景：用户指定 file_index；不指定默认 0（首文件，向后兼容）
+    try:
+        file_index = int(data.get('file_index', 0))
+    except (TypeError, ValueError):
+        return jsonify({'ok': False,
+                        'reason': 'file_index 必须为整数'})
+    if not _validate_file_index(file_index, len(file_paths)):
+        return jsonify({'ok': False,
+                        'reason': f'file_index {file_index} 越界（共 {len(file_paths)} 个文件）'})
+
+    filepath  = file_paths[file_index]
+    cfg       = llm_client.get_config()
+    max_lines = _adaptive_max_lines(cfg)   # context_window 自适应 + 用户上限钳制
+
+    # ── 定位片段（多块拼接） ────────────────────────────────
     coverage_warning = None
+    blocks_info = []   # [{start, end, lines: [(lineno, content)]}]
 
     if line_start and line_end:
         ls, le    = int(line_start), int(line_end)
@@ -445,16 +942,41 @@ def custom_extract():
                 f'指定范围共 {le - ls + 1} 行，超出最大提取行数 {max_lines}，'
                 f'已截取第 {ls}~{win_end} 行。'
             )
+        blocks_info = [{'start': win_start, 'end': win_end, 'lines': raw_lines}]
     else:
-        win_start, win_end, total_span, fa, la, _ = _p3_prescan(
+        # C: 多块预扫描
+        blocks, fa, la, _total = _p3_prescan_blocks(
             filepath, query, state.EXTRA_PATTERNS, max_lines)
-        raw_lines = _read_lines_range(filepath, win_start, win_end)
-        if total_span > max_lines and total_span > 0:
-            next_end = min(fa + max_lines - 1, la)
+        for bs, be, _bw in blocks:
+            blines = _read_lines_range(filepath, bs, be)
+            if blines:
+                blocks_info.append({
+                    'start': blines[0][0], 'end': blines[-1][0], 'lines': blines
+                })
+        # 拍平所有块到 raw_lines（兼容下游 _apply_token_budget / _format_log_lines）
+        raw_lines = [pair for b in blocks_info for pair in b['lines']]
+        win_start = blocks_info[0]['start'] if blocks_info else 1
+        win_end   = blocks_info[-1]['end']  if blocks_info else 1
+        # F: 用"窗外覆盖率"替代首末跨度——分散簇不再误报
+        total_lines_in_blocks = sum(len(b['lines']) for b in blocks_info)
+        total_span = (la - fa + 1) if (fa and la) else 0
+        if total_span > max_lines and fa and la and len(blocks_info) <= 1:
+            window_span = win_end - win_start + 1
+            outside_estimate = max(0, total_span - window_span)
+            if outside_estimate > max_lines // 2:
+                next_end = min(fa + max_lines - 1, la)
+                coverage_warning = (
+                    f'相关内容分布在第 {fa}~{la} 行（跨度 {total_span} 行），'
+                    f'已展示密度最高的第 {win_start}~{win_end} 行（共 {len(raw_lines)} 行）。'
+                    f'如需查看其他位置，请在查询中指定行号范围：「行号 {fa}-{next_end}」。'
+                )
+        elif len(blocks_info) > 1:
+            # 多块情况：明确告知用户已展示几个段
+            seg_summary = ' / '.join(
+                f"L{b['start']}-L{b['end']}" for b in blocks_info)
             coverage_warning = (
-                f'相关内容跨越 {total_span} 行（第 {fa}~{la} 行），'
-                f'已截取密度最高的 {len(raw_lines)} 行（第 {win_start}~{win_end} 行）。'
-                f'如需查看其他部分，请在查询中指定行号范围：「行号 {fa}-{next_end}」。'
+                f'已展示 {len(blocks_info)} 个相关段（{seg_summary}），'
+                f'共 {total_lines_in_blocks} 行。如需调整请用行号范围。'
             )
 
     # ── Token 预算安全检查 ────────────────────────────────
@@ -467,7 +989,36 @@ def custom_extract():
         )
         coverage_warning = f'{coverage_warning} {trim_msg}' if coverage_warning else trim_msg
 
-    log_content = _format_log_lines(raw_lines)
+    # 多块情况：按段添加分隔头让 LLM 知道是不连续的多段
+    if len(blocks_info) > 1:
+        # 重新按行号 partition raw_lines（_apply_token_budget 可能裁过端点）
+        blocks_render = []
+        cur = []
+        cur_block_idx = 0
+        block_ranges = [(b['start'], b['end']) for b in blocks_info]
+        for ln, content in raw_lines:
+            # 找该 ln 属于哪个块
+            while cur_block_idx < len(block_ranges) and ln > block_ranges[cur_block_idx][1]:
+                if cur:
+                    blocks_render.append((block_ranges[cur_block_idx][0],
+                                          block_ranges[cur_block_idx][1], cur))
+                    cur = []
+                cur_block_idx += 1
+            if cur_block_idx < len(block_ranges):
+                cur.append((ln, content))
+        if cur and cur_block_idx < len(block_ranges):
+            blocks_render.append((block_ranges[cur_block_idx][0],
+                                  block_ranges[cur_block_idx][1], cur))
+        # 渲染：每段加 "[段 N: L<start>-L<end>]" 头
+        sections = []
+        for i, (bs, be, lines) in enumerate(blocks_render, 1):
+            actual_s = lines[0][0] if lines else bs
+            actual_e = lines[-1][0] if lines else be
+            sections.append(
+                f'[段 {i}: L{actual_s}-L{actual_e}]\n' + _format_log_lines(lines))
+        log_content = '\n\n'.join(sections)
+    else:
+        log_content = _format_log_lines(raw_lines)
     filename    = Path(filepath).name
     N           = len(raw_lines)
 
@@ -532,6 +1083,39 @@ def custom_extract():
     state._set_p3_history(sid, new_history)
 
     turns = sum(1 for m in new_history if m['role'] == 'assistant')
+    # 构造 blocks 字段（多块）—— 单块时 blocks 是 1 元素列表，前端可统一处理
+    response_blocks = []
+    if len(blocks_info) > 1:
+        # 重新按行号 partition raw_lines（_apply_token_budget 可能裁过端点）
+        block_ranges = [(b['start'], b['end']) for b in blocks_info]
+        cur_idx = 0
+        bucket = []
+        for ln, content in raw_lines:
+            while cur_idx < len(block_ranges) and ln > block_ranges[cur_idx][1]:
+                if bucket:
+                    response_blocks.append({
+                        'start':  bucket[0][0],
+                        'end':    bucket[-1][0],
+                        'lines': [{'lineno': ln_, 'content': c_}
+                                  for ln_, c_ in bucket],
+                    })
+                    bucket = []
+                cur_idx += 1
+            if cur_idx < len(block_ranges):
+                bucket.append((ln, content))
+        if bucket and cur_idx < len(block_ranges):
+            response_blocks.append({
+                'start':  bucket[0][0],
+                'end':    bucket[-1][0],
+                'lines': [{'lineno': ln_, 'content': c_} for ln_, c_ in bucket],
+            })
+    else:
+        response_blocks = [{
+            'start':  win_start,
+            'end':    win_end,
+            'lines': [{'lineno': ln, 'content': content} for ln, content in raw_lines],
+        }]
+
     return jsonify({
         'ok':               True,
         'format':           detected_format,
@@ -542,6 +1126,7 @@ def custom_extract():
         'turns':            turns,
         'coverage_warning': coverage_warning,
         'raw_lines': [{'lineno': ln, 'content': content} for ln, content in raw_lines],
+        'blocks':           response_blocks,
     })
 
 

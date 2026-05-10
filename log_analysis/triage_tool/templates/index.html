@@ -203,9 +203,32 @@ D:\sim\run1\*.log"></textarea>
                   title="点击切换增强版/基础版"></button>
         </div>
 
+        <!-- Profile 选择器（多 LLM 配置） -->
+        <div id="llmProfileBar" style="display:none;margin-top:10px;padding:10px 12px;background:#F5F0FA;border:1px solid #E0D4F0;border-radius:6px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <label style="font-weight:600;font-size:13px">当前激活：</label>
+            <select id="llmActiveSelect" class="fi" style="max-width:280px;flex-shrink:0"
+                    onchange="_onActivateProfile(this.value)"></select>
+            <button class="btn-ai-sm" onclick="_showAddProfileForm()">➕ 新建配置</button>
+            <button class="btn-ai-sm" onclick="_deleteCurrentProfile()" id="llmDeleteBtn">🗑 删除当前</button>
+            <span id="llmProfileMsg" style="font-size:12px;color:#666"></span>
+          </div>
+          <div style="margin-top:6px;font-size:11px;color:#888">
+            💡 多个 LLM 配置（GLM / Qwen / Claude 等）可分别保存，下拉切换。切换或修改激活配置时若有 AI 后台任务运行会被禁止。
+          </div>
+        </div>
+
         <!-- 未配置态：显示完整表单 -->
         <div id="llmFormPanel">
-          <div class="form-grid" style="margin-top:10px">
+          <div id="llmFormMode" style="margin-top:10px;font-size:12px;color:#7B5EA7;font-weight:600">
+            <!-- "✏ 编辑当前 profile" / "➕ 新建 profile" -->
+          </div>
+          <div class="form-grid" style="margin-top:6px">
+            <div class="fg-item">
+              <label>配置名 <span style="color:#999">（用于区分多 LLM）</span></label>
+              <input type="text" id="llmProfileName" class="fi"
+                     placeholder="如：GLM-4.7 / Qwen-Max（私部）">
+            </div>
             <div class="fg-item">
               <label>Endpoint <span style="color:#C00">*</span></label>
               <input type="text" id="llmEndpoint" class="fi"
@@ -1085,71 +1108,226 @@ D:\sim\run1\*.log"></textarea>
     }
   }
 
+  // ── 多 profile 状态 ─────────────────────────────────────
+  let _p0FormMode = 'edit';   // 'edit' = 编辑当前激活；'add' = 新建
+  let _p0Profiles = [];        // 最新 profile 列表
+  let _p0Active   = '';        // 当前激活名
+
+  function _populateForm(p) {
+    document.getElementById('llmProfileName').value = p.name || '';
+    document.getElementById('llmEndpoint').value    = p.endpoint || '';
+    document.getElementById('llmApiKey').value      = p.api_key  || '';
+    document.getElementById('llmModel').value       = p.model    || '';
+    document.getElementById('llmTimeout').value     = p.timeout  || 30;
+    const ctx = p.context_window || 100000;
+    const sel = document.getElementById('llmCtxPreset');
+    if (ctx === 128000 || ctx === 1000000) {
+      sel.value = String(ctx);
+      document.getElementById('llmCtxCustom').style.display = 'none';
+    } else {
+      sel.value = 'custom';
+      document.getElementById('llmCtxCustom').style.display = '';
+      document.getElementById('llmCtxCustom').value = ctx;
+    }
+    document.getElementById('llmP3MaxLines').value = p.p3_max_lines || 2500;
+  }
+
+  function _renderProfileBar() {
+    const bar = document.getElementById('llmProfileBar');
+    if (!bar) return;
+    bar.style.display = _p0Profiles.length ? '' : 'none';
+    const sel = document.getElementById('llmActiveSelect');
+    sel.innerHTML = _p0Profiles.map(function(p) {
+      const selected = p.name === _p0Active ? 'selected' : '';
+      return '<option value="' + esc(p.name) + '" ' + selected + '>' + esc(p.name) + '</option>';
+    }).join('');
+    document.getElementById('llmDeleteBtn').disabled = _p0Profiles.length <= 1;
+    document.getElementById('llmDeleteBtn').title = _p0Profiles.length <= 1
+      ? '至少保留一个 profile，无法删除' : '';
+    const modeEl = document.getElementById('llmFormMode');
+    if (modeEl) {
+      modeEl.textContent = _p0FormMode === 'add'
+        ? '➕ 新建 profile（保存后自动加入列表，但不切换激活）'
+        : '✏ 编辑当前激活 profile：' + (_p0Active || '—');
+    }
+  }
+
   async function loadLlmConfig() {
     try {
       const resp = await fetch('/llm/get_config');
       const d = await resp.json();
       if (!d.ok) return;
+      _p0Profiles = d.profiles || [];
+      _p0Active   = d.active_profile || '';
       _setLlmConfigured(d.configured, d.config ? d.config.model : '');
+      _renderProfileBar();
       if (d.configured && d.config) {
-        document.getElementById('llmEndpoint').value   = d.config.endpoint || '';
-        document.getElementById('llmApiKey').value     = d.config.api_key  || '';
-        document.getElementById('llmModel').value      = d.config.model    || '';
-        document.getElementById('llmTimeout').value    = d.config.timeout  || 30;
-        const ctx = d.config.context_window || 100000;
-        const sel = document.getElementById('llmCtxPreset');
-        if (ctx === 128000 || ctx === 1000000) {
-          sel.value = String(ctx);
-          document.getElementById('llmCtxCustom').style.display = 'none';
-        } else {
-          sel.value = 'custom';
-          document.getElementById('llmCtxCustom').style.display = '';
-          document.getElementById('llmCtxCustom').value = ctx;
-        }
-        document.getElementById('llmP3MaxLines').value = d.config.p3_max_lines || 2500;
+        // 默认编辑当前激活 profile
+        _p0FormMode = 'edit';
+        const active = _p0Profiles.find(p => p.name === _p0Active) || d.config;
+        active.name = _p0Active;
+        _populateForm(active);
+        _renderProfileBar();
       }
     } catch(e) { /* 静默失败 */ }
   }
 
+  function _showAddProfileForm() {
+    _p0FormMode = 'add';
+    _populateForm({name: '', endpoint: '', api_key: '', model: '',
+                   timeout: 30, context_window: 128000, p3_max_lines: 2500});
+    document.getElementById('llmFormPanel').style.display    = '';
+    document.getElementById('llmSummaryPanel').style.display = 'none';
+    _renderProfileBar();
+    document.getElementById('llmProfileName').focus();
+  }
+
+  async function _onActivateProfile(name) {
+    if (!name || name === _p0Active) return;
+    const msgEl = document.getElementById('llmProfileMsg');
+    msgEl.textContent = '⏳ 切换中…'; msgEl.style.color = '#555';
+    const result = await _activateWithForce(name, false);
+    msgEl.textContent = result.msg;
+    msgEl.style.color = result.ok ? '#2E7D32' : '#C00000';
+    if (result.ok) await loadLlmConfig();
+    else {
+      // 切换失败，回滚下拉到原激活
+      document.getElementById('llmActiveSelect').value = _p0Active;
+    }
+  }
+
+  async function _activateWithForce(name, force) {
+    try {
+      const resp = await fetch('/llm/profile/activate', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({name, force}),
+      });
+      const d = await resp.json();
+      if (d.ok) return {ok: true, msg: '✅ 已切换到：' + esc(name)};
+      if (d.need_force && d.running_jobs && d.running_jobs.length) {
+        const proceed = await _confirmRunningJobs(
+          '切换 profile 会让运行中的 AI 任务半路换模型。',
+          d.running_jobs);
+        if (proceed) return _activateWithForce(name, true);
+        return {ok: false, msg: '已取消切换'};
+      }
+      return {ok: false, msg: '❌ ' + esc(d.reason || '失败')};
+    } catch(e) {
+      return {ok: false, msg: '❌ 请求失败：' + esc(e.message)};
+    }
+  }
+
+  async function _confirmRunningJobs(prefix, jobs) {
+    const list = jobs.map(function(j) {
+      return '• ' + j.kind + ' (' + j.phase + ', ' + j.progress + '%)';
+    }).join('\n');
+    const text = prefix + '\n\n当前运行中的任务：\n' + list +
+                 '\n\n确认强制继续？';
+    return window.confirm(text);
+  }
+
+  async function _deleteCurrentProfile() {
+    if (_p0Profiles.length <= 1) return;
+    if (!window.confirm('删除当前 profile：' + _p0Active + ' ？此操作不可撤销。')) return;
+    const msgEl = document.getElementById('llmProfileMsg');
+    msgEl.textContent = '⏳ 删除中…'; msgEl.style.color = '#555';
+    const result = await _deleteWithForce(_p0Active, false);
+    msgEl.textContent = result.msg;
+    msgEl.style.color = result.ok ? '#2E7D32' : '#C00000';
+    if (result.ok) await loadLlmConfig();
+  }
+
+  async function _deleteWithForce(name, force) {
+    try {
+      const resp = await fetch('/llm/profile/delete', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({name, force}),
+      });
+      const d = await resp.json();
+      if (d.ok) return {ok: true, msg: '✅ 已删除：' + esc(name)};
+      if (d.need_force && d.running_jobs && d.running_jobs.length) {
+        const proceed = await _confirmRunningJobs(
+          '删除激活 profile 会自动切换到其他配置。',
+          d.running_jobs);
+        if (proceed) return _deleteWithForce(name, true);
+        return {ok: false, msg: '已取消删除'};
+      }
+      return {ok: false, msg: '❌ ' + esc(d.reason || '失败')};
+    } catch(e) {
+      return {ok: false, msg: '❌ 请求失败：' + esc(e.message)};
+    }
+  }
+
   async function saveLlmConfig() {
-    const endpoint   = (document.getElementById('llmEndpoint').value || '').trim();
-    const apiKey     = (document.getElementById('llmApiKey').value || '').trim();
-    const model      = (document.getElementById('llmModel').value || '').trim();
-    const timeout    = parseInt(document.getElementById('llmTimeout').value) || 30;
-    const sel        = document.getElementById('llmCtxPreset');
-    const ctxWindow  = sel.value === 'custom'
+    const profileName = (document.getElementById('llmProfileName').value || '').trim();
+    const endpoint    = (document.getElementById('llmEndpoint').value || '').trim();
+    const apiKey      = (document.getElementById('llmApiKey').value || '').trim();
+    const model       = (document.getElementById('llmModel').value || '').trim();
+    const timeout     = parseInt(document.getElementById('llmTimeout').value) || 30;
+    const sel         = document.getElementById('llmCtxPreset');
+    const ctxWindow   = sel.value === 'custom'
       ? (parseInt(document.getElementById('llmCtxCustom').value) || 100000)
       : (parseInt(sel.value) || 100000);
-    const p3MaxLines = parseInt(document.getElementById('llmP3MaxLines').value) || 2500;
+    const p3MaxLines  = parseInt(document.getElementById('llmP3MaxLines').value) || 2500;
 
     const statusEl = document.getElementById('llmSaveStatus');
     const btn      = document.getElementById('llmSaveBtn');
     statusEl.textContent = '⏳ 保存中…';
     statusEl.style.color = '#555';
     btn.disabled = true;
+
+    const payload = {
+      name: profileName, endpoint, api_key: apiKey, model,
+      timeout, context_window: ctxWindow, p3_max_lines: p3MaxLines,
+    };
+
+    const result = (_p0FormMode === 'add')
+      ? await _addProfile(payload)
+      : await _saveActiveProfile(payload, false);
+
+    statusEl.textContent = result.msg;
+    statusEl.style.color = result.ok ? '#2E7D32' : '#C00000';
+    if (result.ok) await loadLlmConfig();
+    btn.disabled = false;
+  }
+
+  async function _addProfile(payload) {
+    if (!payload.name) return {ok: false, msg: '❌ 配置名不能为空'};
     try {
-      const resp = await fetch('/llm/save_config', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          endpoint, api_key: apiKey, model,
-          timeout, context_window: ctxWindow, p3_max_lines: p3MaxLines,
-        }),
+      const resp = await fetch('/llm/profile/add', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(payload),
       });
       const d = await resp.json();
-      if (d.ok) {
-        statusEl.textContent = '✅ 保存成功';
-        statusEl.style.color = '#2E7D32';
-        _setLlmConfigured(true, d.model || model);
-      } else {
-        statusEl.textContent = '❌ ' + esc(d.reason || '保存失败');
-        statusEl.style.color = '#C00000';
-      }
+      if (d.ok) return {ok: true, msg: '✅ 已新增 profile：' + esc(payload.name)};
+      return {ok: false, msg: '❌ ' + esc(d.reason || '保存失败')};
     } catch(e) {
-      statusEl.textContent = '❌ 请求失败：' + esc(e.message);
-      statusEl.style.color = '#C00000';
+      return {ok: false, msg: '❌ 请求失败：' + esc(e.message)};
     }
-    btn.disabled = false;
+  }
+
+  async function _saveActiveProfile(payload, force) {
+    // 编辑模式：调 /llm/profile/update（target_name = 当前激活）
+    payload.target_name = _p0Active;
+    payload.force       = force;
+    try {
+      const resp = await fetch('/llm/profile/update', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(payload),
+      });
+      const d = await resp.json();
+      if (d.ok) return {ok: true, msg: '✅ 已保存当前 profile'};
+      if (d.need_force && d.running_jobs && d.running_jobs.length) {
+        const proceed = await _confirmRunningJobs(
+          '修改激活 profile 可能影响运行中的 AI 任务结果。',
+          d.running_jobs);
+        if (proceed) return _saveActiveProfile(payload, true);
+        return {ok: false, msg: '已取消保存'};
+      }
+      return {ok: false, msg: '❌ ' + esc(d.reason || '保存失败')};
+    } catch(e) {
+      return {ok: false, msg: '❌ 请求失败：' + esc(e.message)};
+    }
   }
 
   // ── P0: 热重载 LLM 配置 ─────────────────────────────────

@@ -3,23 +3,39 @@
 LLM API 客户端 — 无 Flask 依赖，可在任何线程调用。
 纯 stdlib（urllib），不依赖 requests，适配离线内网环境。
 
-公开接口：
-  init(base_dir)                               — 加载 llm_config.json + 环境变量
-  is_configured() -> bool                      — endpoint + model 均非空则 True
+配置文件 llm_config.json 现支持多 profile，schema：
+  {
+    "active_profile": "GLM-4.7",
+    "profiles": [
+      {"name": "GLM-4.7", "endpoint": "...", "api_key": "...", "model": "...",
+       "timeout": 60, "context_window": 100000, "p3_max_lines": 2500, ...},
+      {"name": "Qwen-Max", ...},
+    ]
+  }
+
+向后兼容：旧版扁平格式（无 profiles 键）会在首次加载时自动迁移成单 profile。
+
+公开接口（旧）：
+  init(base_dir)                               — 加载并迁移 llm_config.json + 环境变量
+  is_configured() -> bool                      — 当前激活 profile 的 endpoint + model 均非空
   call_llm(messages, temperature, max_tokens)  — 含超时重试，失败返回 ""
   call_llm_verbose(messages, ...)              — 同上，返回 (result, error_str) 供调试
   call_llm_with_cache(messages, ...)           — 内存缓存包装（md5 key，TTL 可配置）
-  reload_config() -> bool                      — 热重载 llm_config.json，返回是否已配置
-  get_config() -> dict | None                  — 当前配置快照（用于 P2 参数读取）
-  save_config(cfg: dict) -> None               — 写入 llm_config.json 并热重载
+  reload_config() -> bool                      — 热重载文件，返回是否已配置
+  get_config() -> dict | None                  — 当前激活 profile 字段快照
+  save_config(cfg: dict) -> None               — 用 cfg 字段更新当前激活 profile 并热重载
+
+公开接口（新增 — 多 profile 管理）：
+  get_all_profiles() -> list                   — 全部 profile 列表（不脱敏）
+  get_active_profile_name() -> str             — 当前激活 profile 名
+  add_profile(profile: dict) -> str            — 添加新 profile，返回错误信息（''=成功）
+  update_profile(name, fields) -> str          — 更新指定 profile（含 rename）
+  delete_profile(name) -> str                  — 删除 profile（拒绝删最后一个）
+  activate_profile(name) -> str                — 切换激活 + 热重载
 
 支持 API 格式（自动检测）：
   OpenAI 兼容格式  — endpoint 不含 "anthropic"
-    请求头: Authorization: Bearer <api_key>
-    响应解析: choices[0].message.content
   Anthropic 格式  — endpoint 含 "anthropic"
-    请求头: x-api-key: <api_key>, anthropic-version: 2023-06-01
-    响应解析: content[0].text
 """
 import json
 import time
@@ -30,10 +46,12 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
-_lock     = threading.Lock()
-_config   = None    # dict | None（未配置时为 None）
-_cache    = {}      # md5[:16] -> (result_str, expire_ts)
-_base_dir = None    # Path
+_lock         = threading.Lock()
+_config       = None    # dict | None — 当前激活 profile（已注入默认 + env 覆盖）
+_profiles_raw = []      # list[dict] — 文件原始 profile 列表（不含默认值）
+_active_name  = ''      # str       — 当前激活 profile 名
+_cache        = {}      # md5[:16] -> (result_str, expire_ts)
+_base_dir     = None    # Path
 
 _DEFAULTS = {
     'timeout':               30,
@@ -58,16 +76,35 @@ def init(base_dir: Path) -> None:
 
 
 def reload_config() -> bool:
-    """重载 llm_config.json + 环境变量覆盖。返回是否已配置。"""
-    global _config
+    """重载 llm_config.json + 环境变量覆盖。返回是否已配置（激活 profile 有效）。"""
+    global _config, _profiles_raw, _active_name
     raw = _load_file()
-    _apply_env(raw)
-    configured = bool(raw.get('endpoint') and raw.get('model'))
+    profiles, active = _migrate_or_validate(raw)
+
+    # 写回迁移结果（只在文件原本是旧格式时触发；新格式 round-trip 写入也是幂等的）
+    if profiles and 'profiles' not in raw:
+        _write_file({'active_profile': active, 'profiles': profiles})
+
+    # 选出当前激活 profile（可能为空）
+    active_profile = next((dict(p) for p in profiles if p.get('name') == active), None)
+    if active_profile is None and profiles:
+        # 激活名指向不存在的 profile，回退到首个
+        active_profile = dict(profiles[0])
+        active = active_profile.get('name', '')
+
+    if active_profile:
+        _apply_env(active_profile)
+        configured = bool(active_profile.get('endpoint') and active_profile.get('model'))
+    else:
+        configured = False
+
     with _lock:
+        _profiles_raw = [dict(p) for p in profiles]
+        _active_name  = active or ''
         if configured:
             for k, v in _DEFAULTS.items():
-                raw.setdefault(k, v)
-            _config = raw
+                active_profile.setdefault(k, v)
+            _config = active_profile
         else:
             _config = None
     return configured
@@ -85,8 +122,59 @@ def _load_file() -> dict:
         return {}
 
 
+def _write_file(data: dict) -> None:
+    """原子写：先写到 .tmp 再 rename，避免半截文件。"""
+    if _base_dir is None:
+        return
+    p   = _base_dir / 'llm_config.json'
+    tmp = p.with_suffix('.json.tmp')
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+    tmp.replace(p)
+
+
+def _migrate_or_validate(raw: dict) -> tuple:
+    """
+    把任意 raw 规整为 (profiles, active_name)。
+    - 旧扁平格式（含 endpoint/model 顶层字段）→ 包成单 profile
+    - 新格式 → 直接返回，但兜底校验（active 名指向不存在时回退首个）
+    - 空文件 / 不可解析 → ([], '')
+    """
+    if not raw:
+        return [], ''
+
+    if 'profiles' in raw and isinstance(raw.get('profiles'), list):
+        profiles = [dict(p) for p in raw['profiles'] if isinstance(p, dict)]
+        # 确保每个 profile 有 name
+        for p in profiles:
+            if not p.get('name'):
+                p['name'] = p.get('model') or 'unnamed'
+        # 去重 name（重名后缀 _2、_3 ...）
+        seen = {}
+        for p in profiles:
+            base = p['name']
+            i = 1
+            while p['name'] in seen:
+                i += 1
+                p['name'] = f'{base}_{i}'
+            seen[p['name']] = True
+        active = raw.get('active_profile', '')
+        return profiles, active
+
+    # 老扁平格式：endpoint/model 在顶层
+    if raw.get('endpoint') or raw.get('model'):
+        name = raw.get('model') or 'default'
+        single = dict(raw)
+        single['name'] = name
+        # 顶层别留 active_profile/profiles 残余键
+        for k in ('active_profile', 'profiles'):
+            single.pop(k, None)
+        return [single], name
+
+    return [], ''
+
+
 def _apply_env(cfg: dict) -> None:
-    """环境变量覆盖（优先级高于文件）。"""
+    """环境变量覆盖（优先级高于 profile 字段）。"""
     for env_key, cfg_key in [
         ('LLM_ENDPOINT', 'endpoint'),
         ('LLM_API_KEY',  'api_key'),
@@ -104,18 +192,157 @@ def is_configured() -> bool:
 
 
 def get_config():
-    """返回当前配置字典快照，未配置时返回 None。"""
+    """返回当前激活 profile 的字段快照（含默认值 + env 覆盖）。"""
     with _lock:
         return dict(_config) if _config else None
 
 
+def get_all_profiles() -> list:
+    """返回所有 profile 字段的深拷贝（不脱敏 api_key——内部使用）。"""
+    with _lock:
+        return [dict(p) for p in _profiles_raw]
+
+
+def get_active_profile_name() -> str:
+    """当前激活 profile 名。未配置时返回空串。"""
+    with _lock:
+        return _active_name
+
+
 def save_config(cfg: dict) -> None:
-    """将配置写入 llm_config.json，然后热重载。"""
+    """
+    用 cfg 字段更新当前激活 profile，然后写文件 + 热重载。
+    向后兼容旧调用：传单个 profile 字段（无 'profiles' 键）。
+    若文件无任何 profile，则把 cfg 当作首个 profile 创建。
+    """
     if _base_dir is None:
         raise RuntimeError('llm_client 未初始化')
-    p = _base_dir / 'llm_config.json'
-    p.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding='utf-8')
+
+    raw = _load_file()
+    profiles, active = _migrate_or_validate(raw)
+
+    # 提取 cfg 里可能的 name 字段
+    new_name = cfg.get('name', '').strip() or active or cfg.get('model') or 'default'
+    new_profile = {k: v for k, v in cfg.items() if k != 'name'}
+    new_profile['name'] = new_name
+
+    if not profiles:
+        # 空配置 — 把 cfg 当作首个 profile
+        profiles = [new_profile]
+        active   = new_name
+    else:
+        # 找到激活 profile 替换；若新 name 与激活不同则视为 rename
+        idx = next((i for i, p in enumerate(profiles)
+                    if p.get('name') == active), None)
+        if idx is None:
+            # 激活指针失效——退回首个
+            idx = 0
+        # 若 rename 到一个已存在的别的 profile 的 name，拒绝
+        if new_name != profiles[idx].get('name') and \
+                any(p.get('name') == new_name for i, p in enumerate(profiles) if i != idx):
+            raise ValueError(f'profile 名 {new_name!r} 已存在')
+        profiles[idx] = new_profile
+        active = new_name
+
+    _write_file({'active_profile': active, 'profiles': profiles})
     reload_config()
+
+
+def add_profile(profile: dict) -> str:
+    """
+    添加新 profile。失败返回错误说明（''=成功）。
+    profile 必须含 name；name 必须唯一。
+    """
+    if _base_dir is None:
+        return 'llm_client 未初始化'
+    name = (profile.get('name') or '').strip()
+    if not name:
+        return 'profile 名不能为空'
+
+    raw = _load_file()
+    profiles, active = _migrate_or_validate(raw)
+    if any(p.get('name') == name for p in profiles):
+        return f'profile 名 {name!r} 已存在'
+
+    profiles.append({**profile, 'name': name})
+    if not active:
+        active = name   # 第一个 profile 自动激活
+    _write_file({'active_profile': active, 'profiles': profiles})
+    reload_config()
+    return ''
+
+
+def update_profile(name: str, fields: dict) -> str:
+    """
+    更新指定 profile。fields 含 'name' 时表示 rename。失败返回错误说明。
+    """
+    if _base_dir is None:
+        return 'llm_client 未初始化'
+
+    raw = _load_file()
+    profiles, active = _migrate_or_validate(raw)
+
+    idx = next((i for i, p in enumerate(profiles)
+                if p.get('name') == name), None)
+    if idx is None:
+        return f'未找到 profile {name!r}'
+
+    new_name = (fields.get('name') or name).strip() or name
+    if new_name != name and \
+            any(p.get('name') == new_name for i, p in enumerate(profiles) if i != idx):
+        return f'profile 名 {new_name!r} 已存在'
+
+    merged = {**profiles[idx], **fields, 'name': new_name}
+    profiles[idx] = merged
+    if active == name:
+        active = new_name
+
+    _write_file({'active_profile': active, 'profiles': profiles})
+    reload_config()
+    return ''
+
+
+def delete_profile(name: str) -> str:
+    """删除 profile。拒绝删最后一个。失败返回错误说明。"""
+    if _base_dir is None:
+        return 'llm_client 未初始化'
+
+    raw = _load_file()
+    profiles, active = _migrate_or_validate(raw)
+
+    if not profiles:
+        return '当前无任何 profile'
+    if len(profiles) <= 1:
+        return '至少保留一个 profile，不能删除最后一个'
+
+    idx = next((i for i, p in enumerate(profiles)
+                if p.get('name') == name), None)
+    if idx is None:
+        return f'未找到 profile {name!r}'
+
+    profiles.pop(idx)
+    if active == name:
+        active = profiles[0].get('name', '')   # 删的是激活的——切换到首个
+
+    _write_file({'active_profile': active, 'profiles': profiles})
+    reload_config()
+    return ''
+
+
+def activate_profile(name: str) -> str:
+    """切换激活 profile。失败返回错误说明。"""
+    if _base_dir is None:
+        return 'llm_client 未初始化'
+
+    raw = _load_file()
+    profiles, _active = _migrate_or_validate(raw)
+
+    if not any(p.get('name') == name for p in profiles):
+        return f'未找到 profile {name!r}'
+
+    _write_file({'active_profile': name, 'profiles': profiles})
+    reload_config()
+    return ''
 
 
 # ── HTTP 层（纯 stdlib，绕过系统代理）──────────────────────────

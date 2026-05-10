@@ -15,7 +15,7 @@
       <a href="/" class="btn btn-secondary">← 重新上传</a>
       <a href="/export/excel" class="btn btn-green">⬇ 导出 Excel</a>
       <a href="/export/html"  class="btn btn-blue">⬇ 导出 HTML</a>
-      {% if llm_enabled and is_path_mode %}
+      {% if llm_enabled and has_files %}
       <button class="btn btn-ai" onclick="openP3Modal()">📋 AI日志问答</button>
       {% endif %}
       {% if llm_enabled %}
@@ -130,7 +130,15 @@
       <div class="detail-panel {% if ri == ns.first_active %}active{% endif %}"
            id="panel-{{ ri }}">
 
-        <div class="panel-filename">📄 {{ r.file }}</div>
+        <div class="panel-filename">
+          📄 {{ r.file }}
+          {% if llm_enabled and has_files %}
+          <button class="btn-ai-sm" style="margin-left:10px;font-size:11px"
+                  data-file-idx="{{ ri }}"
+                  data-file-name="{{ r.file }}"
+                  onclick="openP3ModalForFile(this)">🤖 AI 问答</button>
+          {% endif %}
+        </div>
 
         <!-- 错误统计 -->
         <div class="section-block">
@@ -847,6 +855,59 @@
   }
 
   // ── P2: AI日志问答 ────────────────────────────────────────
+  // 多文件支持：跟踪当前对话所属的文件下标
+  let _p3CurrentFileIdx  = 0;
+  let _p3CurrentFileName = '';
+
+  function _p3SetModalTitle(name) {
+    const titleEl = document.querySelector('#p3Modal .ai-modal-hdr');
+    if (!titleEl) return;
+    // 保留 "📋 AI日志问答" + 信息条 + 关闭按钮，只更新主标题文案
+    // 原结构：<span class="ai-modal-title">📋 AI日志问答</span><span class="ai-modal-info">...</span><button>...</button>
+    const titleSpan = titleEl.querySelector('.ai-modal-title');
+    if (titleSpan) {
+      titleSpan.textContent = name ? '📋 AI日志问答  —  ' + name : '📋 AI日志问答';
+    }
+  }
+
+  async function _p3ResetForNewFile(newIdx, newName) {
+    // 切换文件：先清后端历史 + 重置前端状态
+    try {
+      await fetch('/llm/custom_extract', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({clear: true}),
+      });
+    } catch(e) { /* 网络失败也继续清前端状态 */ }
+    _p3CurrentFileIdx  = newIdx;
+    _p3CurrentFileName = newName || '';
+    _p3LogHistory      = [];
+    _p3CurSeg          = null;
+    _p3CurTurnSegs     = [];
+    const chat = document.getElementById('p3chat');
+    if (chat) chat.innerHTML = '';
+    const info = document.getElementById('p3info');
+    if (info) info.textContent = '';
+    const sbBody = document.getElementById('p3SbBody');
+    if (sbBody) sbBody.innerHTML = '<div style="color:#AAA;font-size:12px;padding:4px">发送问题后，此处显示 AI 参考的日志原文</div>';
+    const sbTitle = document.getElementById('p3SbTitle');
+    if (sbTitle) sbTitle.textContent = '📄 日志原文';
+    ['p3ExportCurBtn', 'p3ExportAllBtn'].forEach(function(id) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+  }
+
+  async function openP3ModalForFile(btn) {
+    const newIdx  = parseInt(btn.dataset.fileIdx);
+    const newName = btn.dataset.fileName;
+    if (newIdx !== _p3CurrentFileIdx || _p3CurrentFileName === '') {
+      await _p3ResetForNewFile(newIdx, newName);
+    }
+    _p3SetModalTitle(_p3CurrentFileName);
+    openP3Modal();
+  }
+
   function openP3Modal() {
     const m = document.getElementById('p3Modal');
     if (m) { m.style.display = 'flex'; document.getElementById('p3input').focus(); }
@@ -869,7 +930,7 @@
       const resp = await fetch('/llm/custom_extract', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({query}),
+        body: JSON.stringify({query, file_index: _p3CurrentFileIdx}),
       });
       const d = await resp.json();
       _removeP3(lid);
@@ -887,7 +948,11 @@
         _appendP3('assistant', body);
         const info = document.getElementById('p3info');
         if (info) info.textContent = '第 ' + d.turns + ' 轮';
-        if (d.raw_lines && d.raw_lines.length) {
+        // Phase 3: 多块支持——优先用 d.blocks（含每块独立 start/end/lines），
+        // 没有时降级到旧 d.raw_lines（单段）。
+        if (d.blocks && d.blocks.length) {
+          _p3UpdateSidebarBlocks(d.blocks, d.turns);
+        } else if (d.raw_lines && d.raw_lines.length) {
           _p3UpdateSidebar(d.raw_lines, d.extracted_start, d.extracted_end, d.turns);
         }
       }
@@ -913,20 +978,50 @@
     if (el) el.remove();
   }
   // ── P2 侧边栏 ─────────────────────────────────────────────
-  let _p3LogHistory = [];  // [{turn, start, end, lines:[{lineno,content}]}]
+  // _p3LogHistory 累积每轮的取段：单块时是 1 段，多块时是 N 段
+  let _p3LogHistory = [];  // [{turn, start, end, lines:[{lineno,content}], blockIdx?}]
   let _p3CurSeg = null;
+  let _p3CurTurnSegs = [];  // 当前 turn 的所有段（多块时 > 1）
 
-  function _p3UpdateSidebar(rawLines, start, end, turn) {
-    _p3CurSeg = {turn, start, end, lines: rawLines};
-    _p3LogHistory.push(_p3CurSeg);
-    const title = document.getElementById('p3SbTitle');
-    if (title) title.textContent = '📄 日志原文  第' + start + '~' + end + '行';
-    const body = document.getElementById('p3SbBody');
-    if (body) {
-      body.innerHTML = '<pre class="p3-log-pre">' +
-        rawLines.map(function(r) {
+  function _renderSegmentsHtml(segs) {
+    // 多段：每段用 ── 分隔的小标题 + 内容
+    return segs.map(function(seg, i) {
+      const header = segs.length > 1
+        ? ('<div class="p3-seg-hdr">📍 段 ' + (i + 1) + '：第 ' + seg.start + '~' + seg.end + ' 行</div>')
+        : '';
+      return header + '<pre class="p3-log-pre">' +
+        seg.lines.map(function(r) {
           return '<span class="p3-log-lineno">' + String(r.lineno).padStart(6, ' ') + ' | </span>' + esc(r.content);
         }).join('\n') + '</pre>';
+    }).join('');
+  }
+
+  function _p3UpdateSidebar(rawLines, start, end, turn) {
+    // 单块兼容路径：保留旧调用入口
+    _p3UpdateSidebarBlocks([{start, end, lines: rawLines}], turn);
+  }
+
+  function _p3UpdateSidebarBlocks(blocks, turn) {
+    // blocks: [{start, end, lines:[{lineno,content}]}, ...]
+    _p3CurTurnSegs = blocks.map(function(b) {
+      return {turn, start: b.start, end: b.end, lines: b.lines};
+    });
+    _p3CurSeg = _p3CurTurnSegs[0];   // 单块导出仍取首段（向后兼容）
+    // 累积到全历史
+    _p3CurTurnSegs.forEach(function(seg) { _p3LogHistory.push(seg); });
+
+    const title = document.getElementById('p3SbTitle');
+    if (title) {
+      if (blocks.length > 1) {
+        const summary = blocks.map(function(b) { return 'L' + b.start + '-' + b.end; }).join(' / ');
+        title.textContent = '📄 日志原文  ' + blocks.length + ' 段（' + summary + '）';
+      } else {
+        title.textContent = '📄 日志原文  第' + blocks[0].start + '~' + blocks[0].end + '行';
+      }
+    }
+    const body = document.getElementById('p3SbBody');
+    if (body) {
+      body.innerHTML = _renderSegmentsHtml(_p3CurTurnSegs);
       body.scrollTop = 0;
     }
     const curBtn = document.getElementById('p3ExportCurBtn');
@@ -936,12 +1031,25 @@
   }
 
   function _p3ExportCurrent() {
-    if (!_p3CurSeg) return;
-    const text = '# 日志原文  第' + _p3CurSeg.start + '~' + _p3CurSeg.end + '行\n' +
-      _p3CurSeg.lines.map(function(r) {
-        return String(r.lineno).padStart(6, ' ') + ' | ' + r.content;
-      }).join('\n');
-    _p3Download(text, 'log_' + _p3CurSeg.start + '_' + _p3CurSeg.end + '.log');
+    // Phase 3: 当前轮多段时导出整轮（含分段标题）；单段时保持旧文件名
+    if (!_p3CurTurnSegs || !_p3CurTurnSegs.length) return;
+    if (_p3CurTurnSegs.length === 1) {
+      const seg = _p3CurTurnSegs[0];
+      const text = '# 日志原文  第' + seg.start + '~' + seg.end + '行\n' +
+        seg.lines.map(function(r) {
+          return String(r.lineno).padStart(6, ' ') + ' | ' + r.content;
+        }).join('\n');
+      _p3Download(text, 'log_' + seg.start + '_' + seg.end + '.log');
+    } else {
+      const text = _p3CurTurnSegs.map(function(seg, i) {
+        return '# 段 ' + (i + 1) + '：第' + seg.start + '~' + seg.end + '行\n' +
+          seg.lines.map(function(r) {
+            return String(r.lineno).padStart(6, ' ') + ' | ' + r.content;
+          }).join('\n');
+      }).join('\n\n');
+      const turnNum = _p3CurTurnSegs[0].turn;
+      _p3Download(text, 'log_blocks_T' + turnNum + '.log');
+    }
   }
 
   function _p3ExportAll() {
@@ -976,6 +1084,7 @@
     if (info) info.textContent = '';
     _p3LogHistory = [];
     _p3CurSeg = null;
+    _p3CurTurnSegs = [];
     const sbBody = document.getElementById('p3SbBody');
     if (sbBody) sbBody.innerHTML = '<div style="color:#AAA;font-size:12px;padding:4px">发送问题后，此处显示 AI 参考的日志原文</div>';
     const sbTitle = document.getElementById('p3SbTitle');
@@ -1271,7 +1380,7 @@
   <div class="ai-modal-backdrop" onclick="closeP3Modal()"></div>
   <div class="ai-modal-box p3-modal-box">
     <div class="ai-modal-hdr">
-      <span>📋 AI日志问答</span>
+      <span class="ai-modal-title">📋 AI日志问答</span>
       <span id="p3info" class="ai-modal-info"></span>
       <button class="btn-ai-sm" onclick="_p3ExportAll()" id="p3ExportAllBtn"
               style="display:none;margin-left:auto">⬇ 导出全部日志</button>
