@@ -3,6 +3,7 @@ from flask import Blueprint, request, jsonify
 
 import state
 from core.db_manager import find_duplicates, append_entry
+from core import kb_stats
 
 writeback_bp = Blueprint('writeback', __name__)
 
@@ -47,6 +48,8 @@ def writeback():
                 return jsonify({'success': False, 'duplicate': True,
                                 'conflicts': state._conflict_summary(conflicts)})
         append_entry(db_path, entry)
+        # 活跃度事件：手动写回是强信号
+        kb_stats.record_event(entry.get('稳定ID', ''), 'writeback', db_path)
 
         file_name = data.get('file_name', '')
         error_idx = int(data.get('error_idx', 0))

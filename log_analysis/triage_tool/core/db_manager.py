@@ -5,6 +5,7 @@ import os
 import time
 import threading
 import shutil
+import hashlib
 import openpyxl
 
 # ── 锁机制说明 ────────────────────────────────────────────
@@ -73,8 +74,28 @@ class _FileLock:
 HEADERS = [
     '错误类型', '错误ID', '关键描述关键词', '报错原因',
     '所属模块', '根因分类', '解决方案', '关联用例',
-    '录入人', '录入日期',
+    '录入人', '录入日期', '稳定ID',
 ]
+
+
+def _compute_stable_id(entry: dict) -> str:
+    """基于条目关键内容生成 12 字符稳定 ID（sha1 前缀，碰撞概率约 2^-48）。
+    用于 KB 活跃度统计跨"行号变动"的稳定关联键。
+    种子字段与 find_duplicates 的去重维度一致。
+    """
+    parts = [
+        str(entry.get('错误类型', '') or '').strip().upper(),
+        str(entry.get('错误ID',   '') or '').strip().lower(),
+        str(entry.get('关键描述关键词', '') or '').strip(),
+        str(entry.get('报错原因', '') or '').strip()[:200],
+    ]
+    return hashlib.sha1('|'.join(parts).encode('utf-8')).hexdigest()[:12]
+
+
+def kb_stable_id(entry: dict) -> str:
+    """返回条目稳定 ID；缺失时即时计算（不持久化，调用方按需写回）。"""
+    sid = str(entry.get('稳定ID', '') or '').strip()
+    return sid or _compute_stable_id(entry)
 
 
 def _rotate_backups(db_path: str, n: int = BACKUP_COUNT) -> None:
@@ -145,33 +166,48 @@ def ensure_db(db_path: str) -> None:
         cell.font = header_font
         cell.fill = header_fill
         cell.alignment = Alignment(horizontal='center')
-    col_widths = [14, 18, 30, 30, 14, 14, 30, 25, 10, 14]
+    col_widths = [14, 18, 30, 30, 14, 14, 30, 25, 10, 14, 14]
     for i, w in enumerate(col_widths, 1):
         ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
     wb.save(str(path))
 
 
+def _read_entries(db_path: str) -> list:
+    """单次读取实现，不含重试和迁移触发（供 load_db 内部使用）。"""
+    wb = openpyxl.load_workbook(db_path)
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    if len(rows) < 2:
+        return []
+    headers = [str(h).strip() if h else '' for h in rows[0]]
+    entries = []
+    for excel_row, row in enumerate(rows[1:], start=2):
+        if all(cell is None for cell in row):
+            continue
+        entry = {headers[i]: (row[i] if i < len(row) and row[i] is not None else '')
+                 for i in range(len(headers))}
+        entry['_row_idx'] = excel_row
+        entry.setdefault('稳定ID', '')   # 兼容旧 schema
+        entries.append(entry)
+    return entries
+
+
 def load_db(db_path: str) -> list:
     """读取知识库，返回字典列表。每条记录含 _row_idx（Excel 行号，从2开始）。
-    读取失败时最多重试3次（防止写入期间的短暂竞争）。"""
+    读取失败时最多重试3次（防止写入期间的短暂竞争）。
+    若发现旧 schema 缺 稳定ID 列或个别行未填，自动调 kb_migrate.run() 一次（幂等）。"""
     ensure_db(db_path)
     last_err = None
     for attempt in range(3):
         try:
-            wb = openpyxl.load_workbook(db_path)
-            ws = wb.active
-            rows = list(ws.iter_rows(values_only=True))
-            if len(rows) < 2:
-                return []
-            headers = [str(h).strip() if h else '' for h in rows[0]]
-            entries = []
-            for excel_row, row in enumerate(rows[1:], start=2):
-                if all(cell is None for cell in row):
-                    continue
-                entry = {headers[i]: (row[i] if i < len(row) and row[i] is not None else '')
-                         for i in range(len(headers))}
-                entry['_row_idx'] = excel_row
-                entries.append(entry)
+            entries = _read_entries(db_path)
+            if entries and any(not str(e.get('稳定ID', '') or '').strip() for e in entries):
+                from . import kb_migrate as _km
+                try:
+                    if _km.run(db_path):
+                        entries = _read_entries(db_path)
+                except Exception:
+                    pass   # 迁移失败不阻塞读
             return entries
         except Exception as e:
             last_err = e
@@ -254,10 +290,12 @@ def delete_entry(db_path: str, row_idx: int) -> None:
 
 def append_entry(db_path: str, entry: dict) -> None:
     """
-    向知识库追加一条新记录，自动填写录入日期。
+    向知识库追加一条新记录，自动填写录入日期 + 稳定ID（缺失时按内容哈希生成）。
     线程安全 + 跨进程/跨网络共享盘安全。
     """
     entry['录入日期'] = str(date.today())
+    if not str(entry.get('稳定ID', '') or '').strip():
+        entry['稳定ID'] = _compute_stable_id(entry)
     row = [entry.get(h, '') for h in HEADERS]
     with _thread_lock:              # 进程内线程串行
         with _FileLock(db_path):    # 跨进程/跨机器串行

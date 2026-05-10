@@ -265,6 +265,16 @@ body { font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
 .error-id-sm { font-family: monospace; font-size: 12px; color: #555; }
 .error-ts   { font-size: 12px; color: #999; margin-left: auto; }
 
+/* ── KB 活跃度角标（命中频次 / 上次命中 / 冷热标记）─────── */
+.kb-activity { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 10px;
+               margin-bottom: 8px; font-size: 12px;
+               background: #F7FAFF; border-radius: 4px; align-items: center; }
+.kb-activity span { padding: 1px 6px; border-radius: 10px; }
+.act-hot    { background: #FFE9E9; color: #D9534F; font-weight: 600; }
+.act-total  { background: #EFEFEF; color: #555; }
+.act-recent { background: #E8F4FF; color: #2E74B5; }
+.act-cold   { background: #F0F0F0; color: #999; }
+
 /* ── 知识库条目编辑/删除 ──────────────────────────────── */
 .entry-card { position: relative; }
 .entry-single-actions { display: flex; gap: 6px; justify-content: flex-end;

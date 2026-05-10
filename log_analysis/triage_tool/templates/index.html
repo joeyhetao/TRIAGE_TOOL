@@ -770,7 +770,19 @@ D:\sim\run1\*.log"></textarea>
     const shown = entries.length;
     title.textContent = `查询结果（${total > shown ? '显示前 ' + shown + ' / 共 ' + total : '共 ' + total} 条）`;
 
-    container.innerHTML = entries.map((e, i) => `
+    container.innerHTML = entries.map((e, i) => {
+      const s = e._stats || {};
+      const hit7  = s.hit_7d || 0;
+      const total = s.hit_total || 0;
+      const days  = (s.days_since_last == null) ? -1 : s.days_since_last;
+      const actHot   = hit7   ? `<span class="act-hot" title="近 7 天命中 ${hit7} 次">🔥 近 7 天 ${hit7} 次</span>` : '';
+      const actTotal = total  ? `<span class="act-total" title="历史总命中">总 ${total} 次</span>` : '';
+      let actAge = '';
+      if (days >= 90)      actAge = `<span class="act-cold" title="上次命中 ${days} 天前">💤 ${days} 天未命中</span>`;
+      else if (days >= 0)  actAge = `<span class="act-recent" title="上次命中 ${days} 天前">${days} 天前命中</span>`;
+      const actBar = (actHot || actTotal || actAge)
+          ? `<div class="kb-activity">${actHot}${actTotal}${actAge}</div>` : '';
+      return `
       <div class="qr-card">
         <div class="qr-hdr">
           <span class="badge badge-${(e['错误类型']||'').toLowerCase()}">${esc(e['错误类型']||'')}</span>
@@ -778,6 +790,7 @@ D:\sim\run1\*.log"></textarea>
           <span class="qr-module">${esc(e['所属模块']||'')}</span>
           <span class="qr-cat">${esc(e['根因分类']||'')}</span>
         </div>
+        ${actBar}
         <div class="entry-grid" style="margin-top:8px">
           <div class="eg-kv full"><span class="eg-k">关键描述关键词</span><span class="eg-v mono">${esc(e['关键描述关键词']||'')}</span></div>
           <div class="eg-kv full"><span class="eg-k">报错原因</span><span class="eg-v">${esc(e['报错原因']||'')}</span></div>
@@ -785,8 +798,8 @@ D:\sim\run1\*.log"></textarea>
           <div class="eg-kv"><span class="eg-k">关联用例</span><span class="eg-v mono">${esc(e['关联用例']||'')}</span></div>
           <div class="eg-kv"><span class="eg-k">录入人 / 日期</span><span class="eg-v">${esc(e['录入人']||'')} ${esc(e['录入日期']||'')}</span></div>
         </div>
-      </div>`
-    ).join('');
+      </div>`;
+    }).join('');
 
     wrap.style.display = '';
     wrap.scrollIntoView({behavior: 'smooth', block: 'start'});

@@ -199,10 +199,40 @@ _FileLock       →  serializes across processes/machines (stdlib only)
 
 ### Knowledge base schema
 
-`error_db.xlsx` columns: `错误类型`, `错误ID`, `关键描述关键词`, `报错原因`, `所属模块`, `根因分类`, `解决方案`, `关联用例`, `录入人`, `录入日期`
+`error_db.xlsx` columns: `错误类型`, `错误ID`, `关键描述关键词`, `报错原因`, `所属模块`, `根因分类`, `解决方案`, `关联用例`, `录入人`, `录入日期`, `稳定ID`
 
 - `关键描述关键词` is comma-separated (`,` or `，`); ALL keywords must match (AND logic)
 - Users can supply a custom path (including UNC network share) via the UI; validated by `state._validate_db_path()`
+- `稳定ID`: 12-char sha1 prefix of `(错误类型|错误ID|关键描述关键词|报错原因[:200])`. Used by the activity-scoring layer as a stable key invariant under row-number changes. Old KBs without this column are auto-migrated by `core/kb_migrate.py` (lazily triggered inside `load_db` if any row's `稳定ID` is empty; idempotent).
+
+### Activity scoring layer
+
+The activity-scoring layer ([core/kb_stats.py](log_analysis/triage_tool/core/kb_stats.py)) tracks "which KB entries are still hot" and feeds that signal into ranking. **Decoupled from KB**: events live in `kb_hits.jsonl` next to `error_db.xlsx`, not as Excel columns.
+
+**Data flow:**
+```
+parse → match_error()                                    [in core/matcher.py]
+      → record_event(stable_id, 'match')                 [emits 1 line to kb_hits.jsonl]
+      → aggregate_stats() (mtime-cached)                 [scans events, returns per-id stats]
+      → activity_boost(stats[sid])                       [min(hit_7d/5, 1.0)]
+      → final_rank = relevance × (1 + 0.5 × boost)       [in score_query() / match_error multi-hit sort]
+      → entry['_stats'] injected for UI badges           [render-time]
+```
+
+**Three event sources** (recorded via `kb_stats.record_event(stable_id, source, db_path)`):
+- `match` — emitted in [core/matcher.py run_match](log_analysis/triage_tool/core/matcher.py) for every successful KB hit
+- `writeback` — emitted in [blueprints/writeback.py](log_analysis/triage_tool/blueprints/writeback.py) after `/writeback` appends a new entry (strong signal: human confirmed relevance)
+- `view` — emitted by `/kb/record_view` in [blueprints/kb.py](log_analysis/triage_tool/blueprints/kb.py); reserved for future UI click-through (route exists, frontend doesn't call it yet)
+
+**Storage**: `kb_hits.jsonl` is append-only newline-delimited JSON `{"id":"abc123","ts":1715000000.0,"src":"match"}`. Use `_FileLock` (same lock primitive as `error_db.xlsx`) but on a separate file. `archive_old_events(cutoff_days=180)` rotates pre-cutoff events to `kb_hits_archive.jsonl`.
+
+**Performance**: `aggregate_stats` is mtime-cached; on hot path it's an O(1) dict return. Cold scan is O(N events) — fine for 100k+ events.
+
+**Degradation**: If `kb_hits.jsonl` is missing or corrupt, `aggregate_stats` returns `{}` and the whole system falls back to baseline (no boost, sort by 录入日期 only). This is the design contract — never break ranking on event-layer failure.
+
+**Stats fields per entry** (`{stable_id: {...}}`): `hit_total`, `hit_7d`, `hit_30d`, `last_hit_ts`, `first_hit_ts`, `last_hit_iso`, `first_hit_iso`, `days_since_last`. Templates use `_stats` (injected by `run_match`/`/query`) to render 🔥 (hit_7d > 0) / 💤 (days_since_last ≥ 90) badges.
+
+**Not yet implemented** (designed for v2): LLM-recommendation acceptance signal, "this isn't right" rejection button, exponential decay, P7-extended auto-archive suggestion, cross-case breadth metrics.
 
 ## Key Reference Documents
 

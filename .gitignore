@@ -33,6 +33,15 @@ log_analysis/triage_tool/dist/uploads/
 log_analysis/triage_tool/dist/reports/
 log_analysis/triage_tool/dist/error_db.xlsx.lock
 
+# KB rolling backups — auto-rotated by core/db_manager.py (BACKUP_COUNT)
+log_analysis/triage_tool/error_db.bak*.xlsx
+log_analysis/triage_tool/dist/error_db.bak*.xlsx
+# KB activity-stats event log — runtime data, regenerates per deployment
+log_analysis/triage_tool/kb_hits.jsonl
+log_analysis/triage_tool/kb_hits_archive.jsonl
+log_analysis/triage_tool/dist/kb_hits.jsonl
+log_analysis/triage_tool/dist/kb_hits_archive.jsonl
+
 # ── Secrets ───────────────────────────────────────────────
 # LLM config holds a real api_key in dev — never commit.
 # Use environment variables (LLM_ENDPOINT / LLM_API_KEY / LLM_MODEL) in prod.

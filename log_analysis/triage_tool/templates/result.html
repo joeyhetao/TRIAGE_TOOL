@@ -240,6 +240,17 @@
                     <button class="btn-entry-del"  onclick="deleteKbEntry({{ row_idx }}, '{{ db_path }}', 'entrycard-{{ ek }}', 'matchbox-{{ ri }}-{{ ei }}')">🗑 删除</button>
                   </div>
                   {% endif %}
+                  {% set _stat = eentry.get('_stats') or {} %}
+                  {% if _stat.get('hit_total', 0) > 0 or _stat.get('days_since_last', -1) >= 90 %}
+                  <div class="kb-activity">
+                    {% if _stat.get('hit_7d', 0) > 0 %}<span class="act-hot" title="近 7 天命中 {{ _stat.hit_7d }} 次">🔥 近 7 天 {{ _stat.hit_7d }} 次</span>{% endif %}
+                    {% if _stat.get('hit_total', 0) > 0 %}<span class="act-total" title="历史总命中">总 {{ _stat.hit_total }} 次</span>{% endif %}
+                    {% set _days = _stat.get('days_since_last', -1) %}
+                    {% if _days >= 90 %}<span class="act-cold" title="上次命中 {{ _days }} 天前">💤 {{ _days }} 天未命中</span>
+                    {% elif _days >= 0 %}<span class="act-recent" title="上次命中 {{ _days }} 天前">{{ _days }} 天前命中</span>
+                    {% endif %}
+                  </div>
+                  {% endif %}
                   <div class="entry-grid">
                     <div class="eg-kv"><span class="eg-k">报错原因</span><span class="eg-v">{{ eentry.get('报错原因','') }}</span></div>
                     <div class="eg-kv"><span class="eg-k">根因分类</span><span class="eg-v">{{ eentry.get('根因分类','') }}</span></div>

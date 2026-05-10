@@ -97,7 +97,7 @@ class TestKBRoutes:
         })
         assert resp.status_code == 200
         data = json.loads(resp.data)
-        assert len(data.get('results', [])) >= 1
+        assert len(data.get('entries', [])) >= 1
 
     def test_kb_delete(self, client, tmp_db):
         from core.db_manager import append_entry, load_db

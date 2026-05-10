@@ -10,6 +10,7 @@ from flask import Blueprint, request, jsonify
 import state
 from core.db_manager import (load_db, find_duplicates, append_entry,
                               update_entry, delete_entry, restore_backup)
+from core import kb_stats
 
 _PICKER_TIMEOUT = 30   # 秒；用户没在 30 秒内交互对话框就 fallback
 _PICKER_SCRIPT  = state.BASE_DIR / 'core' / 'file_picker.py'
@@ -63,9 +64,30 @@ def pick_db_file():
     return jsonify({'ok': True, 'path': str(Path(path).resolve())})
 
 
+@kb_bp.route('/kb/record_view', methods=['POST'])
+def record_view():
+    """前端在用户主动查看某条 KB（点击展开/标记关注等交互）时调用，
+    给该条目记一笔 source='view' 的轻量级活跃度事件。
+    幂等友好：缺 stable_id 静默忽略。"""
+    data = request.get_json() or {}
+    stable_id = (data.get('stable_id') or '').strip()
+    if not stable_id:
+        return jsonify({'ok': False, 'reason': 'missing stable_id'}), 400
+    try:
+        db_path = state._validate_db_path(data.get('db_path', ''))
+    except ValueError:
+        db_path = state.DB_DEFAULT
+    kb_stats.record_event(stable_id, 'view', db_path)
+    return jsonify({'ok': True})
+
+
 @kb_bp.route('/query', methods=['POST'])
 def query_kb():
-    """知识库模糊查询：按错误类型、错误ID（部分匹配）、关键词（任意词命中）搜索。"""
+    """知识库模糊查询：按错误类型、错误ID（部分匹配）、关键词（任意词命中）搜索。
+    打分公式：final = token_overlap × (1 + 0.5 × activity_boost)
+    返回的每条 entry 注入 _stats 字段供前端展示活跃度角标。
+    """
+    from core.matcher import score_query
     data = request.get_json() or {}
     try:
         db_path = state._validate_db_path(data.get('db_path', ''))
@@ -73,33 +95,26 @@ def query_kb():
         return jsonify({'error': str(e)}), 400
     level    = data.get('level',    '').strip().upper()
     error_id = data.get('error_id', '').strip().lower()
-    text     = data.get('text',     '').strip().lower()
+    text     = data.get('text',     '').strip()
 
     try:
         db_entries = load_db(db_path)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-    tokens = [t for t in re.split(r'[\s,，]+', text) if t] if text else []
+    # error_id 部分匹配过滤（score_query 不处理这个）
+    if error_id:
+        db_entries = [e for e in db_entries
+                      if error_id in str(e.get('错误ID', '')).strip().lower()]
 
-    SEARCH_FIELDS = ['错误ID', '关键描述关键词', '报错原因', '解决方案', '所属模块', '根因分类']
-    scored = []
-    for entry in db_entries:
-        if level and str(entry.get('错误类型', '')).strip().upper() != level:
-            continue
-        if error_id and error_id not in str(entry.get('错误ID', '')).strip().lower():
-            continue
-        if tokens:
-            blob = ' '.join(str(entry.get(f, '')) for f in SEARCH_FIELDS).lower()
-            score = sum(1 for t in tokens if t in blob)
-            if score == 0:
-                continue
-        else:
-            score = 1
-        scored.append((score, entry))
+    stats = kb_stats.aggregate_stats(db_path)
+    scored = score_query(db_entries, text, level=level, stats=stats)
 
-    scored.sort(key=lambda x: -x[0])
     entries = [e for _, e in scored[:100]]
+    # 注入 _stats 给前端渲染活跃度角标
+    for e in entries:
+        sid = e.get('稳定ID', '')
+        e['_stats'] = stats.get(sid) or kb_stats._empty_stats()
     return jsonify({'entries': entries, 'total': len(scored)})
 
 

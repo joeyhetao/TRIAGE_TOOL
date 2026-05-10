@@ -159,11 +159,12 @@ tmux attach -t triage                       # 重连
 
 ```bash
 cd ~ && tar xzf TRIAGE_TOOL_NEW.tar.gz
-# 保留 KB 数据和 session 密钥（不让用户掉登录）
-cp TRIAGE_TOOL/log_analysis/triage_tool/error_db.xlsx \
-   TRIAGE_TOOL_NEW/log_analysis/triage_tool/error_db.xlsx
-cp TRIAGE_TOOL/log_analysis/triage_tool/.secret_key \
-   TRIAGE_TOOL_NEW/log_analysis/triage_tool/.secret_key 2>/dev/null
+# 保留 KB 数据 + session 密钥 + KB 活跃度历史（不让用户掉登录、不丢"哪条 KB 最近常被命中"的统计）
+for f in error_db.xlsx .secret_key kb_hits.jsonl kb_hits_archive.jsonl; do
+  src=TRIAGE_TOOL/log_analysis/triage_tool/$f
+  dst=TRIAGE_TOOL_NEW/log_analysis/triage_tool/$f
+  [ -f "$src" ] && cp "$src" "$dst"
+done
 
 # 重命名切换
 mv TRIAGE_TOOL TRIAGE_TOOL.bak.$(date +%Y%m%d)
@@ -171,6 +172,9 @@ mv TRIAGE_TOOL_NEW TRIAGE_TOOL
 
 # 重启服务（依赖一般不需重装，除非 requirements.txt 改了）
 ```
+
+> **注意**：`kb_hits.jsonl` 是 KB 活跃度事件日志，被 `score_query` 和 result 页面 🔥/💤 角标使用。覆盖丢失会让所有 KB 退回"零活跃度"状态——还能用，但排序回到日期顺序、角标全消失。所以升级时务必保留。
+> 第一次升级到含 `稳定ID` 列的版本时，旧 `error_db.xlsx` 会被 `load_db` 自动 lazy-migrate 一次（加列 + 回填），无需手动操作。
 
 ---
 
