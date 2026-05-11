@@ -1180,6 +1180,10 @@ D:\sim\run1\*.log"></textarea>
         active.name = _p0Active;
         _populateForm(active);
         _renderProfileBar();
+      } else {
+        // 首次部署/无任何 profile：强制进入新建模式，避免保存时走 update 路径
+        _p0FormMode = 'add';
+        _renderProfileBar();
       }
     } catch(e) { /* 静默失败 */ }
   }

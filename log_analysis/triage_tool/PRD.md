@@ -1,7 +1,7 @@
 # 仿真日志分类分诊工具 — 产品需求文档（PRD）
 
-**文档版本**：v2.2
-**基准代码版本**：2026-04-02
+**文档版本**：v2.3
+**基准代码版本**：2026-05-11
 **适用范围**：功能增改、需求评审、开发参考
 
 ---
@@ -481,3 +481,13 @@ _jobs[job_id] = {
 | v2.2 | 2026-04-02 | **知识库滚动备份**：`_save_atomic()` 写入前自动轮转最多 3 份滚动备份（`.bak1` 最新，`.bak3` 最旧）；新增 `_rotate_backups()` 和 `restore_backup()` 函数；备份失败（磁盘满等）静默跳过，不影响主写入 | `core/db_manager.py` |
 | v2.2 | 2026-04-02 | **撤销删除（Toast + 内存缓冲）**：删除知识库条目不再弹 `confirm()`，改为底部 Toast「已删除 X / Y」+ 8 秒内可点「撤销」恢复；后端 `_undo_buffers[sid]` 内存栈（每会话最多 10 条，重启后清空）；新增路由 `POST /kb/undo_delete` | `state.py`, `blueprints/kb.py`, `templates/result.html`, `static/style.css` |
 | v2.2 | 2026-04-02 | **解析配置 Tab 备份恢复面板**：「解析配置」Tab 底部新增「📦 知识库备份」区域，显示最多 3 份备份的文件名和修改时间；每份备份有「恢复」按钮，确认后调用 `POST /kb/restore_backup`；恢复前自动备份当前状态，不丢数据；新增路由 `GET /kb/backups`、`POST /kb/restore_backup` | `blueprints/kb.py`, `templates/index.html` |
+| v2.3 | 2026-04-04 | **LLM 增强层落地**：在规则引擎之上新增可选 LLM 层。覆盖 P0 配置 GUI / P1 多条匹配重排 / P2 AI 日志问答 / P3 相似错误推荐 / P4 批量模式分析 / P5 语义知识库搜索 / P6 知识库质检+AI 合并。基础/增强模式按钮一键切换；`llm_config.json` 配置文件 + 14 路由 + 多个 AI 按钮（在「未匹配」「多条命中」错误块、结果页顶栏、AI 功能 Tab）。详细技术架构见 `LLM_INTEGRATION_PLAN.md`，用户指南见 `LLM_USAGE_GUIDE.md` | `core/llm_client.py`, `blueprints/llm_bp.py`, `templates/result.html`, `templates/index.html`, `static/style.css` |
+| v2.3 | 2026-04-04 | **P1 Testlist 导出**：「智能推荐」结果点击「📋 导出 Testlist」生成回归测试列表，4 列参数（`RUN_NUM`/`WAVE`/`COV`/`SVSEED`）支持批量配置 + 单条覆盖，浏览器内预览、复制文本、下载 `.txt`（Chrome/Edge 可选保存路径，Firefox 默认目录） | `templates/result.html`（纯前端实现） |
+| v2.3 | 2026-04-05 | **内网 LLM 移植**：HTTP 层从 `requests` 改为 stdlib `urllib`，`urllib.request.ProxyHandler({})` 强制绕开系统代理（避开 `http_proxy` 干扰内网调用）；Anthropic 端点头自动补 `x-api-key` + `anthropic-version: 2023-06-01`；OpenAI `/v1` 自动补 `/chat/completions`；零第三方依赖适配纯离线内网 | `core/llm_client.py` |
+| v2.3 | 2026-04-06 | **原生 KB 文件选择器**：知识库路径输入栏的「选择文件」按钮改为弹原生 OS 文件对话框（`tkinter` 子进程，30s 超时兜底；无 tkinter / 无 DISPLAY 时降级提示手输）；`install_packages.py` 同时支持 pip wheels 和系统包（`python3-tk` 等 `*.deb` / `*.rpm`，离线内网部署一键装）；新增 `DEPLOYMENT.md` 详述内网完整部署流程 | `blueprints/kb.py`, `core/file_picker.py`, `templates/index.html`, `install_packages.py`, `DEPLOYMENT.md` |
+| v2.3 | 2026-05-08 | **移除"未匹配错误自动分析"功能**：原 P1 功能（AI 自动预填回写表单 5 字段）下线——日志原文已在用户眼前、AI 推断价值低且需人工核对，反而增加流程。后续 P 编号顺延：原 P2~P7 → P1~P6；删除路由 `/llm/analyze_error` 后总路由仍为 14 条 | `blueprints/llm_bp.py`, `templates/result.html`, `static/style.css`, `LLM_INTEGRATION_PLAN.md`, `LLM_USAGE_GUIDE.md` |
+| v2.3 | 2026-05-09 | **P2 AI 日志问答 — 锚点定位准确性 6 项改进**：(A) 中文 query 关键词提取 + 中→英同义词扩展（"报错"→`error/fatal`、"超时"→`timeout` 等 30+ 映射）；(B) `_PREFER_END_PAT` 对偶 START，识别"最后/结束前/last/final"等意图；(C) 锚点权重表替代 1-vote 计数（FATAL=5/ERROR=3/WARNING=1/extra=+2/kw=+6/path=+2）；(D) 多块聚簇 + 预算分配——锚点散布远端时返回多段而非一整段（典型 "dut_cfg" 类查询噪声从 2491 行 → ~200 行）；(E) 文件路径命中（如 `axi_driver.sv`）额外加权；(F) `coverage_warning` 改用窗外估算去除误报；新增 61 项单元测试 | `blueprints/llm_bp.py`, `templates/result.html`, `static/style.css`, `tests/test_llm_prescan.py` |
+| v2.3 | 2026-05-09 | **P2 自适应 `p3_max_lines`**：从 `context_window × p3_chars_per_token × 0.7 / 平均行字符数` 反推安全行数上限并与用户配置 `p3_max_lines` 取小——既自动放大（接 Claude 200K 时窗口扩到 5500+ 行），也安全钳制（用户配 50000 + 模型 8K 时钳到 ~870 行）；最低 100 行兜底，避免极小 context 下取段为 0 | `blueprints/llm_bp.py` |
+| v2.3 | 2026-05-09 | **P2 扩展到上传模式 + 多文件选择**：上传文件不再"解析完即删"，会话级保留（依赖现有 24h 孤儿扫除 + 2h `_STORE_TTL`）；每个文件结果块右侧独立的「🤖 AI 问答」按钮（多文件场景下用户可分别查询各文件）；切换文件时对话历史自动重置（前端发 `clear=true`）；`/llm/custom_extract` 新增 `file_index` 参数 + 越界校验；路径模式 glob 多文件场景同步获益（之前静默用 `file_paths[0]`） | `blueprints/analysis.py`, `blueprints/llm_bp.py`, `templates/result.html`, `static/style.css` |
+| v2.3 | 2026-05-09 | **多 LLM profile 管理**：`llm_config.json` schema 升级为 `{active_profile, profiles: [...]}`，可保存 GLM-4.7 / Qwen-Max / Claude 等多套配置，UI 顶部下拉切换激活；老扁平格式首次启动自动迁移并写回；`p3_max_lines`、`endpoint`、`api_key` 等字段每 profile 独立。新增 4 路由：`POST /llm/profile/{add,update,delete,activate}`；最后一个 profile 拒绝删除；保存 / 切换 / 删除激活 profile 时若有 AI 后台任务（如 P6 知识库质检）运行会被禁止 + 弹窗确认强制（`force:true`）。LLM 路由总数 14 → 18；增 18 项单元测试 | `core/llm_client.py`, `blueprints/llm_bp.py`, `templates/index.html`, `tests/test_llm_profiles.py` |
+| v2.3 | 2026-05-10 | **KB 稳定 ID + 活跃度加权排序**：`error_db.xlsx` 新增 `稳定ID` 列（行字段 hash 12 字符），`core/kb_migrate.py` 首次启动幂等回填存量条目；每次匹配 / 写回往 `kb_hits.jsonl` append 事件；`core/kb_stats.py` 聚合为时间衰减"活跃度 boost"，`matcher.run_match` 在 (error_id+level) 或 (关键词全 match) 多条命中时按 (boost desc, 日期 desc) 排序——团队真在用的条目优先出现；`score_query`（P3/P5 用）`final_score = relevance × (1 + 0.5 × activity_boost)`；事件文件 mtime 缓存、复用 `_FileLock` 跨进程安全、180 天前事件可归档到 `kb_hits_archive.jsonl`；增 14 项单元测试 | `core/kb_stats.py`, `core/kb_migrate.py`, `core/db_manager.py`, `core/matcher.py`, `tests/test_kb_stats.py` |

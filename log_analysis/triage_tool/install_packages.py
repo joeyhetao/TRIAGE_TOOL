@@ -33,6 +33,14 @@ import site
 import subprocess
 from pathlib import Path
 
+# 兜底：内网机 locale 常是 C/POSIX，Python 默认 stdout 编码退化为 ASCII，
+# print 中文会抛 UnicodeEncodeError。强制切到 UTF-8 后再继续。
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
 SCRIPT_DIR   = Path(__file__).resolve().parent
 PACKAGES_DIR = SCRIPT_DIR / 'packages'
 

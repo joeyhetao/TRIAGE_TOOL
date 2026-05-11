@@ -5,6 +5,10 @@
 > **v4.1**：P1 推荐用例新增 Testlist 导出功能——从 `focus_cases` 一键生成回归 Testlist，支持批量/单条参数配置、浏览器内预览、复制文本、下载（Chrome/Edge 可选保存路径，Firefox 降级到默认目录）。
 > **v4.2**：P2 新增「日志原文侧边栏 + 导出」——Modal 改为左右分栏，右侧常驻展示 AI 参考的 log 原文（含原始行号），支持单段导出（`log_X_Y.log`）和全轮次合并导出（`log_all_turns.log`）。
 > **v4.3**：移除「未匹配错误自动分析」（原 P1，AI 推断 5 字段预填回写表单）——日志原文用户自有，AI 推断价值低且需人工核对，反而增加流程；后续 P 编号顺延（原 P2~P7 → P1~P6）。
+> **v4.4**：P2 锚点定位准确性 6 项改进（中文同义词扩展、`_PREFER_END_PAT`、锚点权重表 FATAL=5/ERROR=3/WARNING=1/kw=+6/path=+2、多块聚簇 + 预算分配、文件路径加权、`coverage_warning` 用窗外估算）+ 自适应 `p3_max_lines`（从 `context_window × p3_chars_per_token × 0.7` 反推安全上限并与用户配置取小，最低 100 行兜底）。典型 "dut_cfg" 类查询噪声从 2491 → ~200 行；新增 61 项单元测试。
+> **v4.5**：P2 扩展到上传模式 + 多文件选择。上传文件不再"解析完即删"，会话级保留（依赖现有 24h 孤儿扫除 + 2h `_STORE_TTL`）；每文件结果块独立「🤖 AI 问答」按钮入口；`/llm/custom_extract` 加 `file_index` 参数；切换文件时前端发 `clear=true` 自动重置对话历史。
+> **v4.6**：多 LLM profile 管理。`llm_config.json` 升级为 `{active_profile, profiles: [...]}`，可保存 GLM / Qwen / Claude 等多套配置，UI 下拉切换激活；老扁平格式首次启动自动迁移并写回；`p3_max_lines`、`endpoint` 等字段每 profile 独立。新增 4 路由：`/llm/profile/{add,update,delete,activate}`，路由总数 14 → 18。最后一个 profile 拒绝删除；运行中的 P6 知识库质检任务会阻止 profile 切换（弹窗 + force 强制）。
+> **v4.7**：KB 活跃度融入 P3 / P5 相似查询。`matcher.score_query`（被 P3 `/llm/similar_errors` 和 P5 `/llm/semantic_query` 调用）`final_score = relevance × (1 + 0.5 × activity_boost)`，让团队历史活跃的 KB 条目在语义搜索中优先返回；需要 `error_db.xlsx` 有 `稳定ID` 列（`core/kb_migrate.py` 首次启动幂等回填）。
 
 ---
 
@@ -265,15 +269,20 @@ tc_sanity	1	on	off	random
 
 ### P2 — AI 日志问答
 
-**位置**：`result.html` 顶栏（仅 Path 模式 + 单文件时显示）
+**位置**：`result.html` 顶栏 + 每文件结果块独立的「🤖 AI 问答」按钮（v4.5 起，**上传模式 + 路径模式都支持**，多文件场景每个文件分别查询）
 **路由**：`POST /llm/custom_extract`
-**请求**：`{ query, line_start|null, line_end|null, clear:bool }`
-**响应**：`{ ok, format, data, extracted_start, extracted_end, total_lines_sent, turns, coverage_warning, raw_lines }`
+**请求**：`{ query, line_start|null, line_end|null, clear:bool, file_index:int }`（`file_index` v4.5 起；默认 0 兼容旧前端）
+**响应**：`{ ok, format, data, extracted_start, extracted_end, total_lines_sent, turns, coverage_warning, raw_lines, blocks }`（`blocks` 数组 v4.4 多块取段起）
 
-**预扫描关键点**：
-- `_UVM_REAL_PAT = re.compile(r'\bUVM_(?:ERROR|WARNING|FATAL)\b.*@')` — 要求 `@` 时间戳，排除文件末尾的统计汇总行
-- `_query_prefers_start()` — 检测 `前\d|第[一1]|first|top\d|earliest` 等关键词，命中时窗口从第一个锚点往前 50 行开始（不用密度最高区）
-- `_extract_query_keywords()` — 按 `[\s\d\u4e00-\u9fff]+` 分割提取英文/ID 关键词（如 `uvm_error`、`ERR_001`）
+**预扫描关键点**（v4.4 锚点定位准确性 6 项改进后）：
+- `_UVM_REAL_PAT` — 要求 `@` 时间戳的 UVM 真实错误行（排除末尾汇总）
+- `_extract_query_keywords()` — 英文 / ID + **中文连续片段** + `_CN_SYNONYMS` 中→英同义词扩展（"报错"→`error/fatal/warning`、"超时"→`timeout` 等 30+ 映射）；停用词 + 单字虚词过滤减噪
+- `_PREFER_START_PAT` / `_PREFER_END_PAT` — 双向意图识别（START 含「初始化/开头/first/earliest」；END 含「最后/结束前/last/final」）；同时含两端时多块自然包覆首末两簇
+- **锚点权重表**（替代 1-vote 计数）：`UVM_FATAL=5` / `UVM_ERROR=3` / `UVM_WARNING=1` / `extra_patterns=+2` / `kw=+6` / 文件路径命中（`<kw>.sv` 或 `/<kw>`）`=+2`；查询有 kw 命中时仅在 kw 锚点中找窗口（避免 50 个无关 WARNING 把孤立 FATAL 挤出）
+- **多块聚簇 `_cluster_anchors` + 预算分配 `_allocate_blocks`**：相邻锚点 gap > `max_lines/4` 分簇；按权重降序选 top-K 簇 + 每簇 ±50 padding 形成 block，相邻/重叠自动合并；典型 "dut_cfg" 类查询噪声从 2491 行 → ~200 行（多个紧凑段而非单段大窗口）
+- **`coverage_warning` 重写** — 用窗外锚点估算（`outside_estimate > max_lines/2`）而非首末跨度，避免分散簇误报
+
+**自适应 `max_lines`**（v4.4）：`_adaptive_max_lines(cfg) = min(p3_max_lines, (context_window - P3_OVERHEAD_TOKENS) × cpt × 0.7 / avg_line_chars)`，`_MIN_LINES_FLOOR=100` 行兜底；接 Claude 200K 时窗口自动扩到 ~5500 行，模型 8K 窗口被钳到 ~870 行。
 
 **Token 预算安全检查**：`P3_OVERHEAD_TOKENS=800`，超出时以密度中心对称收缩窗口（不跳行）。
 
@@ -416,14 +425,18 @@ P6 结果卡片（每对）：
 | `templates/index.html` | **修改** | AI Tab（常显）+ Config GUI + P5/P6 + Merge Modal + JS |
 | `static/style.css` | **修改** | 新增 AI CSS 类（见下） |
 
-### 已实现路由汇总（共 14 条）
+### 已实现路由汇总（共 18 条）
 
 | 路由 | 对应功能 |
 |------|---------|
-| `GET  /llm/get_config` | P0 获取当前配置（api_key 脱敏）|
-| `POST /llm/save_config` | P0 保存配置到 llm_config.json |
+| `GET  /llm/get_config` | P0 获取当前配置（api_key 脱敏，含 profile 列表）|
+| `POST /llm/save_config` | P0 更新当前激活 profile（运行任务保护）|
 | `POST /llm/reload_config` | P0 热重载配置 |
 | `POST /llm/test_connection` | P0 连接测试 |
+| `POST /llm/profile/add` | P0 新增 profile |
+| `POST /llm/profile/update` | P0 更新指定 profile（含 rename，运行任务保护）|
+| `POST /llm/profile/delete` | P0 删除 profile（拒绝最后一个）|
+| `POST /llm/profile/activate` | P0 切换激活 profile（运行任务保护）|
 | `POST /llm/rank_entries` | P1 多条匹配智能推荐 |
 | `POST /llm/custom_extract` | P2 AI 日志问答 |
 | `POST /llm/similar_errors` | P3 相似错误推荐 |
