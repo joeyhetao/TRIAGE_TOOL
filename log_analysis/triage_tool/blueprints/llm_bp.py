@@ -12,7 +12,7 @@ LLM 功能 Blueprint — 所有 AI 辅助路由。
   POST /llm/profile/delete     P0: 删除 profile（拒绝最后一个）
   POST /llm/profile/activate   P0: 切换激活 profile（含运行任务检测）
   POST /llm/rank_entries       P1: 多条匹配智能推荐
-  POST /llm/custom_extract     P2: 自定义提取（路径模式单文件，多轮对话）
+  POST /llm/custom_extract     P2: 自定义提取（按 file_index 切文件，多轮对话；上传/路径模式均支持）
   POST /llm/similar_errors     P3: 相似错误推荐（写回辅助）
   POST /llm/batch_patterns     P4: 批量错误模式分析
   POST /llm/semantic_query     P5: 语义知识库查询重排

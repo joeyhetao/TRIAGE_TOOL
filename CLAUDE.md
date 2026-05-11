@@ -16,14 +16,17 @@ log_analysis/triage_tool/
 │   ├── kb.py           # /query, /kb/add, /kb/update, /kb/delete (+ undo)
 │   ├── config_bp.py    # /extra_patterns/*, /pass_patterns/* (live-reload)
 │   ├── export.py       # /export/excel, /export/html
-│   └── llm_bp.py       # 14 LLM routes (P0–P6), independent of analyze/result flow
+│   └── llm_bp.py       # 18 LLM routes (P0–P6 + 4 multi-profile routes), independent of analyze/result flow
 ├── core/
 │   ├── log_parser.py   # UVM streaming parser + ThreadPoolExecutor dispatch
 │   ├── matcher.py      # Two-stage KB matching per top_errors entry; exposes score_query
 │   ├── db_manager.py   # Excel KB I/O with threading.Lock + cross-process _FileLock
 │   ├── reporter.py     # Excel + self-contained HTML report generation
-│   └── llm_client.py   # Pure-stdlib (urllib) LLM client; OpenAI/Anthropic auto-detect, cache, hot-reload
-├── tests/              # pytest (test_log_parser, test_matcher, test_db_manager, test_api)
+│   ├── llm_client.py   # Pure-stdlib (urllib) LLM client; OpenAI/Anthropic auto-detect, cache, hot-reload, multi-profile
+│   ├── kb_stats.py     # Activity-scoring layer; appends kb_hits.jsonl, mtime-cached aggregate
+│   ├── kb_migrate.py   # Lazy 稳定ID backfill triggered inside load_db
+│   └── file_picker.py  # tkinter native file dialog — run as subprocess to avoid Flask thread hang
+├── tests/              # pytest (parser/matcher/db/api + LLM: test_llm_prescan, test_llm_profiles, test_kb_stats)
 ├── templates/          # Jinja2 templates (index.html, result.html, errors.html)
 ├── static/style.css    # All UI styling
 ├── packages/           # Offline wheels for intranet deployment
@@ -48,7 +51,8 @@ python app.py --host 0.0.0.0 --port 8080
 pytest                                # full suite
 pytest tests/test_matcher.py          # one file
 pytest tests/test_matcher.py::test_exact_id_match    # one test
-# Note: there are no LLM-layer tests on this branch yet — manually exercise via /llm/test_connection
+# LLM-layer tests: test_llm_prescan (P2 sliding-window prescan), test_llm_profiles (multi-profile CRUD),
+# test_kb_stats (activity scoring). Network calls to real LLM endpoints are still manual via /llm/test_connection.
 
 # Build executable (Windows separator: ;  Linux separator: :)
 pip install pyinstaller
@@ -146,6 +150,8 @@ Templates branch on `llm_enabled` to hide AI buttons in "basic" mode. `/llm/save
 
 **Config resolution** — `llm_config.json` next to `BASE_DIR`, then env-var overrides (`LLM_ENDPOINT`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_TIMEOUT`). Treat `llm_config.json` as sensitive — it may hold a real API key in dev; in production prefer env vars. Defaults are merged from `llm_client._DEFAULTS` (timeout=30, context_window=100000, p3_max_lines=2500 [legacy key, used by P2], cache_ttl=3600, retry x2, P6 window/step/batch sizes).
 
+**Multi-profile schema** — `llm_config.json` is `{"active_profile": "<name>", "profiles": [{name, endpoint, api_key, model, ...}, ...]}`. Old flat format (with top-level `endpoint`/`model`) is auto-migrated to a single profile on first load and rewritten in place (`_migrate_or_validate` in `llm_client.py`). `_config` exposes the *active* profile already merged with defaults + env overrides; routes and skills should read it via `get_config()` and never touch `_profiles_raw` directly. Profile CRUD goes through `/llm/profile/{add,update,delete,activate}` — `delete` refuses to remove the last profile; `activate` triggers a hot-reload + Jinja `llm_enabled` refresh.
+
 **API format auto-detection** — `'anthropic' in endpoint.lower()` selects the Anthropic format:
 - OpenAI: `Authorization: Bearer <key>`, payload includes `temperature`, `messages` carries `system` role, response from `choices[0].message.content`. Endpoints ending in `/v1` get `/chat/completions` auto-appended.
 - Anthropic: `x-api-key` + `anthropic-version: 2023-06-01`, **system message must move to top-level `system` field** (422 otherwise) — this transformation happens in `_make_payload`. Endpoints get `/v1/messages` auto-appended. Response from `content[0].text`.
@@ -156,8 +162,8 @@ Templates branch on `llm_enabled` to hide AI buttons in "basic" mode. `/llm/save
 
 **Retry** — `call_llm_verbose` retries `llm_max_retries` times with exponential backoff (`llm_retry_delay * 2^attempt`). All public functions return `''` on failure (never raise) so route handlers can degrade gracefully; use `call_llm_verbose` only when you need the error string (e.g. `/llm/test_connection`).
 
-**The 14 LLM routes** (`blueprints/llm_bp.py`):
-- **P0** config: `/llm/reload_config`, `/llm/get_config` (api_key masked), `/llm/save_config`, `/llm/test_connection`
+**The 18 LLM routes** (`blueprints/llm_bp.py`):
+- **P0** config: `/llm/reload_config`, `/llm/get_config` (api_key masked), `/llm/save_config`, `/llm/test_connection`, plus profile CRUD `/llm/profile/{add,update,delete,activate}`
 - **P1** `/llm/rank_entries` — ranks N candidate KB entries against current error, returns `{ranked, reasons, focus_cases}` (focus_cases ≤ 5)
 - **P2** `/llm/custom_extract` — multi-turn log Q&A on the **single file** in `state._store[sid]['file_paths'][0]` (path mode only). Pre-scans the file with `_p3_prescan` (sliding-window over UVM/extra/keyword anchors) to fit `p3_max_lines`; `_apply_token_budget` further trims by `context_window - P3_OVERHEAD_TOKENS`. History capped at first 2 + last 10 messages; `clear=true` resets. Re-anchors when current query keywords are absent from first message. (Internal symbols still use the legacy `p3` prefix.)
 - **P3** `/llm/similar_errors` — pre-filters DB to top 50 with `score_query`, then asks LLM for top-K similar (default 5)
@@ -242,4 +248,4 @@ parse → match_error()                                    [in core/matcher.py]
 - [log_analysis/triage_tool/LLM_INTEGRATION_PLAN.md](log_analysis/triage_tool/LLM_INTEGRATION_PLAN.md) — Original design spec for the LLM layer (now implemented on this branch)
 - [log_analysis/triage_tool/LLM_USAGE_GUIDE.md](log_analysis/triage_tool/LLM_USAGE_GUIDE.md) — End-user setup and feature reference for the LLM layer (config fields, model presets, P0–P6 walkthroughs)
 - [log_analysis/triage_tool/velvety-wishing-dewdrop.md](log_analysis/triage_tool/velvety-wishing-dewdrop.md) — Earlier LLM design draft (v1.0); superseded by `LLM_INTEGRATION_PLAN.md`
-- [log_analysis/triage_tool/CLAUDE.md](log_analysis/triage_tool/CLAUDE.md) — Inner per-directory guidance (overlaps with this file; this root file is canonical)
+- [log_analysis/triage_tool/CLAUDE.md](log_analysis/triage_tool/CLAUDE.md) — Inner per-directory guidance; **stale** (predates LLM layer, activity scoring, PASS_PATTERNS, multi-profile config) — this root file is canonical, prefer it on any conflict

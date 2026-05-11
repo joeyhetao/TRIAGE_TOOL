@@ -1,7 +1,10 @@
 /* ── 全局 ─────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
-       background: #F0F2F5; color: #333; min-height: 100vh; }
+       color: #333; min-height: 100vh;
+       /* 顶部偏蓝过渡到中性灰，工作区有"重量"，避免大段纯白/纯灰的空虚感 */
+       background: linear-gradient(180deg, #E8EEF7 0%, #F0F2F5 320px, #F0F2F5 100%);
+       background-attachment: fixed; }
 
 /* ── 顶栏 ─────────────────────────────────────────────── */
 .top-bar { background: #1F497D; color: #fff; padding: 0 24px;
@@ -26,7 +29,19 @@ body { font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
 .mt8 { margin-top: 8px; }
 
 /* ── 上传页布局 ───────────────────────────────────────── */
-.page-wrap  { max-width: 800px; margin: 0 auto; padding: 28px 16px; }
+.page-wrap  { max-width: 960px; margin: 0 auto; padding: 28px 16px; }
+/* 非结果页：page-wrap 至少占满视口剩余高度，让卡片靠近垂直中线
+   避免"卡片漂浮在顶部、下方全空"的视觉漂浮感 */
+.page-wrap:not(.result-page) {
+  min-height: calc(100vh - 52px);   /* 减掉 top-bar 高度 */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+/* 宽屏时入口/列表页卡片放宽到 1280px */
+@media (min-width: 1500px) {
+  .page-wrap { max-width: 1280px; }
+}
 .card       { background: #fff; border-radius: 10px; padding: 28px 32px;
               box-shadow: 0 2px 8px rgba(0,0,0,.08); }
 .upload-card { }
@@ -36,6 +51,8 @@ body { font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
 /* ── 拖拽区 ───────────────────────────────────────────── */
 .drop-zone  { border: 2px dashed #B0C4DE; border-radius: 8px;
               padding: 36px; text-align: center; cursor: pointer;
+              min-height: 220px; display: flex; flex-direction: column;
+              align-items: center; justify-content: center; gap: 4px;
               transition: background .2s, border-color .2s; }
 .drop-zone.drag-over { background: #EBF3FB; border-color: #2E74B5; }
 .drop-icon  { font-size: 36px; margin-bottom: 8px; }
@@ -67,7 +84,7 @@ body { font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── 结果页布局 ───────────────────────────────────────── */
-.result-page .page-wrap { max-width: 100%; padding: 0; }
+.page-wrap.result-page { max-width: 100%; padding: 0; }
 .result-page { display: flex; flex-direction: column; height: 100vh; }
 .result-body { display: flex; flex: 1; overflow: hidden; }
 
@@ -90,7 +107,7 @@ body { font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
                     transform: translateY(-1px); }
 
 /* ── 左侧导航 ─────────────────────────────────────────── */
-.file-nav { width: 240px; min-width: 200px; background: #fff;
+.file-nav { width: 280px; min-width: 240px; background: #fff;
             border-right: 1px solid #E0E0E0; overflow-y: auto; padding: 8px 0; }
 .nav-item { display: flex; align-items: center; gap: 8px;
             padding: 9px 14px; cursor: pointer; font-size: 13px;
@@ -119,6 +136,8 @@ body { font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
 
 /* ── 右侧详情 ─────────────────────────────────────────── */
 .detail-area  { flex: 1; overflow-y: auto; padding: 20px 24px; }
+/* 内容区每个文件 panel 限制最大阅读宽度并居中，避免超宽屏单行过长 */
+.detail-area > .detail-panel { max-width: 1400px; margin-left: auto; margin-right: auto; }
 .detail-panel { display: none; }
 .detail-panel.active { display: block; }
 .panel-filename { font-size: 16px; font-weight: bold; color: #1F497D;
@@ -219,6 +238,18 @@ body { font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
 .writeback-form { margin-top: 14px; padding-top: 14px;
                   border-top: 1px dashed #CCC; }
 .form-grid  { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+
+/* 宽屏 (>=1500px) 自动升级到 3 列；含 .full 的字段始终占满整行 */
+@media (min-width: 1500px) {
+  .fe-grid,
+  .entry-grid,
+  .form-grid,
+  .query-form-grid { grid-template-columns: 1fr 1fr 1fr; }
+  .fe-grid .full,
+  .entry-grid .full,
+  .form-grid .full,
+  .query-form-grid .full { grid-column: 1 / -1; }
+}
 .fg-item    { display: flex; flex-direction: column; gap: 4px; }
 .fg-item.full { grid-column: 1 / -1; }
 .fg-item label { font-size: 12px; font-weight: bold; color: #555; }
