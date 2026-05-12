@@ -28,18 +28,44 @@
 """
 import sys
 import os
+import io
 import shutil
 import site
 import subprocess
 from pathlib import Path
 
 # 兜底：内网机 locale 常是 C/POSIX，Python 默认 stdout 编码退化为 ASCII，
-# print 中文会抛 UnicodeEncodeError。强制切到 UTF-8 后再继续。
-try:
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
-except Exception:
-    pass
+# print 中文会抛 UnicodeEncodeError。需要按 Python 版本走两种方案：
+#   1) Python 3.7+：TextIOWrapper.reconfigure(encoding='utf-8')
+#   2) Python 3.0–3.6：reconfigure 方法不存在，用 io.TextIOWrapper 重新包一层 buffer
+# 上一轮（2026-05-11）只做了方案 1，但 RHEL 7 / CentOS 7 等老内网机自带 Python 3.6
+# 仍会抛 UnicodeEncodeError——本次补全方案 2。
+def _force_utf8_stdio():
+    for name in ('stdout', 'stderr'):
+        stream = getattr(sys, name, None)
+        if stream is None:
+            continue
+        # 方案 1：Python 3.7+
+        if hasattr(stream, 'reconfigure'):
+            try:
+                stream.reconfigure(encoding='utf-8', errors='replace')
+                continue
+            except Exception:
+                pass
+        # 方案 2：3.0–3.6 fallback——重新用 TextIOWrapper 包 buffer
+        buf = getattr(stream, 'buffer', None)
+        if buf is None:
+            continue
+        try:
+            # line_buffering=True 模拟终端按行刷新；write_through=True 跳过软缓冲
+            setattr(sys, name, io.TextIOWrapper(
+                buf, encoding='utf-8', errors='replace',
+                line_buffering=True, write_through=True))
+        except Exception:
+            pass
+
+
+_force_utf8_stdio()
 
 SCRIPT_DIR   = Path(__file__).resolve().parent
 PACKAGES_DIR = SCRIPT_DIR / 'packages'
