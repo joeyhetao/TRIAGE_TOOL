@@ -61,6 +61,13 @@ _UVM_REAL_PAT = re.compile(r'\bUVM_(?:ERROR|WARNING|FATAL)\b.*@')
 
 P3_OVERHEAD_TOKENS = 800   # System Prompt + User Message 模板 + 多轮历史估算
 
+# P2 prescan 锚点上限（M-4, 2026-05-11 审查）：
+# 原实现把每个命中行的权重塞 dict，文件越大、关键词越通用，dict 越爆炸。
+# 现在 cap 在 20 万锚点（~16 MB 内存上限），超出后停止累加（保留前 N 个最密集区段
+# 的精度）。last_anchor_overall 仍跟踪完整文件末锚点，保证 _query_prefers_end
+# 分支不被截断影响。
+_MAX_PRESCAN_ANCHORS = 200_000
+
 
 # 中文停用词：常见虚词 + 元查询词（"列出""为什么"等只描述意图，不是真锚点）
 _CN_STOPWORDS = frozenset([
@@ -215,6 +222,12 @@ def _p3_prescan(filepath: str, query: str, extra_patterns: list,
     weights    = {}      # 所有锚点行号 -> 权重（UVM/extra/kw 全集）
     kw_weights = {}      # 仅"查询关键词命中"的子集 -> 权重
     total_lines = 0
+    # M-4: 即使 dict 达上限不再累加，也跟踪整文件最早/最末锚点行号，
+    # 供 prefers_start / prefers_end 分支与覆盖率提示使用。
+    overall_first = 0
+    overall_last  = 0
+    kw_first      = 0
+    kw_last       = 0
 
     try:
         with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
@@ -222,7 +235,6 @@ def _p3_prescan(filepath: str, query: str, extra_patterns: list,
                 total_lines = lineno
                 ll = line.lower()
                 w = 0
-                # B: UVM 真实错误（带 @ 时间戳，排除末尾汇总行），按严重度加权
                 if _UVM_REAL_PAT.search(line):
                     if 'UVM_FATAL' in line:
                         w += 5
@@ -230,39 +242,49 @@ def _p3_prescan(filepath: str, query: str, extra_patterns: list,
                         w += 3
                     else:
                         w += 1
-                # extra_patterns（用户配置的额外关键词）
                 if any(p in ll for p in extra_lower):
                     w += 2
-                # 查询关键词 substring 命中（最高优先级）
                 kw_hit = False
                 if keywords and any(kw in ll for kw in keywords):
                     w += 6
                     kw_hit = True
-                # E: 文件路径命中（如 axi_driver.sv 或 /axi_driver/）—— 比普通 substring 更强信号
                 if kw_hit:
                     for kw in keywords:
                         if kw + '.sv' in ll or '/' + kw in ll:
                             w += 2
                             break
                 if w > 0:
-                    weights[lineno] = w
+                    if overall_first == 0:
+                        overall_first = lineno
+                    overall_last = lineno
+                    if len(weights) < _MAX_PRESCAN_ANCHORS:
+                        weights[lineno] = w
                 if kw_hit:
-                    kw_weights[lineno] = w
+                    if kw_first == 0:
+                        kw_first = lineno
+                    kw_last = lineno
+                    if len(kw_weights) < _MAX_PRESCAN_ANCHORS:
+                        kw_weights[lineno] = w
     except Exception:
         return 1, min(max_lines, 1), 0, 0, 0, 1
 
-    # 若 query 关键词在文件中至少有一处命中，只在 kw 锚点中找窗口——
-    # 避免 50 个无关 WARNING 把孤立的 FATAL 锚点挤出窗口。
-    # 否则用 UVM/extra 全集做密度兜底。
-    active_weights = kw_weights if kw_weights else weights
+    # 若 query 关键词在文件中至少有一处命中，只在 kw 锚点中找窗口；否则用全集兜底。
+    if kw_weights:
+        active_weights = kw_weights
+        overall_first  = kw_first
+        overall_last   = kw_last
+
+    else:
+        active_weights = weights
 
     if not active_weights:
         end = min(max_lines, total_lines)
         return 1, end, 0, 0, 0, total_lines
 
     sorted_nos = sorted(active_weights.keys())
-    first_anchor = sorted_nos[0]
-    last_anchor  = sorted_nos[-1]
+    # 锚点上限触发时，dict 内的极值可能不是整文件的极值，用 overall_* 兜底
+    first_anchor = overall_first or sorted_nos[0]
+    last_anchor  = overall_last  or sorted_nos[-1]
     total_span   = last_anchor - first_anchor + 1
 
     if total_span <= max_lines:
@@ -387,6 +409,11 @@ def _p3_prescan_blocks(filepath: str, query: str, extra_patterns: list,
     weights    = {}
     kw_weights = {}
     total_lines = 0
+    # M-4: 完整文件范围内的最早/最末锚点（用于在 dict 达上限时兜底）
+    overall_first = 0
+    overall_last  = 0
+    kw_first      = 0
+    kw_last       = 0
 
     try:
         with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
@@ -413,20 +440,33 @@ def _p3_prescan_blocks(filepath: str, query: str, extra_patterns: list,
                             w += 2
                             break
                 if w > 0:
-                    weights[lineno] = w
+                    if overall_first == 0:
+                        overall_first = lineno
+                    overall_last = lineno
+                    if len(weights) < _MAX_PRESCAN_ANCHORS:
+                        weights[lineno] = w
                 if kw_hit:
-                    kw_weights[lineno] = w
+                    if kw_first == 0:
+                        kw_first = lineno
+                    kw_last = lineno
+                    if len(kw_weights) < _MAX_PRESCAN_ANCHORS:
+                        kw_weights[lineno] = w
     except Exception:
         return [(1, min(max_lines, 1), 0)], 0, 0, 1
 
-    active = kw_weights if kw_weights else weights
+    if kw_weights:
+        active = kw_weights
+        overall_first = kw_first
+        overall_last  = kw_last
+    else:
+        active = weights
     if not active:
         end = min(max_lines, total_lines)
         return [(1, end, 0)], 0, 0, total_lines
 
     sorted_nos = sorted(active.keys())
-    first_anchor = sorted_nos[0]
-    last_anchor  = sorted_nos[-1]
+    first_anchor = overall_first or sorted_nos[0]
+    last_anchor  = overall_last  or sorted_nos[-1]
 
     gap_threshold = max(max_lines // 4, 50)
     clusters = _cluster_anchors(active, gap_threshold)
@@ -530,16 +570,57 @@ def _adaptive_max_lines(cfg: dict) -> int:
     return max(_MIN_LINES_FLOOR, min(fitting_lines, user_cap))
 
 
+_FENCE_PAT = re.compile(r'```(?:json|JSON)?\s*\n?(.*?)```', re.DOTALL)
+
+
 def _parse_json_safe(text: str, array: bool = False):
-    """从 LLM 返回文本中提取第一个 JSON 对象或数组，解析失败返回 None。"""
-    pattern = r'\[.*\]' if array else r'\{.*\}'
-    m = re.search(pattern, text, re.DOTALL)
-    if not m:
+    """从 LLM 返回文本中提取首个完整 JSON 对象或数组。
+
+    历史 bug H-1（2026-05-11 审查）：原实现用贪婪正则 ``r'\\{.*\\}'`` 抓
+    "首 { 到末 }" 的最大区间，遇到 LLM 在 JSON 周围放解释/markdown/嵌套
+    样例时退化为 None。这里改成括号配对状态机：先剥 ``​```json fence``，
+    再从首个 ``{``/``[`` 起跟踪括号深度（处理字符串内的 ``"``/``\\\\``），
+    在 depth 回到 0 时尝试 json.loads。
+    """
+    if not text:
         return None
-    try:
-        return json.loads(m.group())
-    except Exception:
+
+    fence = _FENCE_PAT.search(text)
+    if fence:
+        text = fence.group(1)
+
+    open_ch, close_ch = ('[', ']') if array else ('{', '}')
+    start = text.find(open_ch)
+    if start < 0:
         return None
+
+    depth   = 0
+    in_str  = False
+    esc     = False
+    for i in range(start, len(text)):
+        c = text[i]
+        if esc:
+            esc = False
+            continue
+        if in_str:
+            if c == '\\':
+                esc = True
+            elif c == '"':
+                in_str = False
+            continue
+        if c == '"':
+            in_str = True
+            continue
+        if c == open_ch:
+            depth += 1
+        elif c == close_ch:
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(text[start:i + 1])
+                except Exception:
+                    return None
+    return None
 
 
 def _cleanup_review_jobs():
@@ -556,17 +637,23 @@ def _running_jobs_summary() -> list:
     扫所有后台任务，返回正在运行的任务摘要列表。
     当前覆盖：P6 知识库质检（_review_jobs）。
     每条返回 {'kind', 'job_id', 'phase', 'progress'}。
+
+    注意：P6 review job 在 _review_jobs 里用 'status' 字段（不是 'phase'）。
+    历史 bug C-1（2026-05-11 审查）：之前这里读 'phase' 导致永远拿不到
+    P6 任务，profile 切换互锁完全失效——务必读 'status'。
     """
     summary = []
     with _review_lock:
         for jid, job in _review_jobs.items():
-            phase = job.get('phase', '')
-            if phase and phase not in ('done', 'error', 'stopped'):
+            status = job.get('status', '')
+            if status and status not in ('done', 'error', 'stopped'):
+                done  = job.get('done', 0)
+                total = max(job.get('total', 1), 1)
                 summary.append({
                     'kind':     'P6_kb_review',
                     'job_id':   jid,
-                    'phase':    phase,
-                    'progress': job.get('pct', 0),
+                    'phase':    status,                         # 前端兼容字段名仍叫 phase
+                    'progress': int(done * 100 / total),
                 })
     return summary
 
@@ -636,12 +723,15 @@ def get_config():
     # 兼容字段：旧前端从 .config 读，新前端从 .profiles + .active_profile 读
     cur_payload = _profile_to_payload(cfg) if cfg else {}
     cur_payload.pop('name', None)   # 老 .config 不含 name 字段
+    # H-3（2026-05-11）：若上次加载时 llm_config.json 解析失败，把原因传给前端
+    load_error = llm_client.get_last_load_error()
     return jsonify({
         'ok':              True,
         'configured':      configured,
         'config':          cur_payload,                                      # 旧字段，激活 profile 快照
         'active_profile':  active,
         'profiles':        [_profile_to_payload(p) for p in profiles],
+        'load_error':      load_error,
     })
 
 
@@ -1470,11 +1560,13 @@ def kb_review():
 
     _cleanup_review_jobs()
     job_id = str(uuid.uuid4())
+    creator_sid = state._sid()    # M-3: 绑定创建者 sid 用于 export/stop 鉴权
     with _review_lock:
         _review_jobs[job_id] = {
             'status': 'pending', 'group': '', 'done': 0, 'total': 0,
             'suspect_pairs': [], 'skipped': 0, 'stop': False,
             'db_path': db_path, 'ts': time.time(),
+            'creator_sid': creator_sid,
         }
 
     threading.Thread(
@@ -1492,6 +1584,9 @@ def kb_review_status():
         job = dict(_review_jobs.get(job_id, {}))
     if not job:
         return jsonify({'status': 'error', 'reason': '任务不存在或已过期'})
+    # M-3: 仅创建者可查 status（避免 job_id 泄漏后他人窃取进度）
+    if job.get('creator_sid') and job['creator_sid'] != state._sid():
+        return jsonify({'status': 'error', 'reason': '无权访问此任务'})
 
     status = job.get('status', 'pending')
     if status == 'running':
@@ -1514,9 +1609,15 @@ def kb_review_status():
 @llm_bp.route('/llm/kb_review_stop', methods=['POST'])
 def kb_review_stop():
     job_id = (request.get_json() or {}).get('job_id', '')
+    sid_now = state._sid()
     with _review_lock:
-        if job_id in _review_jobs:
-            _review_jobs[job_id]['stop'] = True
+        job = _review_jobs.get(job_id)
+        if not job:
+            return jsonify({'ok': False, 'reason': '任务不存在或已过期'})
+        # M-3: 仅创建者可停止
+        if job.get('creator_sid') and job['creator_sid'] != sid_now:
+            return jsonify({'ok': False, 'reason': '无权停止此任务'}), 403
+        job['stop'] = True
     return jsonify({'ok': True})
 
 
@@ -1527,6 +1628,9 @@ def kb_review_export():
         job = dict(_review_jobs.get(job_id, {}))
     if not job or job.get('status') not in ('done', 'running'):
         return jsonify({'error': '任务不存在或尚未完成'}), 404
+    # M-3: 仅任务创建者可下载
+    if job.get('creator_sid') and job['creator_sid'] != state._sid():
+        return jsonify({'error': '无权访问此任务的导出结果'}), 403
 
     pairs = job.get('suspect_pairs', [])
     if not pairs:

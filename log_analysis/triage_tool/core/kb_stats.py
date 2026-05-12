@@ -29,6 +29,25 @@ _thread_lock = threading.Lock()
 _cache = {}            # {hits_file_path_str: (mtime_ns, aggregated_dict)}
 _cache_lock = threading.Lock()
 
+# L-7（2026-05-11）：record_event 异常不阻塞主流程，但要可观测。
+# 用环形缓冲存最近 N 条失败原因 + 计数，便于运维定位写权限/磁盘满等问题。
+_RECORD_ERRORS_MAX = 32
+_record_errors     = []      # list[(ts, fp_str, err_str)]
+_record_error_lock = threading.Lock()
+_record_error_count = 0
+
+
+def get_record_errors() -> list:
+    """返回最近 N 条 record_event 失败原因；调试 / 运维诊断用。"""
+    with _record_error_lock:
+        return list(_record_errors)
+
+
+def record_error_count() -> int:
+    """累计 record_event 失败次数（含环形缓冲已挤出的）。"""
+    with _record_error_lock:
+        return _record_error_count
+
 
 def _hits_path(db_path: str) -> Path:
     return Path(db_path).parent / 'kb_hits.jsonl'
@@ -77,9 +96,14 @@ def record_event(stable_id: str, source: str, db_path: str, ts: float = None) ->
             with _FileLock(str(fp)):
                 with open(fp, 'a', encoding='utf-8') as f:
                     f.write(line)
-    except Exception:
-        # 事件采集失败不阻塞主流程
-        pass
+    except Exception as e:
+        # 事件采集失败不阻塞主流程，但记入环形缓冲供运维诊断（L-7, 2026-05-11）
+        global _record_error_count
+        with _record_error_lock:
+            _record_errors.append((time.time(), str(fp), str(e)))
+            if len(_record_errors) > _RECORD_ERRORS_MAX:
+                _record_errors.pop(0)
+            _record_error_count += 1
 
 
 # ── 聚合读取 ──────────────────────────────────────────────

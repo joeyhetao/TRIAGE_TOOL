@@ -173,8 +173,17 @@ def _conflict_summary(conflicts: list) -> list:
 
 
 def _validate_db_path(raw: str) -> str:
-    """验证并规范化知识库路径，防止路径穿越攻击。
-    规则：空值返回 DB_DEFAULT；非空值必须为绝对路径且以 .xlsx 结尾。
+    """验证并规范化知识库路径。
+
+    校验规则：
+      - 空值返回 DB_DEFAULT
+      - 非空值必须为绝对路径且以 .xlsx 结尾
+
+    限制：本函数**不限制目录**——任何能通过 OS 权限读写的绝对 .xlsx 路径
+    都接受（含 UNC、网络共享、用户家目录之外）。用户由 UI 提供路径，工具按
+    其指令访问，由 OS 权限决定可达性。早期 docstring 写"防路径穿越"易引起
+    误读，已在 2026-05-11 L-5 审查中纠正。
+
     不合法时抛出 ValueError（调用方返回 400）。
     """
     s = (raw or '').strip()
@@ -213,7 +222,13 @@ def _set_results(sid: str, results: list, db_path: str, file_paths: list = None)
 
 
 def _get_file_paths(sid: str) -> list:
-    """返回当前会话的文件路径列表（路径模式有值，上传模式为空）。"""
+    """返回当前会话的文件路径列表。
+
+    两种模式都会填充（c552c5f 起）：
+    - 路径模式：用户提供的实际路径（任意目录）
+    - 上传模式：UPLOAD_DIR 下的 ``{sid}_{原文件名}`` 路径，文件保留至 24h 后由
+      _cleanup_old_files 清理，用于 P2 AI 日志问答跨多次请求复用
+    """
     with _store_lock:
         entry = _store.get(sid)
         return list(entry.get('file_paths', [])) if entry else []
