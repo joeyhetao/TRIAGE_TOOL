@@ -4,14 +4,25 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 
 
-# 标准VCS/UVM报错正则
-# 格式: UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
+# UVM 报错行通用正则（IEEE 1800.2 default report server + 常见自定义 server 兼容）
+# 覆盖的变体（见 BUGLOG.md BUG-029）：
+#   1. 标准:        UVM_ERROR /tb/dut.sv(42) @ 100ns: comp [ID] msg
+#   2. 缺 file:     UVM_ERROR @ 82.00ns: comp [ID] msg              （sequence/vsequencer 报错）
+#   3. time 带空格: UVM_ERROR ... @ 0 ps: ... / @ 6933.414503 us: ...
+#   4. OpenTitan:   UVM_FATAL @ 0 ps: (file.sv:161) [ral] msg       （reporter 槽吞 (file:line)）
+#   5. verbosity:   UVM_ERROR(MEDIUM) ...                            （show_verbosity=1）
+#   6. 参数化 id:   [uvm_driver #(REQ,RSP)]                          （含空格/#/(),）
+#   7. 空 id:       []                                               （规范合法的边角）
+# Group 用命名组以避免编号漂移；file/line/reporter 在缺失变体下为 None。
 _UVM_PATTERN = re.compile(
-    r'(UVM_(?:ERROR|WARNING|FATAL))'   # Group1: 级别
-    r'\s+(\S+)\((\d+)\)'              # Group2: 文件路径, Group3: 行号
-    r'\s+@\s+([\d.]+\s*\w+)'          # Group4: 时间戳
-    r':\s+(\S+)\s+'                   # Group5: 组件路径
-    r'\[(\w+)\]\s*(.*)',              # Group6: 错误ID, Group7: 描述
+    r'(?P<level>UVM_(?:ERROR|WARNING|FATAL))'          # severity
+    r'(?:\([^)]*\))?'                                  # 可选 verbosity 后缀 (MEDIUM)
+    r'(?:\s+(?P<file>\S+)\((?P<line>\d+)\))?'          # 可选 file(line)
+    r'\s+@\s*(?P<time>[\d.]+(?:\s*[a-z]+s)?)'          # time（数字 + 可选单位，单位前可有空格）
+    r'\s*:\s*'
+    r'(?:(?P<reporter>\S+)\s+)?'                       # 可选 reporter / hier_path
+    r'\[(?P<id>[^\]]*)\]\s*'                           # id（允许空 + 空格 + 特殊字符）
+    r'(?P<msg>.*)',                                    # 描述
     re.IGNORECASE
 )
 
@@ -102,21 +113,26 @@ def parse_log(filepath: str, extra_keywords=None, pass_patterns=None) -> dict:
             # ── UVM 条目匹配（优先） ───────────────────────────────
             m = _UVM_PATTERN.search(line)
             if m:
-                level = m.group(1).upper()
+                level = m.group('level').upper()
                 if level in statistics:
                     statistics[level] += 1
 
+                _err_id   = m.group('id').strip()
+                _msg      = m.group('msg').strip()
+                _file     = m.group('file')
+                _line_no  = m.group('line')
+                _location = f"{_file}({_line_no})" if _file else ''
+
                 # 全量去重记录（含 WARNING）：相同 level+error_id 只保留首次出现
-                _err_id  = m.group(6).strip()
                 _dup_key = (level, _err_id.lower() if _err_id
-                            else m.group(7).strip()[:80].lower())
+                            else _msg[:80].lower())
                 if _dup_key not in _seen_keys:
                     _seen_keys.add(_dup_key)
                     all_errors.append({
                         'level':       level,
                         'error_id':    _err_id,
-                        'description': m.group(7).strip(),
-                        'location':    f"{m.group(2)}({m.group(3)})",
+                        'description': _msg,
+                        'location':    _location,
                     })
 
                 # WARNING 仅统计，不计入 top_errors；FATAL/ERROR 才参与匹配
@@ -127,10 +143,10 @@ def parse_log(filepath: str, extra_keywords=None, pass_patterns=None) -> dict:
                 if len(top_errors) < TOP_N:
                     pending = {
                         'level':       level,
-                        'timestamp':   m.group(4).replace(' ', ''),
-                        'error_id':    m.group(6),
-                        'location':    f"{m.group(2)}({m.group(3)})",
-                        'description': m.group(7).strip(),
+                        'timestamp':   m.group('time').replace(' ', ''),
+                        'error_id':    _err_id,
+                        'location':    _location,
+                        'description': _msg,
                     }
                     cont_lines = []
                 continue

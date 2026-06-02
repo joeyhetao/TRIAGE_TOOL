@@ -136,7 +136,7 @@ Both live in `state.py`, module-level:
 
 ### LLM integration layer (this branch's distinguishing feature)
 
-`core/llm_client.py` is a self-contained, stdlib-only LLM client (no `requests`); `blueprints/llm_bp.py` exposes 14 routes. The whole layer is gated by `llm_client.is_configured()` and degrades silently when not configured.
+`core/llm_client.py` is a self-contained, stdlib-only LLM client (no `requests`); `blueprints/llm_bp.py` exposes 18 routes. The whole layer is gated by `llm_client.is_configured()` and degrades silently when not configured.
 
 **Init order in `app.py`** (do not reorder):
 ```python
@@ -248,4 +248,3 @@ parse → match_error()                                    [in core/matcher.py]
 - [log_analysis/triage_tool/LLM_INTEGRATION_PLAN.md](log_analysis/triage_tool/LLM_INTEGRATION_PLAN.md) — Original design spec for the LLM layer (now implemented on this branch)
 - [log_analysis/triage_tool/LLM_USAGE_GUIDE.md](log_analysis/triage_tool/LLM_USAGE_GUIDE.md) — End-user setup and feature reference for the LLM layer (config fields, model presets, P0–P6 walkthroughs)
 - [log_analysis/triage_tool/velvety-wishing-dewdrop.md](log_analysis/triage_tool/velvety-wishing-dewdrop.md) — Earlier LLM design draft (v1.0); superseded by `LLM_INTEGRATION_PLAN.md`
-- [log_analysis/triage_tool/CLAUDE.md](log_analysis/triage_tool/CLAUDE.md) — Inner per-directory guidance; **stale** (predates LLM layer, activity scoring, PASS_PATTERNS, multi-profile config) — this root file is canonical, prefer it on any conflict

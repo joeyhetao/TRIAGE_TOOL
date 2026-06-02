@@ -4,6 +4,171 @@
 
 ---
 
+## BUG-029 UVM 报错行正则完备性升级：覆盖全部 11 种合法变体
+
+**发现日期**：2026-06-02
+**状态**：已修复
+
+### 背景
+
+BUG-028 修完参数化 class 名后，用户给出第二条仍然漏检的真实样本：
+
+```
+UVM_ERROR @ 82.00ns: uvm_test_top.env.vsqr@@nic_pb_apb_seq [uvm_test_top.env.vsqr.nic_pb_apb_seq] Response queue overflow, response was dropped
+```
+
+这条不带 `file(line)` 前缀（从 sequence/vsequencer 报错时 reporter 没传 `__FILE__`/`__LINE__`），现有正则仍漏检。说明前两次修复都是"打地鼠"——只补单点，没系统梳理 UVM 报错行的全部形态。本次做完备性升级。
+
+### 形态梳理（IEEE 1800.2 default report server + 常见自定义 server）
+
+`uvm_default_report_server::compose_report_message` 的输出模板：
+
+```
+{sev_string, verbosity_str, " ", filename_line_string, "@ ",
+ time_str, ": ", report_object_name, context_str, " [", id, "] ", msg_body_str, terminator_str}
+```
+
+各字段的合法变体：
+
+| # | 变体 | 示例 | 触发条件 |
+|---|---|---|---|
+| 1 | 标准完整 | `UVM_ERROR /tb/dut.sv(42) @ 100ns: comp [ID] msg` | 默认 |
+| 2 | 缺 file(line) | `UVM_ERROR @ 82ns: comp [ID] msg` | sequence/vsequencer 报错；filename 为 `""` |
+| 3 | time 单位前带空格 | `@ 0 ps` / `@ 6933.414503 us` | OpenTitan / 双时间精度仿真器 |
+| 4 | OpenTitan 自定义 server | `UVM_FATAL @ 0 ps: (file.sv:161) [ral] msg` | `(file:line)` 移到 time 之后；无独立 reporter token |
+| 5 | verbosity 前缀 | `UVM_ERROR(MEDIUM) ...` | `show_verbosity=1` |
+| 6 | id 含空格 | `[ASSERT FAILED]` | 自定义 server 中常见 |
+| 7 | 参数化 class id | `[uvm_driver #(REQ,RSP)]` | template class hierarchy（BUG-028 已修） |
+| 8 | reporter 带 `@@context` | `agt.drv@@seq_id` | `context_str = "@@" + get_context()` |
+| 9 | reporter 含数组索引 | `agt[0].drv[1]` | 数组化 component |
+| 10 | filename 含宏未展开 | `$$STRING$$/path/file.sv(418)` | riscv-dv 等项目编译宏未展开 |
+| 11 | id 为空 `[]` | 极罕见 | 规范不禁止 |
+
+### 漏检根因（升级前正则）
+
+| 漏检变体 | 卡在哪段正则 | 根因 |
+|---|---|---|
+| 2 | `\s+(\S+)\((\d+)\)` 强制 | file(line) 段写死，无可选机制 |
+| 3 | `([\d.]+\s*\w+)` 强制单位 | 单位前没空格匹配（用户写法是 `\s*` 但 `\w+` 要求至少 1 字符，所以无单位时也 fail；且 `\s*\w+` 不允许"数字+空格+单位"） |
+| 4 | 整体结构差异 | reporter 是必须的 |
+| 5 | severity 后立即接空白 | 不支持 `(MEDIUM)` 后缀 |
+| 11 | `[^\]]+` 的 `+` | 不允许空 id |
+
+### 修复方案
+
+[core/log_parser.py:9-26](log_analysis/triage_tool/core/log_parser.py#L9-L26) `_UVM_PATTERN` 整体改用命名组、按 IEEE 1800.2 模板把每个字段单独建模，缺失字段全部包成可选：
+
+```python
+_UVM_PATTERN = re.compile(
+    r'(?P<level>UVM_(?:ERROR|WARNING|FATAL))'          # severity
+    r'(?:\([^)]*\))?'                                  # 可选 verbosity 后缀 (MEDIUM)
+    r'(?:\s+(?P<file>\S+)\((?P<line>\d+)\))?'          # 可选 file(line)
+    r'\s+@\s*(?P<time>[\d.]+(?:\s*[a-z]+s)?)'          # time（数字 + 可选单位，单位前可有空格）
+    r'\s*:\s*'
+    r'(?:(?P<reporter>\S+)\s+)?'                       # 可选 reporter / hier_path
+    r'\[(?P<id>[^\]]*)\]\s*'                           # id（允许空 + 空格 + 特殊字符）
+    r'(?P<msg>.*)',                                    # 描述
+    re.IGNORECASE
+)
+```
+
+[core/log_parser.py:105-141](log_analysis/triage_tool/core/log_parser.py#L105-L141) 联动改用命名组访问，并对 `file` 为 None 时把 `location` 设为空字符串：
+
+```python
+_file     = m.group('file')
+_line_no  = m.group('line')
+_location = f"{_file}({_line_no})" if _file else ''
+```
+
+### 关键设计取舍
+
+- **OpenTitan 变体 (#4) 不为它单独写第二条正则**：让 `(?:(?P<reporter>\S+)\s+)?` 的 `\S+` 贪婪把整段 `(file:line)` 吞进 reporter 槽。level/id/msg 仍正确提取，**不漏检**；只是 file/line 不再单独抽出（location 字段为空，但 reporter 字段保留 raw 文本，用户在 UI 上仍能看到来源）。
+- **不引入双正则 fallback**：单条正则覆盖全部 11 种变体，可读性、可测试性、性能都最优。
+- **命名组**：取代之前的 `m.group(1..7)`，避免新增 / 调整字段时索引漂移；代码内 group 访问也更自解释。
+
+### 回归测试
+
+[tests/test_log_parser.py](log_analysis/triage_tool/tests/test_log_parser.py) 在 `class TestParseLog` 内新增 8 条 `test_variant_*` 测试，每条覆盖一个独立变体（含用户两次报告的真实样本、OpenTitan 真实样本、riscv-dv 真实样本）。配合原有 `test_uvm_id_with_parametrized_type`（BUG-028）和 `test_uvm_error_extracted` 等基线测试，**24/24 通过**。
+
+未来再发现新变体时：直接在测试里加一条 `test_variant_xxx`，验证现有正则是否覆盖；如不覆盖再决定是否扩展正则。
+
+---
+
+## BUG-028 含参数化 class 名的 UVM_ERROR 漏匹配：结果页 FAIL=1 但细分计数全 0
+
+**发现日期**：2026-06-02
+**状态**：已修复
+
+### 现象
+
+内网用户上传 `tc_016_txrx_ptr_full_666666.log`，结果页显示：
+
+- 日志总数 1、PASS=0、**FAIL=1**
+- UVM_FATAL / UVM_ERROR / UVM_WARNING **全为 0**
+- 未匹配=0
+
+但日志中确实存在一条 UVM_ERROR：
+
+```
+UVM_ERROR /share/project/.../com_driver.sv(283) @ 19249.00ns: uvm_test_top.env.m_com_pipe_pb_wr_agt[0].drv [uvm_driver #(REQ,RSP)] wait tr_cycle_num('d91) < tr_queue_num_max('d91) timeout.from:14248.69ns to:19249.20ns
+```
+
+画面呈现"FAIL 但 0 error"的矛盾状态，用户无法看到具体报错信息。
+
+### 根因分析
+
+`core/log_parser.py` 的 `_UVM_PATTERN` 用 `\[(\w+)\]` 匹配错误 ID 字段：
+
+```python
+r'\[(\w+)\]\s*(.*)',              # Group6: 错误ID, Group7: 描述
+```
+
+`\w` 等价于 `[A-Za-z0-9_]`，无法覆盖 UVM 参数化 class 名里出现的 **空格、`#`、`(`、`)`、`,`、`-`** 等字符。
+`[uvm_driver #(REQ,RSP)]` 这种典型参数化类型名因此让整行正则匹配失败：
+
+- 组件路径 `uvm_test_top.env.m_com_pipe_pb_wr_agt[0].drv` 被 `(\S+)` 贪婪整体吃下 ✓
+- 中间 `\s+` 吃空格 ✓
+- 到 `\[(\w+)\]` 时，`uvm_driver` 后面是空格——`\w` 不接受空格，整体回溯失败 ✗
+
+漏匹配 → `statistics['UVM_ERROR']` 不增长 → `has_error=False`。用户配置了 `pass_patterns.json` 但日志没有 pass 标记 → 走 pass/fail 判定的兜底分支 `status='fail'`。这就是"FAIL=1 但 errors=0"的来源。
+
+### 修复方案
+
+放宽 ID 字段字符集，只排除右方括号：
+
+```python
+# 修复前
+r'\[(\w+)\]\s*(.*)',              # Group6: 错误ID, Group7: 描述
+
+# 修复后
+r'\[([^\]]+)\]\s*(.*)',           # Group6: 错误ID（允许空格/#/(),- 等参数化字符）, Group7: 描述
+```
+
+**为什么 `[^\]]+` 是安全的**：
+- UVM 规范下 `[ID]` 字段内部不会再嵌套 `]`，"非 `]` 一次或多次"等价于"括号内全部内容"。
+- 字段仍以左右方括号为边界，按行匹配，不会跨越到下一段。
+- 组件路径里的 `[0]` 数组索引由 `(\S+)` 贪婪先吃下，不进 ID 槽位，行为与现状一致。
+
+### 触发场景
+
+凡是组件实例化时携带 type parameter 的 UVM 类都会触发，例如：
+
+- `[uvm_driver #(REQ,RSP)]`
+- `[uvm_sequencer #(T)]`
+- `[uvm_subscriber #(my_pkt)]`
+- 自定义参数化 component / agent
+
+### 回归测试
+
+`tests/test_log_parser.py::TestParseLog::test_uvm_id_with_parametrized_type` 用用户提供的真实日志行作为样本，断言：
+
+- `statistics['UVM_ERROR'] == 1`
+- `top_errors[0]['error_id'] == 'uvm_driver #(REQ,RSP)'`（保留原 ID 串、含空格）
+- `top_errors[0]['description']` 以 `'wait tr_cycle_num'` 开头
+- `top_errors[0]['location']` 含 `com_driver.sv(283)`
+
+---
+
 ## BUG-027 LLM 连接测试秒回"未返回内容"：reasoning model content 字段为 null
 
 **发现日期**：2026-04-19

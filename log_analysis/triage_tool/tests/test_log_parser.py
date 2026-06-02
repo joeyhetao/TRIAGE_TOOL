@@ -59,6 +59,114 @@ class TestParseLog:
         assert 'continuation line 1' in desc
         assert 'continuation line 2' in desc
 
+    # ─────────────────────────────────────────────────────────────────
+    # UVM 行格式完备性回归（BUG-029）
+    # 每条覆盖一个独立的合法 UVM 报错变体，确保正则不漏检任何形式
+    # ─────────────────────────────────────────────────────────────────
+
+    def _write_and_parse(self, tmp_path, content, name='variant.log'):
+        log_file = tmp_path / name
+        log_file.write_text(content, encoding='utf-8')
+        return parse_log(str(log_file))
+
+    def test_variant_missing_file_line(self, tmp_path):
+        # 变体 2：sequence/vsequencer 报错，无 file(line) 前缀
+        # 来源：用户内网真实样本
+        line = ("UVM_ERROR @ 82.00ns: uvm_test_top.env.vsqr@@nic_pb_apb_seq "
+                "[uvm_test_top.env.vsqr.nic_pb_apb_seq] Response queue overflow, "
+                "response was dropped\n")
+        result = self._write_and_parse(tmp_path, line)
+        assert result['statistics']['UVM_ERROR'] == 1
+        entry = result['top_errors'][0]
+        assert entry['location'] == ''  # 无 file(line) → 空字符串
+        assert entry['error_id'] == 'uvm_test_top.env.vsqr.nic_pb_apb_seq'
+        assert entry['description'].startswith('Response queue overflow')
+        assert entry['timestamp'] == '82.00ns'
+
+    def test_variant_time_with_space_before_unit(self, tmp_path):
+        # 变体 3a：time 单位前有空格（OpenTitan / 双时间精度仿真器常见）
+        line = ("UVM_FATAL /dv/reg.sv(161) @ 0 ps: uvm_test_top "
+                "[ral] Check failed\n")
+        result = self._write_and_parse(tmp_path, line)
+        assert result['statistics']['UVM_FATAL'] == 1
+        assert result['top_errors'][0]['timestamp'] == '0ps'  # 空格去掉
+
+    def test_variant_time_microsecond_float(self, tmp_path):
+        # 变体 3b：浮点时间 + us 单位（OpenTitan 真实样本）
+        line = ("UVM_ERROR @ 6933.414503 us: uvm_test_top.env.vseq "
+                "[uvm_test_top.env.vseq] Check failed\n")
+        result = self._write_and_parse(tmp_path, line)
+        assert result['statistics']['UVM_ERROR'] == 1
+        assert result['top_errors'][0]['timestamp'] == '6933.414503us'
+
+    def test_variant_opentitan_file_after_time(self, tmp_path):
+        # 变体 4：OpenTitan 自定义 server，(file:line) 放在 @ time 之后
+        # 此时 (file:line) 整体被 reporter 槽吞下；level/id/msg 仍正确提取（不漏检）
+        line = ("UVM_FATAL @ 0 ps: (dv_base_reg_block.sv:161) "
+                "[ral] Check failed ((base_addr & mask) == 0)\n")
+        result = self._write_and_parse(tmp_path, line)
+        assert result['statistics']['UVM_FATAL'] == 1
+        entry = result['top_errors'][0]
+        assert entry['error_id'] == 'ral'
+        assert entry['description'].startswith('Check failed')
+
+    def test_variant_verbosity_prefix(self, tmp_path):
+        # 变体 5：开启 show_verbosity 后 severity 紧接 (LEVEL)
+        line = ("UVM_ERROR(MEDIUM) /tb/dut.sv(99) @ 1000 ns: "
+                "uvm_test_top.env.agt.drv@@seq_id "
+                "[uvm_driver #(REQ,RSP)] Constraint solver failed\n")
+        result = self._write_and_parse(tmp_path, line)
+        assert result['statistics']['UVM_ERROR'] == 1
+        entry = result['top_errors'][0]
+        assert entry['error_id'] == 'uvm_driver #(REQ,RSP)'
+        assert 'dut.sv(99)' in entry['location']
+
+    def test_variant_id_with_spaces(self, tmp_path):
+        # 变体 6：id 字段含空格（OpenTitan / 自定义 server 常用）
+        line = ("UVM_ERROR @ 3023421 ps: (otbn_model_if.sv:47) "
+                "[ASSERT FAILED] NoModelErrs\n")
+        result = self._write_and_parse(tmp_path, line)
+        assert result['statistics']['UVM_ERROR'] == 1
+        assert result['top_errors'][0]['error_id'] == 'ASSERT FAILED'
+
+    def test_variant_empty_id(self, tmp_path):
+        # 变体 11：id 为空 []（罕见但规范合法）
+        line = "UVM_ERROR /tb/x.sv(10) @ 100ns: uvm_test_top [] missing id\n"
+        result = self._write_and_parse(tmp_path, line)
+        assert result['statistics']['UVM_ERROR'] == 1
+        assert result['top_errors'][0]['error_id'] == ''
+        assert result['top_errors'][0]['description'] == 'missing id'
+
+    def test_variant_filename_with_macro_placeholder(self, tmp_path):
+        # 变体 10：filename 含未展开宏占位（riscv-dv 真实样本）
+        line = ("UVM_FATAL $$STRING$$/src/riscv-dv/src/isa/riscv_instr.sv(418) "
+                "@ 0: reporter [riscv_VSETVL_instr] Unsupported format VSET_FORMAT\n")
+        result = self._write_and_parse(tmp_path, line)
+        assert result['statistics']['UVM_FATAL'] == 1
+        entry = result['top_errors'][0]
+        assert entry['error_id'] == 'riscv_VSETVL_instr'
+        assert 'riscv_instr.sv(418)' in entry['location']
+        assert entry['timestamp'] == '0'  # 无单位
+
+    def test_uvm_id_with_parametrized_type(self, tmp_path):
+        # 参数化 UVM class 名（含空格、#、括号、逗号）+ 组件路径含数组索引 [0]
+        line = (
+            "UVM_ERROR /share/project/greenland/dev/yulin.chen/dv_grl_yulin/"
+            "dv/jvp/utils/com_utils/r1p0/./src/com_driver.sv(283) "
+            "@ 19249.00ns: uvm_test_top.env.m_com_pipe_pb_wr_agt[0].drv "
+            "[uvm_driver #(REQ,RSP)] wait tr_cycle_num('d91) < "
+            "tr_queue_num_max('d91) timeout.from:14248.69ns to:19249.20ns\n"
+        )
+        log_file = tmp_path / 'parametrized_id.log'
+        log_file.write_text(line, encoding='utf-8')
+        result = parse_log(str(log_file))
+        assert result['statistics']['UVM_ERROR'] == 1
+        assert len(result['top_errors']) == 1
+        entry = result['top_errors'][0]
+        assert entry['error_id'] == 'uvm_driver #(REQ,RSP)'
+        assert entry['description'].startswith('wait tr_cycle_num')
+        assert 'com_driver.sv(283)' in entry['location']
+
     def test_all_errors_deduplication(self, tmp_path):
         content = (
             "UVM_ERROR /tb/dut.sv(1) @ 1ns: uvm_test_top [DUP_ERR] first occurrence\n"
