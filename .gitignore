@@ -58,6 +58,11 @@ log_analysis/triage_tool/dist/.secret_key
 *.swo
 *~
 
+# ── Claude Code (per-developer local prefs) ───────────────
+# settings.local.json holds personal permission/env overrides; never commit.
+# Team-shared config goes in .claude/settings.json instead.
+.claude/settings.local.json
+
 # ── OS ─────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
