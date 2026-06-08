@@ -29,6 +29,65 @@ _UVM_PATTERN = re.compile(
 # 匹配任意UVM行（含INFO），用于续行检测时排除
 _UVM_ANY = re.compile(r'UVM_(?:ERROR|WARNING|FATAL|INFO)\s', re.IGNORECASE)
 
+# Synopsys VCS 标准报错正则（见 BUGLOG.md BUG-031）
+# 主格式：Error-[CNST-CIF] Constraints inconsistency failure
+# severity 字面量：Error / Warning / Fatal / Note / Info（IC 验证语境下 Note/Info 不计入错误统计）
+# ID 字符集：[A-Z][A-Z0-9_-]*（含连字符，如 VPI-CT-NS / DPI-UED）
+# 续行：与 UVM 一致的 indented 策略（2-space 缩进）
+# 真实样本来源：opentitan/SpinalHDL/chipyard GitHub issues
+_VCS_PATTERN = re.compile(
+    r'^(?P<level>Error|Warning|Fatal|Note|Info)'   # severity 字面量
+    r'-\['
+    r'(?P<id>[A-Z][A-Z0-9_-]*)'                    # ID（含连字符）
+    r'\]\s*'
+    r'(?P<msg>.*)',
+    re.IGNORECASE
+)
+
+# 匹配任意 VCS 行（含 Note/Info），用于续行检测时排除
+_VCS_ANY = re.compile(r'^(?:Error|Warning|Fatal|Note|Info)-\[', re.IGNORECASE)
+
+# VCS severity → 内部统计字段映射（Note/Info 不计错误，不映射）
+_VCS_LEVEL_MAP = {
+    'ERROR':   'ERROR',
+    'WARNING': 'WARNING',
+    'FATAL':   'FATAL',
+}
+
+# Cadence Xcelium 标准报错正则（见 BUGLOG.md BUG-032）
+# 主格式：xmsim: *E,XYZID (file.sv,142): error description
+# 工具前缀全集：xrun (Xcelium 主) / xmsim/xmelab/xmvlog/xmverilog/xmsd (Xcelium 子工具)
+#               / irun (Incisive，已被 xrun 取代) / ncsim/ncelab/ncvlog (旧 NC-Verilog)
+# severity 字面量：*E (Error) / *W (Warning) / *F (Fatal) / *SE (Severe Error) / *N (Note) / *I (Info)
+#                  注意 *SE 是双字符，正则用 \*[A-Z]+
+# ID 字符集：[A-Z][A-Z0-9_]*（含数字，如 DSEM2009 / MBXNYI / VLGERR；**不含连字符**，跟 VCS 不同）
+# 可选 source location：(file,line) 或 (file,line|column)
+# 真实样本来源：cocotb/openhwgroup/cva6/riscv-dv GitHub issues
+_XCELIUM_PATTERN = re.compile(
+    r'^(?P<tool>xrun|xmsim|xmelab|xmvlog|xmverilog|xmsd|ncsim|ncelab|ncvlog|irun)'
+    r'(?:\(\d+\))?'                                          # 可选 (PID/版本) 后缀，如 xrun(64)
+    r':\s*\*(?P<level>[A-Z]+),'                              # *severity, （[A-Z]+ 覆盖 *SE 双字符）
+    r'(?P<id>[A-Z][A-Z0-9_]*)'                               # ID（仅字母数字下划线）
+    r'(?:\s*\((?P<file>[^,)]+),(?P<line>\d+)(?:\|\d+)?\))?'  # 可选 (file,line) 或 (file,line|col)
+    r':\s*(?P<msg>.*)',
+    re.IGNORECASE
+)
+
+# 匹配任意 Xcelium 行（用于续行检测时排除）
+_XCELIUM_ANY = re.compile(
+    r'^(?:xrun|xmsim|xmelab|xmvlog|xmverilog|xmsd|ncsim|ncelab|ncvlog|irun)'
+    r'(?:\(\d+\))?:\s*\*',
+    re.IGNORECASE
+)
+
+# Xcelium severity → 内部统计字段映射（N/I/D/P 等不计错误，不映射）
+_XCELIUM_LEVEL_MAP = {
+    'E':  'ERROR',
+    'W':  'WARNING',
+    'F':  'FATAL',
+    'SE': 'ERROR',   # Severe Error 归并到 ERROR
+}
+
 TOP_N = 5  # 每个日志最多提取的错误条数（按出现顺序）
 
 
@@ -47,13 +106,25 @@ def _error_result(filepath: str, error_msg: str) -> dict:
 
 
 def _build_gen_pattern(keywords):
-    """构建行首关键词匹配正则：^KEYWORD\\s*:\\s*(.*)，不区分大小写。
+    """构建行首关键词匹配正则，覆盖三类 IC 仿真器输出（见 BUGLOG BUG-030）：
+      - VCS 标准报错:    Error-[CNST-CIF] Constraints inconsistency failure
+      - IP 内部报错:     IP_FATAL[T_BUS_ERR] timeout on cycle 91
+      - SVA 自定义:      MY_SVA_ERR signal X stayed low for 100ns
+      - 兼容旧格式:       ERROR: classic colon style
+    分组：G1 关键词（=level，user-configured），G2 可选 [ID]（parser-extracted），
+          G3 描述。关键词字面量与 level 一一对应；ID 可选，无则走 KB Step2 关键词匹配。
     keywords 为空列表时返回 None。
     """
     if not keywords:
         return None
     alts = '|'.join(re.escape(kw) for kw in keywords)
-    return re.compile(r'^(' + alts + r')\s*:\s*(.*)', re.IGNORECASE)
+    return re.compile(
+        r'^(' + alts + r')\b'                # G1: 关键词 + word boundary（防 Erroring 半匹配）
+        r'[\s:\-]*'                          # 任意分隔符（空白/冒号/连字符，0+ 个）
+        r'(?:\[([^\]]+)\])?'                 # G2: 可选 [ID]
+        r'\s*(.*)',                          # G3: 描述
+        re.IGNORECASE
+    )
 
 
 def parse_log(filepath: str, extra_keywords=None, pass_patterns=None) -> dict:
@@ -96,11 +167,13 @@ def parse_log(filepath: str, extra_keywords=None, pass_patterns=None) -> dict:
             if pending is not None:
                 if (stripped
                         and not _UVM_ANY.search(stripped)
+                        and not _VCS_ANY.match(stripped)
+                        and not _XCELIUM_ANY.match(stripped)
                         and line.startswith(' ')
                         and len(cont_lines) < 3):
                     cont_lines.append(stripped)
                     continue
-                # 续行终止（遇到空行 / UVM条目 / 非缩进行 / 已满3行）：提交 pending
+                # 续行终止（遇到空行 / UVM/VCS/Xcelium 条目 / 非缩进行 / 已满3行）：提交 pending
                 if cont_lines:
                     pending['description'] = (
                         pending['description'] + ' ' + ' '.join(cont_lines)
@@ -108,7 +181,7 @@ def parse_log(filepath: str, extra_keywords=None, pass_patterns=None) -> dict:
                 top_errors.append(pending)
                 pending = None
                 cont_lines = []
-                # 当前行继续向下走，检查是否为新的 UVM 条目
+                # 当前行继续向下走，检查是否为新的 UVM / VCS / Xcelium / 通用关键词条目
 
             # ── UVM 条目匹配（优先） ───────────────────────────────
             m = _UVM_PATTERN.search(line)
@@ -151,20 +224,101 @@ def parse_log(filepath: str, extra_keywords=None, pass_patterns=None) -> dict:
                     cont_lines = []
                 continue
 
-            # ── 通用行首关键词匹配（UVM 未命中时） ────────────────
-            if _gen_pattern:
-                mg = _gen_pattern.match(stripped)
-                if mg:
-                    level       = mg.group(1).upper()
-                    description = mg.group(2).strip()
+            # ── VCS 条目匹配（UVM 未命中时） ──────────────────────
+            vm = _VCS_PATTERN.match(stripped)
+            if vm:
+                raw_level = vm.group('level').upper()
+                # Note/Info 不计入错误统计、不进 top_errors
+                if raw_level in _VCS_LEVEL_MAP:
+                    level = _VCS_LEVEL_MAP[raw_level]
                     statistics[level] = statistics.get(level, 0) + 1
 
-                    _dup_key = (level, description[:80].lower())
+                    _err_id = vm.group('id').strip()
+                    _msg    = vm.group('msg').strip()
+
+                    _dup_key = (level, _err_id.lower() if _err_id
+                                else _msg[:80].lower())
                     if _dup_key not in _seen_keys:
                         _seen_keys.add(_dup_key)
                         all_errors.append({
                             'level':       level,
-                            'error_id':    '',
+                            'error_id':    _err_id,
+                            'description': _msg,
+                            'location':    '',
+                        })
+
+                    # WARNING 仅统计，不进 top_errors（跟 UVM_WARNING 一致）
+                    if level == 'WARNING':
+                        continue
+
+                    if len(top_errors) < TOP_N:
+                        pending = {
+                            'level':       level,
+                            'timestamp':   '',
+                            'error_id':    _err_id,
+                            'location':    '',
+                            'description': _msg,
+                        }
+                        cont_lines = []
+                continue
+
+            # ── Cadence Xcelium 条目匹配（UVM/VCS 未命中时） ──────
+            xm = _XCELIUM_PATTERN.match(stripped)
+            if xm:
+                raw_level = xm.group('level').upper()
+                # *N / *I / *D / *P 等不映射，跳过（IC 验证语境下非错误）
+                if raw_level in _XCELIUM_LEVEL_MAP:
+                    level = _XCELIUM_LEVEL_MAP[raw_level]
+                    statistics[level] = statistics.get(level, 0) + 1
+
+                    _err_id   = xm.group('id').strip()
+                    _msg      = xm.group('msg').strip()
+                    _file     = xm.group('file')
+                    _line_no  = xm.group('line')
+                    _location = f"{_file}({_line_no})" if _file else ''
+
+                    _dup_key = (level, _err_id.lower() if _err_id
+                                else _msg[:80].lower())
+                    if _dup_key not in _seen_keys:
+                        _seen_keys.add(_dup_key)
+                        all_errors.append({
+                            'level':       level,
+                            'error_id':    _err_id,
+                            'description': _msg,
+                            'location':    _location,
+                        })
+
+                    # WARNING 仅统计，不进 top_errors（跟 UVM_WARNING / VCS Warning 一致）
+                    if level == 'WARNING':
+                        continue
+
+                    if len(top_errors) < TOP_N:
+                        pending = {
+                            'level':       level,
+                            'timestamp':   '',
+                            'error_id':    _err_id,
+                            'location':    _location,
+                            'description': _msg,
+                        }
+                        cont_lines = []
+                continue
+
+            # ── 通用行首关键词匹配（UVM/VCS/Xcelium 未命中时） ────
+            if _gen_pattern:
+                mg = _gen_pattern.match(stripped)
+                if mg:
+                    level       = mg.group(1).upper()
+                    _err_id     = (mg.group(2) or '').strip()   # 可选 [ID]
+                    description = mg.group(3).strip()
+                    statistics[level] = statistics.get(level, 0) + 1
+
+                    _dup_key = (level, _err_id.lower() if _err_id
+                                else description[:80].lower())
+                    if _dup_key not in _seen_keys:
+                        _seen_keys.add(_dup_key)
+                        all_errors.append({
+                            'level':       level,
+                            'error_id':    _err_id,
                             'description': description,
                             'location':    '',
                         })
@@ -173,7 +327,7 @@ def parse_log(filepath: str, extra_keywords=None, pass_patterns=None) -> dict:
                         pending = {
                             'level':       level,
                             'timestamp':   '',
-                            'error_id':    '',       # 留空，只走 Step2 关键词匹配
+                            'error_id':    _err_id,  # 有则走 Step1 精确匹配，无则降级 Step2
                             'location':    '',
                             'description': description,
                         }

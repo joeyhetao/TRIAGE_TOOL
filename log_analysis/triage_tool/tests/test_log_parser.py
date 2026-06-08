@@ -188,6 +188,389 @@ class TestParseLog:
         assert result['statistics'].get('FATAL', 0) == 1
         assert result['status'] == 'fail'
 
+    # ─────────────────────────────────────────────────────────────────
+    # _gen_pattern 完备性回归（BUG-030）
+    # 覆盖 VCS 标准报错 / IP 内部报错 / RTL SVA 等真实 IC 验证场景，
+    # 同时验证 word-boundary 防误报与 [ID] 抽取
+    # ─────────────────────────────────────────────────────────────────
+
+    def test_gen_vcs_format(self, tmp_path):
+        # VCS 标准报错：Error-[ID] msg，连字符分隔，ID 含 -
+        line = "Error-[CNST-CIF] Constraints inconsistency failure\n"
+        log_file = tmp_path / 'vcs.log'
+        log_file.write_text(line, encoding='utf-8')
+        result = parse_log(str(log_file), extra_keywords=['ERROR'])
+        assert result['statistics']['ERROR'] == 1
+        entry = result['top_errors'][0]
+        assert entry['level'] == 'ERROR'
+        assert entry['error_id'] == 'CNST-CIF'  # 关键：ID 被抽取到 error_id
+        assert entry['description'] == 'Constraints inconsistency failure'
+
+    def test_gen_ip_format(self, tmp_path):
+        # IP 内部报错：关键词后直接接 [ID]，无分隔符
+        line = "IP_FATAL[T_BUS_ERR] timeout on cycle 91\n"
+        log_file = tmp_path / 'ip.log'
+        log_file.write_text(line, encoding='utf-8')
+        result = parse_log(str(log_file), extra_keywords=['IP_FATAL'])
+        assert result['statistics']['IP_FATAL'] == 1
+        entry = result['top_errors'][0]
+        assert entry['error_id'] == 'T_BUS_ERR'
+        assert entry['description'] == 'timeout on cycle 91'
+
+    def test_gen_sva_no_separator(self, tmp_path):
+        # SVA 自定义：关键词后是空格，无 [ID]，纯描述
+        line = "MY_SVA_ERR signal X stayed low for 100ns\n"
+        log_file = tmp_path / 'sva.log'
+        log_file.write_text(line, encoding='utf-8')
+        result = parse_log(str(log_file), extra_keywords=['MY_SVA_ERR'])
+        assert result['statistics']['MY_SVA_ERR'] == 1
+        entry = result['top_errors'][0]
+        assert entry['error_id'] == ''  # 无 ID，走 KB Step2 关键词匹配
+        assert entry['description'] == 'signal X stayed low for 100ns'
+
+    def test_gen_word_boundary_blocks_partial_match(self, tmp_path):
+        # word-boundary 防误报：Erroring / MY_ERR_VAR=x 不能命中
+        content = (
+            "Erroring something happened\n"
+            "MY_ERR_VAR = some value\n"
+            "REAL_ERROR: this one should hit\n"
+        )
+        log_file = tmp_path / 'boundary.log'
+        log_file.write_text(content, encoding='utf-8')
+        result = parse_log(str(log_file),
+                           extra_keywords=['ERROR', 'MY_ERR', 'REAL_ERROR'])
+        # 仅 REAL_ERROR 行应被识别
+        assert result['statistics'].get('REAL_ERROR', 0) == 1
+        # Erroring 不命中 ERROR；MY_ERR_VAR 不命中 MY_ERR（VAR 是 word char，\b 阻断）
+        assert result['statistics'].get('ERROR', 0) == 0
+        assert result['statistics'].get('MY_ERR', 0) == 0
+
+    def test_gen_classic_colon_still_works(self, tmp_path):
+        # 兼容回归：旧 ERROR: msg 格式（无 [ID]）仍正确解析
+        line = "ERROR: just a simple message\n"
+        log_file = tmp_path / 'classic.log'
+        log_file.write_text(line, encoding='utf-8')
+        result = parse_log(str(log_file), extra_keywords=['ERROR'])
+        assert result['statistics']['ERROR'] == 1
+        entry = result['top_errors'][0]
+        assert entry['error_id'] == ''
+        assert entry['description'] == 'just a simple message'
+
+    def test_gen_mixed_formats_in_one_log(self, tmp_path):
+        # 同一个日志混合 VCS / IP / SVA / 旧格式，全部应被识别
+        content = (
+            "Error-[CNST-CIF] vcs format\n"
+            "IP_FATAL[T_BUS] ip format\n"
+            "MY_SVA assertion failed at 100ns\n"
+            "ERROR: classic format\n"
+        )
+        log_file = tmp_path / 'mixed.log'
+        log_file.write_text(content, encoding='utf-8')
+        result = parse_log(
+            str(log_file),
+            extra_keywords=['ERROR', 'IP_FATAL', 'MY_SVA']
+        )
+        assert result['statistics']['ERROR'] == 2     # VCS + classic 都计入 ERROR
+        assert result['statistics']['IP_FATAL'] == 1
+        assert result['statistics']['MY_SVA'] == 1
+        ids = {e['error_id'] for e in result['top_errors']}
+        assert 'CNST-CIF' in ids
+        assert 'T_BUS' in ids
+
+    # ─────────────────────────────────────────────────────────────────
+    # VCS 专用正则回归（BUG-031）—— 开箱即用，无需配置 EXTRA_PATTERNS
+    # 真实样本来自 GitHub: chipyard#914, SpinalHDL#669, cocotb VCS issues
+    # ─────────────────────────────────────────────────────────────────
+
+    def test_vcs_zero_config_recognition(self, tmp_path):
+        # 核心价值：用户不配 EXTRA_PATTERNS 也能识别 VCS 报错
+        line = "Error-[CNST-CIF] Constraints inconsistency failure\n"
+        log_file = tmp_path / 'vcs_zero_config.log'
+        log_file.write_text(line, encoding='utf-8')
+        result = parse_log(str(log_file))  # 注意：没传 extra_keywords
+        assert result['statistics']['ERROR'] == 1
+        entry = result['top_errors'][0]
+        assert entry['level'] == 'ERROR'
+        assert entry['error_id'] == 'CNST-CIF'
+        assert entry['description'] == 'Constraints inconsistency failure'
+
+    def test_vcs_all_severities(self, tmp_path):
+        # 五种 severity：Error/Warning/Fatal 计入；Note/Info 不计
+        content = (
+            "Error-[SFCOR] Source file cannot be opened\n"
+            "Warning-[VPI-CT-NS] VPI function is not supported\n"
+            "Fatal-[INTERR] Internal compiler error\n"
+            "Note-[GENERIC] this is just a note\n"
+            "Info-[VERSION] VCS version info\n"
+        )
+        log_file = tmp_path / 'vcs_severities.log'
+        log_file.write_text(content, encoding='utf-8')
+        result = parse_log(str(log_file))
+        assert result['statistics']['ERROR'] == 1
+        assert result['statistics']['WARNING'] == 1
+        assert result['statistics']['FATAL'] == 1
+        # Note/Info 不应进 statistics（IC 验证语境下非错误）
+        assert 'NOTE' not in result['statistics']
+        assert 'INFO' not in result['statistics']
+
+    def test_vcs_id_charset_with_hyphens_and_underscores(self, tmp_path):
+        # 真实 ID 样本：VPI-CT-NS（连字符）、DBGACC_REG（下划线）、DPI-UED、SE-LMHW
+        content = (
+            "Error-[VPI-CT-NS] hyphen separator in id\n"
+            "Warning-[DBGACC_REG] underscore in id\n"
+            "Error-[DPI-UED] mixed hyphen\n"
+            "Error-[SE-LMHW] two-part hyphen\n"
+        )
+        log_file = tmp_path / 'vcs_ids.log'
+        log_file.write_text(content, encoding='utf-8')
+        result = parse_log(str(log_file))
+        ids = {e['error_id'] for e in result['top_errors']}
+        assert 'VPI-CT-NS' in ids
+        assert 'DPI-UED' in ids
+        assert 'SE-LMHW' in ids
+        # DBGACC_REG 在 all_errors 但不在 top_errors（WARNING 不进 top）
+        warning_ids = {e['error_id'] for e in result['all_errors']
+                       if e['level'] == 'WARNING'}
+        assert 'DBGACC_REG' in warning_ids
+
+    def test_vcs_continuation_indented(self, tmp_path):
+        # VCS 续行使用 2-space 缩进（chipyard#914 实证）
+        content = (
+            "Error-[DPI-UED] C++ Exception detected\n"
+            "  Import DPI routine invoked at file\n"
+            "  '/home/user/project/dut.sv'\n"
+        )
+        log_file = tmp_path / 'vcs_cont.log'
+        log_file.write_text(content, encoding='utf-8')
+        result = parse_log(str(log_file))
+        desc = result['top_errors'][0]['description']
+        assert desc.startswith('C++ Exception detected')
+        assert 'Import DPI routine' in desc
+        assert "'/home/user/project/dut.sv'" in desc
+
+    def test_vcs_warning_not_in_top_errors(self, tmp_path):
+        # Warning-[ID] 计入 statistics 但不进 top_errors（与 UVM_WARNING 一致）
+        content = (
+            "Warning-[VPI-CT-NS] some warning\n"
+            "Error-[SFCOR] real error\n"
+        )
+        log_file = tmp_path / 'vcs_warn.log'
+        log_file.write_text(content, encoding='utf-8')
+        result = parse_log(str(log_file))
+        assert result['statistics']['WARNING'] == 1
+        assert result['statistics']['ERROR'] == 1
+        levels = [e['level'] for e in result['top_errors']]
+        assert 'WARNING' not in levels
+        assert levels == ['ERROR']
+
+    def test_vcs_id_routes_to_kb_step1(self, tmp_path):
+        # 端到端集成：VCS 抽出的 error_id 进 KB Step1 精确命中
+        from core.matcher import match_error
+        line = "Error-[CNST-CIF] Constraints inconsistency failure\n"
+        log_file = tmp_path / 'vcs_kb.log'
+        log_file.write_text(line, encoding='utf-8')
+        result = parse_log(str(log_file))
+        parsed_error = result['top_errors'][0]
+        db_entries = [{
+            '错误类型': 'ERROR',
+            '错误ID': 'CNST-CIF',
+            '关键描述关键词': '',
+            '报错原因': 'over-constrained random',
+            '解决方案': 'relax constraints',
+            '录入日期': '2026-06-03',
+            '稳定ID': 'vcs001',
+        }]
+        m = match_error(parsed_error, db_entries)
+        assert m['status'] == 'matched'
+        assert m['match_by'] == 'error_id'
+        assert m['entry']['错误ID'] == 'CNST-CIF'
+
+    def test_cross_isolation_vcs_does_not_eat_uvm(self, tmp_path):
+        # 跨格式隔离 #1：UVM 行不能被 VCS 正则误命中
+        # （UVM 优先级更高，UVM 行应走 UVM 路径，留 file/line/time 字段）
+        content = (
+            "UVM_ERROR /tb/dut.sv(42) @ 100ns: uvm_test_top.env [MEM_ERR] memory mismatch\n"
+            "Error-[CNST-CIF] vcs error\n"
+        )
+        log_file = tmp_path / 'mixed.log'
+        log_file.write_text(content, encoding='utf-8')
+        result = parse_log(str(log_file))
+        # UVM 行进 UVM_ERROR 统计、有 timestamp/location
+        assert result['statistics']['UVM_ERROR'] == 1
+        uvm_entry = next(e for e in result['top_errors']
+                         if e['level'] == 'UVM_ERROR')
+        assert uvm_entry['error_id'] == 'MEM_ERR'
+        assert uvm_entry['timestamp'] == '100ns'
+        assert 'dut.sv(42)' in uvm_entry['location']
+        # VCS 行单独进 ERROR 统计
+        assert result['statistics']['ERROR'] == 1
+        vcs_entry = next(e for e in result['top_errors']
+                         if e['level'] == 'ERROR')
+        assert vcs_entry['error_id'] == 'CNST-CIF'
+
+    def test_cross_isolation_extra_keywords_does_not_double_count(self, tmp_path):
+        # 跨格式隔离 #2：即使用户配了 EXTRA_PATTERNS=['ERROR']，
+        # VCS 行也只命中一次（VCS pattern 先于通用关键词 pattern，命中后 continue）
+        line = "Error-[CNST-CIF] vcs error\n"
+        log_file = tmp_path / 'no_double.log'
+        log_file.write_text(line, encoding='utf-8')
+        result = parse_log(str(log_file), extra_keywords=['ERROR'])
+        # 只应有 1 个 ERROR 计数（VCS pattern 命中），不能是 2（VCS + 通用关键词重复）
+        assert result['statistics']['ERROR'] == 1
+        assert len(result['top_errors']) == 1
+        assert result['top_errors'][0]['error_id'] == 'CNST-CIF'
+
+    # ─────────────────────────────────────────────────────────────────
+    # Xcelium 专用正则回归（BUG-032）—— 开箱即用，无需配置 EXTRA_PATTERNS
+    # 真实样本来自 GitHub: cocotb#1363, openhwgroup/core-v-verif#11,
+    # openhwgroup/cva6#2136, google/riscv-dv#305
+    # ─────────────────────────────────────────────────────────────────
+
+    def test_xcelium_zero_config_recognition(self, tmp_path):
+        # 核心价值：用户不配 EXTRA_PATTERNS 也能识别 Xcelium 报错
+        line = ("xmsim: *W,DSEM2009: This SystemVerilog design is simulated "
+                "as per IEEE 1800-2009 SystemVerilog simulation semantics.\n")
+        log_file = tmp_path / 'xcelium_zero.log'
+        log_file.write_text(line, encoding='utf-8')
+        result = parse_log(str(log_file))  # 不传 extra_keywords
+        assert result['statistics']['WARNING'] == 1
+        # WARNING 不进 top_errors（跟 UVM / VCS 一致），all_errors 仍记录
+        warn_entries = [e for e in result['all_errors'] if e['level'] == 'WARNING']
+        assert len(warn_entries) == 1
+        assert warn_entries[0]['error_id'] == 'DSEM2009'
+
+    def test_xcelium_severity_SE_double_char(self, tmp_path):
+        # 关键回归：*SE (Severe Error) 必须能被识别（不止单字符 severity）
+        line = "xrun: *SE,JGUSOS: severe error from JG checker\n"
+        log_file = tmp_path / 'xcelium_se.log'
+        log_file.write_text(line, encoding='utf-8')
+        result = parse_log(str(log_file))
+        # *SE 归并到 ERROR 统计
+        assert result['statistics']['ERROR'] == 1
+        entry = result['top_errors'][0]
+        assert entry['level'] == 'ERROR'
+        assert entry['error_id'] == 'JGUSOS'
+
+    def test_xcelium_with_source_location(self, tmp_path):
+        # source location: (file,line) 或 (file,line|col)，column 可选
+        content = (
+            "xmelab: *E,MBXNYI (/wrk/proj/tb_top.sv,87): missing connection\n"
+            "xmelab: *E,DLCSMD (/wrk/proj/cfg.sv,12|45): checksum mismatch\n"
+        )
+        log_file = tmp_path / 'xcelium_loc.log'
+        log_file.write_text(content, encoding='utf-8')
+        result = parse_log(str(log_file))
+        assert result['statistics']['ERROR'] == 2
+        locations = {e['location'] for e in result['top_errors']}
+        assert any('tb_top.sv(87)' in loc for loc in locations)
+        assert any('cfg.sv(12)' in loc for loc in locations)
+
+    def test_xcelium_all_tool_prefixes(self, tmp_path):
+        # 全部支持的工具前缀都应能识别（注意：真实 Xcelium 输出 ID 后必有 ':'）
+        content = (
+            "xrun: *E,VLGERR: error from xrun\n"
+            "xmsim: *E,RUNERR: error from xmsim\n"
+            "xmelab: *E,ELABERR: error from xmelab\n"
+            "xmvlog: *E,VLGFLT: error from xmvlog\n"
+            "ncsim: *E,LEGACY: error from old NC-Verilog ncsim\n"
+            "ncelab: *E,NCELAB: error from ncelab\n"
+            "ncvlog: *E,NCVLG: error from ncvlog\n"
+            "irun: *E,IRUNERR: error from Incisive irun\n"
+        )
+        log_file = tmp_path / 'xcelium_tools.log'
+        log_file.write_text(content, encoding='utf-8')
+        result = parse_log(str(log_file))
+        assert result['statistics']['ERROR'] == 8
+
+    def test_xcelium_pid_version_suffix(self, tmp_path):
+        # 工具前缀可带 (PID) 或 (版本号) 后缀
+        line = "xrun(64): *E,VLGERR: error with PID suffix\n"
+        log_file = tmp_path / 'xcelium_pid.log'
+        log_file.write_text(line, encoding='utf-8')
+        result = parse_log(str(log_file))
+        assert result['statistics']['ERROR'] == 1
+        assert result['top_errors'][0]['error_id'] == 'VLGERR'
+
+    def test_xcelium_severity_filter_skips_note_info(self, tmp_path):
+        # *N (Note) / *I (Info) / *D (Debug) 不计入错误统计
+        content = (
+            "xrun: *E,REALERR: a real error\n"
+            "xmsim: *N,XYZNOTE: a note (should be ignored)\n"
+            "xmsim: *I,VERINFO: version info (should be ignored)\n"
+        )
+        log_file = tmp_path / 'xcelium_filter.log'
+        log_file.write_text(content, encoding='utf-8')
+        result = parse_log(str(log_file))
+        # 只有 *E 计入 ERROR
+        assert result['statistics']['ERROR'] == 1
+        # 不该出现 NOTE/INFO 字段
+        assert 'NOTE' not in result['statistics']
+        assert 'INFO' not in result['statistics']
+
+    def test_xcelium_id_routes_to_kb_step1(self, tmp_path):
+        # 端到端集成：Xcelium 抽出的 error_id 进 KB Step1 精确命中
+        from core.matcher import match_error
+        line = "xmelab: *E,MBXNYI (/wrk/proj/tb_top.sv,87): mailbox type error\n"
+        log_file = tmp_path / 'xcelium_kb.log'
+        log_file.write_text(line, encoding='utf-8')
+        result = parse_log(str(log_file))
+        parsed_error = result['top_errors'][0]
+        db_entries = [{
+            '错误类型': 'ERROR',
+            '错误ID': 'MBXNYI',
+            '关键描述关键词': '',
+            '报错原因': 'unpacked struct not supported as mailbox type',
+            '解决方案': 'upgrade Xcelium to 19.09+',
+            '录入日期': '2026-06-03',
+            '稳定ID': 'xc001',
+        }]
+        m = match_error(parsed_error, db_entries)
+        assert m['status'] == 'matched'
+        assert m['match_by'] == 'error_id'
+        assert m['entry']['错误ID'] == 'MBXNYI'
+
+    def test_cross_isolation_three_simulators_in_one_log(self, tmp_path):
+        # 跨格式隔离：UVM + VCS + Xcelium 同时存在，各走各的路径
+        content = (
+            "UVM_ERROR /tb/dut.sv(42) @ 100ns: uvm_test_top [UVM_ID] uvm msg\n"
+            "Error-[VCS_ID] vcs error msg\n"
+            "xmsim: *E,XCEL_ID: Xcelium error msg\n"
+        )
+        log_file = tmp_path / 'three_sims.log'
+        log_file.write_text(content, encoding='utf-8')
+        result = parse_log(str(log_file))
+        # 各自独立计数
+        assert result['statistics']['UVM_ERROR'] == 1
+        assert result['statistics']['ERROR'] == 2  # VCS + Xcelium 合并到 ERROR
+        # 三条 ID 都被正确抽取
+        ids = {e['error_id'] for e in result['top_errors']}
+        assert 'UVM_ID' in ids
+        assert 'VCS_ID' in ids
+        assert 'XCEL_ID' in ids
+
+    def test_gen_extracted_id_routes_to_kb_step1(self, tmp_path):
+        # 端到端集成：抽出的 error_id 应能在 matcher Step1 精确命中
+        from core.matcher import match_error
+        line = "Error-[CNST-CIF] Constraints inconsistency failure\n"
+        log_file = tmp_path / 'kb_route.log'
+        log_file.write_text(line, encoding='utf-8')
+        result = parse_log(str(log_file), extra_keywords=['ERROR'])
+        parsed_error = result['top_errors'][0]
+        # 构造一条 KB 条目模拟用户已沉淀的修复
+        db_entries = [{
+            '错误类型': 'ERROR',
+            '错误ID': 'CNST-CIF',
+            '关键描述关键词': '',
+            '报错原因': 'over-constrained random',
+            '解决方案': 'relax constraints',
+            '录入日期': '2026-06-03',
+            '稳定ID': 'abc123',
+        }]
+        m = match_error(parsed_error, db_entries)
+        assert m['status'] == 'matched'
+        assert m['match_by'] == 'error_id'  # 关键：走 Step1 而非 Step2
+        assert m['entry']['错误ID'] == 'CNST-CIF'
+
     def test_nonexistent_file_returns_error_result(self):
         # parse_log 不存在的文件应抛出异常（由 parse_logs 的 try/except 捕获）
         with pytest.raises(Exception):

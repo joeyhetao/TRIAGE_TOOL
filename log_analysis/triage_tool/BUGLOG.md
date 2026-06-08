@@ -4,6 +4,289 @@
 
 ---
 
+## BUG-032 Cadence Xcelium 标准报错专用 pattern：开箱即用，含 *SE / source location 全字段
+
+**发现日期**：2026-06-03
+**状态**：已修复
+
+### 背景
+
+BUG-031（VCS）落完后，IC 验证另一大事实标准 **Cadence Xcelium**（含旧版 NC-Verilog / Incisive 工具链）仍未被识别。Xcelium 跟 UVM / VCS 结构完全不同，需要独立 pattern：
+
+```
+工具前缀: *severity,message_id (file,line|column): description
+```
+
+跟 VCS 的核心差异：
+- Xcelium 必有**工具前缀**（`xrun:` / `xmsim:` / `xmelab:` 等）
+- severity 在**中间**（`*E`/`*W`），不是行首字面量
+- ID 紧跟逗号、**不含连字符**（跟 VCS `[CNST-CIF]` 不同）
+- source location 可能含 column（`(file,line|column)`）
+
+### 形态调研（WebSearch + 真实 GitHub 样本）
+
+| 样本 | 来源 |
+|---|---|
+| `xmsim: *W,DSEM2009: This SystemVerilog design is simulated as per IEEE 1800-2009 ...` | [cocotb#1363](https://github.com/cocotb/cocotb/issues/1363) |
+| `xmelab: *E,MBXNYI (/wrk/.../riscv_random_stall.sv,87\|20): 'unpacked structure ...'` | [core-v-verif#11](https://github.com/openhwgroup/core-v-verif/issues/11) |
+| `xmelab: *E,DLCSMD ...` / `xmelab: *E,CUVMUR ...` | [cva6#2136](https://github.com/openhwgroup/cva6/issues/2136) |
+| `xrun: *E,VLGERR ...` | [riscv-dv#305](https://github.com/google/riscv-dv/issues/305) |
+| `*F,INTERR` / `*SE,JGUSOS` | [Cadence FV blog](https://community.cadence.com) |
+
+### 关键发现
+
+1. **`*SE` 是双字符 severity**（Severe Error）—— 朴素的 `\*[EWFNS]` 单字符正则会漏掉，必须用 `\*[A-Z]+`。这是调研中最重要的修正点。
+2. **工具前缀可带版本/PID 后缀**：`xrun(64): 18.03-s006 ...` —— 版本行**不带 `*severity`**，不会误判为 error；正则用 `(?:\(\d+\))?` 兼容
+3. **source location 可能含 column**：`(file,line|column)`，column 部分可选。正则用 `(?:\|\d+)?`
+4. **跟 UVM 的交互**：Xcelium 跑 UVM testbench 时，UVM_X 行**不会被 `xmsim:` 包**，仍是 IEEE 1800.2 标准格式 —— 走 UVM 路径，跟 Xcelium pattern 不冲突
+
+### 形态枚举
+
+| # | 变体 | 覆盖策略 |
+|---|---|---|
+| 1 | `xmsim: *E,XYZID: msg`（主格式） | `_XCELIUM_PATTERN` 命名组覆盖 |
+| 2 | `xmelab: *E,XYZID (file,N): msg`（带 source location） | 可选 `(file,line)` 组 |
+| 3 | `xmelab: *E,XYZID (file,N\|col): msg`（含 column） | `(?:\|\d+)?` 列号可选 |
+| 4 | `xrun(64): *E,...`（带 PID/版本后缀） | `(?:\(\d+\))?` 兼容 |
+| 5 | `xrun: *SE,XYZID: msg`（**双字符 severity Severe Error**） | `\*[A-Z]+` 多字符覆盖 |
+| 6 | `xmsim: *N,XYZID: msg` / `*I,...`（Note/Info） | `_XCELIUM_LEVEL_MAP` 过滤掉，不计错误 |
+| 7 | 9 种工具前缀（xrun/xmsim/xmelab/xmvlog/xmverilog/xmsd/ncsim/ncelab/ncvlog/irun） | 正则 `(?:xrun\|xmsim\|...)` 全覆盖 |
+
+### 修复方案
+
+[core/log_parser.py:51-87](log_analysis/triage_tool/core/log_parser.py#L51-L87) 新增 `_XCELIUM_PATTERN` + `_XCELIUM_ANY` + `_XCELIUM_LEVEL_MAP`：
+
+```python
+_XCELIUM_PATTERN = re.compile(
+    r'^(?P<tool>xrun|xmsim|xmelab|xmvlog|xmverilog|xmsd|ncsim|ncelab|ncvlog|irun)'
+    r'(?:\(\d+\))?'                                          # 可选 (PID/版本)
+    r':\s*\*(?P<level>[A-Z]+),'                              # *severity, 多字符
+    r'(?P<id>[A-Z][A-Z0-9_]*)'                               # ID（无连字符）
+    r'(?:\s*\((?P<file>[^,)]+),(?P<line>\d+)(?:\|\d+)?\))?'  # 可选 (file,line|col)
+    r':\s*(?P<msg>.*)',
+    re.IGNORECASE
+)
+_XCELIUM_LEVEL_MAP = {'E': 'ERROR', 'W': 'WARNING', 'F': 'FATAL', 'SE': 'ERROR'}
+```
+
+[core/log_parser.py:225-262](log_analysis/triage_tool/core/log_parser.py#L225-L262) 主循环加入第四段（UVM → VCS → **Xcelium** → 通用关键词），命中处理逻辑与 VCS 对齐（statistics 累加、all_errors 去重、WARNING 仅统计不进 top_errors、抽出 file/line 进 `location` 字段）。
+
+续行检测加入 `_XCELIUM_ANY.match()` 排除，防止 Xcelium 行被前一条 pending 误并。
+
+### 关键设计取舍
+
+1. **`*SE` 归并到 `ERROR` 统计**：Severe Error 跟 Error 都是失败标志，UI 不分两个分类，统一计入 `ERROR`。如未来需要细分，第三轮格式库可通过 `level_map` 区分。
+2. **9 种工具前缀全部内置**：包含旧版 NC-Verilog 系列（ncsim/ncelab/ncvlog），覆盖客户可能仍在使用的 legacy 环境。Xcelium 主前缀 `xrun` 和子工具 `xmsim`/`xmelab` 是当前主流。
+3. **ID 字符集 `[A-Z][A-Z0-9_]*`（无连字符）** —— 跟 VCS `[A-Z][A-Z0-9_-]*` 区分，符合实证样本：`DSEM2009` / `MBXNYI` / `DLCSMD` / `VLGERR` / `INTERR` / `JGUSOS` 全部无连字符。
+4. **冒号是强约束**：Xcelium 真实输出 ID 后必有 `:`（如 `*E,VLGERR: msg` 或 `*E,VLGERR (file,N): msg`），正则用 `: ` 锚定避免误匹配。测试样本必须按真实格式写。
+
+### 跨格式隔离
+
+新增 `test_cross_isolation_three_simulators_in_one_log` 验证 UVM / VCS / Xcelium 三种格式同时存在时各走各路径，各自独立计数：
+- UVM 行 → `UVM_ERROR` 统计 + 保留 file/line/timestamp/reporter
+- VCS 行 → `ERROR` 统计 + `error_id` 抽取
+- Xcelium 行 → `ERROR` 统计（VCS + Xcelium 合并到同一 ERROR 字段，自然汇总）+ `error_id` 抽取 + `location` 字段
+
+### 回归测试
+
+新增 8 条 `test_xcelium_*`：
+1. `test_xcelium_zero_config_recognition` —— 零配置识别（核心价值）
+2. `test_xcelium_severity_SE_double_char` —— `*SE` 双字符 severity 关键回归
+3. `test_xcelium_with_source_location` —— `(file,line)` 和 `(file,line|col)` 两种 location
+4. `test_xcelium_all_tool_prefixes` —— 8 种工具前缀（xrun/xmsim/xmelab/xmvlog/ncsim/ncelab/ncvlog/irun）
+5. `test_xcelium_pid_version_suffix` —— `xrun(64):` 带后缀
+6. `test_xcelium_severity_filter_skips_note_info` —— `*N`/`*I` 不计入错误
+7. `test_xcelium_id_routes_to_kb_step1` —— 端到端 KB Step1 精确匹配
+8. `test_cross_isolation_three_simulators_in_one_log` —— UVM/VCS/Xcelium 三方隔离
+
+**47/47 通过**（原 39 + 新 8）。
+
+### 同步文档
+
+- [PRD.md](log_analysis/triage_tool/PRD.md) 新增 "Cadence Xcelium 仿真器报错支持" 子条目
+- 后续计划：BUG-033 做报错格式库重构，把 UVM/VCS/Xcelium/EXTRA_PATTERNS 抽进 `error_formats.json`，让未来新仿真器格式可以编辑配置不改代码
+
+---
+
+## BUG-031 Synopsys VCS 标准报错专用 pattern：开箱即用、零配置
+
+**发现日期**：2026-06-03
+**状态**：已修复
+
+### 背景
+
+UVM（BUG-029）+ EXTRA_PATTERNS 通用关键词（BUG-030）覆盖完后，IC 验证两大事实标准之一的 **Synopsys VCS** 仍未被一等公民对待 —— 用户必须先把 `ERROR` / `WARNING` 等关键词配进 `EXTRA_PATTERNS` 才能识别 VCS 报错，且 VCS 特有的 ID 字符集（含连字符如 `CNST-CIF` / `VPI-CT-NS`）能被通用关键词路径勉强抽出，但**整个识别链路依赖配置、不开箱即用**。
+
+跟 UVM / Xcelium 并列，VCS 应该有专用 pattern。
+
+### 形态调研（WebSearch + 真实 GitHub 样本）
+
+通过 GitHub issue 抓取的真实 VCS 报错样本：
+
+| 样本 | 来源 |
+|---|---|
+| `Error-[DPI-UED] C++ Exception detected`（含 2-space 缩进续行） | [chipyard#914](https://github.com/ucb-bar/chipyard/issues/914) |
+| `Error-[SFCOR] Source file cannot be opened` | [SpinalHDL#669](https://github.com/SpinalHDL/SpinalHDL/issues/669) |
+| `Warning-[RT_UO] Unsupported option` | chipyard#914 |
+| `Warning-[VPI-CT-NS] VPI function is not supported` | SpinalHDL#669 |
+| `Warning-[DBGACC_REG] Unrecognized '-debug_region' option` | SpinalHDL#669 |
+| `Error: "../src/.../ibex_top.sv", 982: ibex_simple_system...: at time 18` | [ibex#1645](https://github.com/lowRISC/ibex/issues/1645) |
+
+### 形态枚举（已枚举完备性表）
+
+| # | 变体 | 覆盖策略 |
+|---|---|---|
+| 1 | `Error-[ID] msg`（主格式） | `_VCS_PATTERN` 命名组覆盖 |
+| 2 | `Warning-[ID] msg` / `Fatal-[ID] msg` | 同上 |
+| 3 | `Note-[ID] msg` / `Info-[ID] msg` | 同上但**不计入错误统计**（IC 验证语境非错误） |
+| 4 | 含续行（2-space 缩进） | 复用 UVM 同款 indented 续行策略 |
+| 5 | ID 含连字符（`VPI-CT-NS` / `DPI-UED`） | 字符集 `[A-Z][A-Z0-9_-]*` |
+| 6 | **Assertion failure 子格式** `Error: "file", N: hierarchy: at time T` | 暂不覆盖，留待第二阶段（实际触发频次低、结构差异大；当前 EXTRA_PATTERNS 的 `Error` 关键词可兜底） |
+
+### 修复方案
+
+[core/log_parser.py:32-50](log_analysis/triage_tool/core/log_parser.py#L32-L50) 新增 `_VCS_PATTERN` + `_VCS_ANY`（续行检测排除） + `_VCS_LEVEL_MAP`（severity → 内部统计字段映射）：
+
+```python
+_VCS_PATTERN = re.compile(
+    r'^(?P<level>Error|Warning|Fatal|Note|Info)'
+    r'-\['
+    r'(?P<id>[A-Z][A-Z0-9_-]*)'
+    r'\]\s*'
+    r'(?P<msg>.*)',
+    re.IGNORECASE
+)
+_VCS_LEVEL_MAP = {'ERROR': 'ERROR', 'WARNING': 'WARNING', 'FATAL': 'FATAL'}
+```
+
+[core/log_parser.py:135-181](log_analysis/triage_tool/core/log_parser.py#L135-L181) 主循环加入三段式 **UVM → VCS → 通用关键词**，VCS 命中处理逻辑与 UVM 对齐（statistics 累加、all_errors 去重、WARNING 仅统计不进 top_errors、FATAL/ERROR 进 top_errors 流水线）。
+
+续行检测加入 `_VCS_ANY.match()` 排除，防止 VCS 行被前一条 pending 误并。
+
+### 关键设计取舍
+
+1. **零配置开箱即用** —— VCS pattern 不依赖 `EXTRA_PATTERNS`，用户上传 VCS 日志即识别。这是 VCS 作为"一等公民"的核心价值。
+2. **statistics 字段命名跟 EXTRA_PATTERNS 同集合**（`ERROR` / `WARNING` / `FATAL`，无 `VCS_` 前缀） —— 自然汇总，跨格式不分离统计；UI 端无需为 VCS 单独建分类。
+3. **Note/Info 不计入错误统计** —— IC 验证语境下 `Note` / `Info` 是版本/配置信息（如 `Note-[VERSION]`），不应被统计为"错误"。这跟 UVM_INFO 不计入 statistics 的设计哲学一致。
+4. **Assertion failure 子格式（`Error: "file", N:` 形态）暂不覆盖** —— 结构与主格式差异大，实际触发频次低（SVA 通常走 UVM 报错路径），当前 EXTRA_PATTERNS 的 `Error` 关键词能兜底；如未来用户实测高频，再加 `_VCS_ASSERT_PATTERN` 作为 VCS pattern 的子规则。
+5. **不动 KB schema / `_valid_levels()`** —— 默认 EXTRA_PATTERNS 已含 `ERROR` / `FATAL` / `WARNING`，用户回写 VCS 错误时下拉框已有合法 level 选项，零额外配置。
+
+### 跨格式隔离
+
+[tests/test_log_parser.py](log_analysis/triage_tool/tests/test_log_parser.py) 加两条隔离测试：
+
+- `test_cross_isolation_vcs_does_not_eat_uvm` —— UVM 行优先 UVM 路径（保留 file/line/timestamp/reporter），不被 VCS 正则误吃
+- `test_cross_isolation_extra_keywords_does_not_double_count` —— 用户配 `EXTRA_PATTERNS=['ERROR']` 时 VCS 行只计一次（VCS pattern 命中后 `continue`，通用关键词不再触发）
+
+### 回归测试
+
+新增 8 条 `test_vcs_*`：
+1. `test_vcs_zero_config_recognition` —— 零配置识别（核心价值）
+2. `test_vcs_all_severities` —— 五种 severity 全覆盖（Error/Warning/Fatal 计入；Note/Info 不计）
+3. `test_vcs_id_charset_with_hyphens_and_underscores` —— ID 字符集（`VPI-CT-NS` / `DBGACC_REG` / `DPI-UED` / `SE-LMHW`）
+4. `test_vcs_continuation_indented` —— 2-space 缩进续行（chipyard#914 实证）
+5. `test_vcs_warning_not_in_top_errors` —— WARNING 仅统计不进 top_errors
+6. `test_vcs_id_routes_to_kb_step1` —— 抽出 error_id 端到端走 KB Step1 精确匹配
+7. `test_cross_isolation_vcs_does_not_eat_uvm` —— UVM 优先级保护
+8. `test_cross_isolation_extra_keywords_does_not_double_count` —— 不被通用关键词双计数
+
+**39/39 通过**（原 31 + 新 8）。
+
+### 同步文档
+
+- [PRD.md](log_analysis/triage_tool/PRD.md) 新增 "Synopsys VCS 仿真器报错支持" 章节
+- 计划项：BUG-032 将做 Cadence Xcelium 同款覆盖；BUG-033 将做格式库重构（把 UVM/VCS/Xcelium/EXTRA_PATTERNS 全部抽进 `error_formats.json`）
+
+---
+
+## BUG-030 EXTRA_PATTERNS 通用关键词正则放宽：覆盖 VCS / IP / SVA 真实场景，新增 [ID] 抽取
+
+**发现日期**：2026-06-03
+**状态**：已修复
+
+### 现象
+
+用户实测一条 VCS 标准报错：
+
+```
+Error-[CNST-CIF] Constraints inconsistency failure
+```
+
+既不命中 `_UVM_PATTERN`（非 UVM 前缀），也不命中 `_gen_pattern`（行首 `Error-` 后跟 `-` 不是 `:`）。BUG-028 / BUG-029 完备覆盖 UVM 后，这是另一类大面积漏检场景。
+
+### 背景：v1.8 设计意图被 PRD 措辞误导
+
+PRD 第 64 行原文是"匹配 `^关键词: 描述内容` 格式（行首+冒号）"，措辞像是给 `$display("ERROR: ...")` 这种 print 调试用的。但用户（IC 验证工程师）澄清：
+
+> IC 验证场景里**没人用 `$display`** 报错。UVM 平台报错走 `uvm_error` 机制（已被 `_UVM_PATTERN` 覆盖）。"额外错误关键词" 当初设计就是为了覆盖：
+> 1. **VCS 标准报错**（`Error-[CNST-CIF] msg`，连字符分隔）
+> 2. **IP 内部报错**（vendor-specific，常带 `[ID]`）
+> 3. **RTL SVA 报错**（用户自定义，唯一共性是关键字在行首）
+
+这三类**都不带冒号**，分隔符各异。原正则因为 `\s*:\s*` 把它们全部拦在外面，跟真实业务诉求完全错位。
+
+### 根因
+
+[core/log_parser.py:38-45](log_analysis/triage_tool/core/log_parser.py#L38-L45) 旧实现：
+
+```python
+return re.compile(r'^(' + alts + r')\s*:\s*(.*)', re.IGNORECASE)
+```
+
+两处过严：
+1. **`\s*:\s*` 强制冒号** —— 切掉 VCS 的 `-`、SVA 的纯空格、IP 的紧贴 `[`
+2. **关键词后无 word boundary** —— 理论上可能误判（虽然 `:` 兜底，但放宽后必须显式守护）
+
+而且 `[ID]` 信息完全没抽出来，命中后 `error_id` 一律硬填 `''`，导致 KB 永远只能走 Step2 关键词匹配，无法利用 VCS 那些稳定的 `[CNST-CIF]` / `[T_BUS_ERR]` 做 Step1 精确匹配。
+
+### 修复方案
+
+[core/log_parser.py:38-58](log_analysis/triage_tool/core/log_parser.py#L38-L58) 重写正则，[第 138-167 行](log_analysis/triage_tool/core/log_parser.py#L138-L167) 把抽出的 ID 灌入 `error_id`：
+
+```python
+return re.compile(
+    r'^(' + alts + r')\b'                # G1: 关键词 + word boundary（防 Erroring 半匹配）
+    r'[\s:\-]*'                          # 任意分隔符（空白/冒号/连字符，0+ 个）
+    r'(?:\[([^\]]+)\])?'                 # G2: 可选 [ID]
+    r'\s*(.*)',                          # G3: 描述
+    re.IGNORECASE
+)
+```
+
+兼容性矩阵：
+
+| 输入行 | 命中 | level | error_id | description |
+|---|---|---|---|---|
+| `ERROR: msg`（旧格式兼容） | ✓ | `ERROR` | `''` | `msg` |
+| `Error-[CNST-CIF] Constraints...`（VCS） | ✓ | `ERROR` | `CNST-CIF` | `Constraints...` |
+| `IP_FATAL[T_BUS_ERR] timeout...`（IP） | ✓ | `IP_FATAL` | `T_BUS_ERR` | `timeout...` |
+| `MY_SVA signal X stayed low`（SVA） | ✓ | `MY_SVA` | `''` | `signal X stayed low` |
+| `Erroring something`（半匹配） | ✗ `\b` 阻断 | — | — | — |
+| `MY_ERR_VAR = something`（赋值） | ✗ `_VAR` 是 word 续接 | — | — | — |
+
+### 设计哲学澄清
+
+借这次修复明确："关键词"和"ID"是**两个维度**：
+
+- **关键词 = 粗类 level**（用户配置，进 `state.EXTRA_PATTERNS`），如 `ERROR` / `IP_FATAL` / `MY_SVA`
+- **`[ID]` = 细类 ID**（解析时抽取，进 `error_id` 字段），如 `CNST-CIF` / `T_BUS_ERR`
+
+由此带来的不动决策：
+- **不动** `blueprints/config_bp.py` 关键词字符集 `^[A-Z0-9_ ]+$` —— 用户不应该把 `Error-[CNST-CIF]` 整串配成关键词，那是细类信息，应由解析器抽出
+- **不动** `state._valid_levels()` —— 关键词字面量 = level 名的硬绑定保持，KB 错误类型列继续显示干净的关键词
+- **不动** `_UVM_PATTERN` —— 与 UVM 路径完全隔离
+
+### 回归测试
+
+[tests/test_log_parser.py](log_analysis/triage_tool/tests/test_log_parser.py) 新增 7 条 `test_gen_*` 测试覆盖：VCS 格式 / IP 格式 / SVA 无分隔符 / word-boundary 防误报 / 旧冒号格式兼容 / 同日志混合多格式 / 抽出 ID 端到端走 KB Step1 精确匹配。**31/31 通过**（原 24 + 新 7）。
+
+### 同步文档
+
+- [PRD.md](log_analysis/triage_tool/PRD.md) 第 64 行 "额外错误关键词" 描述按新格式重写
+- 项目 memory 落地：v1.8 真实设计意图是 VCS/IP/SVA，下次不再走弯路
+
+---
+
 ## BUG-029 UVM 报错行正则完备性升级：覆盖全部 11 种合法变体
 
 **发现日期**：2026-06-02

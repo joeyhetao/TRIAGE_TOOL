@@ -59,9 +59,15 @@
 UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
 ```
 
-- 解析每个日志文件，提取所有 `UVM_FATAL` / `UVM_ERROR` / `UVM_WARNING` 以及**额外错误关键词**（见 3.15）条目
+- 解析每个日志文件，按四段式优先级匹配：
+  1. **UVM 行**（IEEE 1800.2 default report server 输出，11 种变体）
+  2. **VCS 行**（Synopsys VCS 标准报错，零配置识别，见下方 VCS 节）
+  3. **Xcelium 行**（Cadence Xcelium / Incisive / NC-Verilog 标准报错，零配置识别，见下方 Xcelium 节）
+  4. **通用关键词行**（用户在 EXTRA_PATTERNS 配的关键词，覆盖 IP / SVA / 自定义场景）
 - **`UVM_WARNING` 仅统计计数，不进入 `top_errors` 列表，不参与知识库匹配**（v1.3 变更）
-- **额外错误关键词**：匹配 `^关键词: 描述内容` 格式（行首+冒号），与 UVM_ERROR/FATAL 等价，进入 top_errors 并参与知识库匹配和 pass/fail 判断（v1.8 新增）
+- **Synopsys VCS 标准报错**（v1.11 新增，见 BUGLOG BUG-031）：内置 `_VCS_PATTERN` 专用正则，匹配 `^(Error|Warning|Fatal|Note|Info)-\[ID\] 描述`，**开箱即用、无需配置**。覆盖真实样本如 `Error-[CNST-CIF] Constraints inconsistency failure` / `Warning-[VPI-CT-NS] VPI function is not supported`。`Error/Warning/Fatal` 计入 `ERROR/WARNING/FATAL` 统计字段（与 EXTRA_PATTERNS 同集合，自然汇总）；`Note/Info` 不计入错误统计（IC 验证语境下为版本/配置信息）。`Warning` 仅统计不进 top_errors（与 UVM_WARNING 一致）。ID 字符集 `[A-Z][A-Z0-9_-]*`，含连字符（如 `DPI-UED` / `SE-LMHW`）；抽出的 ID 进入 `error_id` 字段，能走 KB Step1 精确匹配。续行采用 UVM 同款 indented 策略（2-space 缩进）。
+- **Cadence Xcelium 标准报错**（v1.12 新增，见 BUGLOG BUG-032）：内置 `_XCELIUM_PATTERN` 专用正则，匹配 `^工具前缀: *severity,ID (file,line|column): 描述`，**开箱即用、无需配置**。支持 9 种工具前缀（`xrun` / `xmsim` / `xmelab` / `xmvlog` / `xmverilog` / `xmsd` / `ncsim` / `ncelab` / `ncvlog` / `irun`，覆盖 Xcelium 主流 + 旧 Incisive + 旧 NC-Verilog 工具链）；支持 PID/版本后缀（`xrun(64):`）；severity 涵盖 `*E` / `*W` / `*F` / `*SE` / `*N` / `*I`（注意 `*SE` 是双字符 Severe Error）。`*E`/`*SE` → ERROR；`*W` → WARNING；`*F` → FATAL；`*N`/`*I` 不计错误。覆盖真实样本如 `xmelab: *E,MBXNYI (/wrk/.../tb.sv,87|20): error msg` / `xmsim: *W,DSEM2009: SV-2009 semantics warning`。可选 `(file,line)` 或 `(file,line|column)` source location 进入 `location` 字段。ID 字符集 `[A-Z][A-Z0-9_]*`（无连字符）。续行采用 UVM 同款 indented 策略。
+- **额外错误关键词**：匹配 `^关键词[分隔符][[ID]] 描述内容` 格式（行首关键词 + word boundary + 可选分隔符 `空白/`:`/`-` + 可选 `[ID]` + 描述），覆盖 IP 内部报错（如 `IP_FATAL[T_BUS_ERR] msg`）、RTL SVA 自定义报错（如 `MY_SVA signal X low`）以及兼容旧 print 格式（`ERROR: msg`）。与 UVM_ERROR/FATAL 等价，进入 top_errors 并参与知识库匹配和 pass/fail 判断；抽出的 `[ID]` 进入 `error_id` 字段、能走 KB Step1 精确匹配，无 ID 时降级 Step2 关键词匹配（v1.8 新增；v1.10 放宽冒号约束、新增 ID 抽取，见 BUGLOG BUG-030）。VCS 行已被上游 VCS pattern 优先命中，不会被通用关键词重复计数。
 - **前5条错误**（`top_errors`）：从 `UVM_FATAL` / `UVM_ERROR` / 额外关键词错误中按出现顺序提取最多5条
 - 每条错误记录包含：级别、时间戳、错误ID、文件位置、描述
 - 描述提取：取本行描述，并最多向后追加3行续行（遇到 UVM 条目、空行或**非缩进行**停止）
