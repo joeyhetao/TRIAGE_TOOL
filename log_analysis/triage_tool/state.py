@@ -96,7 +96,10 @@ _CONFLICT_FIELDS = [
 
 # ── 额外错误关键词 ────────────────────────────────────────
 _EXTRA_PATTERNS_FILE    = BASE_DIR / 'extra_patterns.json'
-_EXTRA_PATTERNS_DEFAULT = ['ERROR', 'FATAL', 'FAILED', 'VIRL_MEM_WARNING', 'JVP TEST FAILED']
+_EXTRA_PATTERNS_DEFAULT = [
+    'ERROR', 'FATAL', 'FAILED', 'VIRL_MEM_WARNING', 'JVP TEST FAILED',
+    'SVA_ERROR', 'SVA_FATAL', 'SVA_WARNING',
+]
 _extra_patterns_lock    = threading.Lock()
 
 
@@ -147,7 +150,8 @@ PASS_PATTERNS: list = _load_pass_patterns()
 
 def _valid_levels() -> set:
     """返回所有合法的 level 值（UVM 三项 + 当前 EXTRA_PATTERNS）。"""
-    return {'UVM_FATAL', 'UVM_ERROR', 'UVM_WARNING'} | set(EXTRA_PATTERNS)
+    return {'UVM_FATAL', 'UVM_ERROR', 'UVM_WARNING',
+            'SVA_ERROR', 'SVA_FATAL', 'SVA_WARNING'} | set(EXTRA_PATTERNS)
 
 
 def _unique_error_counts(results: list) -> dict:

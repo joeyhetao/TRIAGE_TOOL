@@ -46,6 +46,25 @@ class TestParseLog:
         result = parse_log(passing_log, pass_patterns=[])
         assert result['status'] == 'pass'
 
+    def test_sva_error_after_pass_marker_still_fails(self, tmp_path):
+        content = (
+            "JVP TEST PASSED. Warning number is 143\n"
+            "UVM_WARNING : 143\n"
+            "$finish called from file /tools/uvm_root.svh, line 527.\n"
+            "/proj/dv/foo.sv, 122: top_tb.u_DUT.u_checker: started at 10fs failed at 10fs\n"
+            "SVA_ERROR: instance top_tb.u_DUT.u_checker final state is unexpected!!!\n"
+        )
+        log_file = tmp_path / 'late_sva_error.log'
+        log_file.write_text(content, encoding='utf-8')
+
+        result = parse_log(str(log_file), pass_patterns=['JVP TEST PASSED'])
+
+        assert result['pass_found'] is True
+        assert result['status'] == 'fail'
+        assert result['statistics']['SVA_ERROR'] == 1
+        assert result['top_errors'][0]['level'] == 'SVA_ERROR'
+        assert 'final state is unexpected' in result['top_errors'][0]['description']
+
     def test_continuation_lines_merged(self, tmp_path):
         content = (
             "UVM_ERROR /tb/dut.sv(42) @ 100ns: uvm_test_top [MEM] main description\n"

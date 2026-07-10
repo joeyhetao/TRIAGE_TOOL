@@ -88,6 +88,15 @@ _XCELIUM_LEVEL_MAP = {
     'SE': 'ERROR',   # Severe Error 归并到 ERROR
 }
 
+# SystemVerilog assertion / checker failures often appear after an early pass marker.
+# Treat them as first-class built-ins so PASS markers cannot hide late SVA failures.
+_SVA_PATTERN = re.compile(
+    r'^(?P<level>SVA_(?:ERROR|WARNING|FATAL))\s*:\s*(?P<msg>.*)',
+    re.IGNORECASE,
+)
+_SVA_ANY = re.compile(r'^SVA_(?:ERROR|WARNING|FATAL)\s*:', re.IGNORECASE)
+_SVA_LEVELS = ('SVA_ERROR', 'SVA_WARNING', 'SVA_FATAL')
+
 TOP_N = 5  # 每个日志最多提取的错误条数（按出现顺序）
 
 
@@ -141,6 +150,8 @@ def parse_log(filepath: str, extra_keywords=None, pass_patterns=None) -> dict:
     pass_patterns  = list(pass_patterns or [])
 
     statistics = {'UVM_WARNING': 0, 'UVM_ERROR': 0, 'UVM_FATAL': 0}
+    for level in _SVA_LEVELS:
+        statistics.setdefault(level, 0)
     for kw in extra_keywords:
         statistics.setdefault(kw, 0)
 
@@ -169,6 +180,7 @@ def parse_log(filepath: str, extra_keywords=None, pass_patterns=None) -> dict:
                         and not _UVM_ANY.search(stripped)
                         and not _VCS_ANY.match(stripped)
                         and not _XCELIUM_ANY.match(stripped)
+                        and not _SVA_ANY.match(stripped)
                         and line.startswith(' ')
                         and len(cont_lines) < 3):
                     cont_lines.append(stripped)
@@ -301,6 +313,38 @@ def parse_log(filepath: str, extra_keywords=None, pass_patterns=None) -> dict:
                             'description': _msg,
                         }
                         cont_lines = []
+                continue
+
+            # ── SystemVerilog assertion 条目匹配（UVM/VCS/Xcelium 未命中时） ──
+            sm = _SVA_PATTERN.match(stripped)
+            if sm:
+                level = sm.group('level').upper()
+                description = sm.group('msg').strip()
+                statistics[level] = statistics.get(level, 0) + 1
+
+                _dup_key = (level, description[:80].lower())
+                if _dup_key not in _seen_keys:
+                    _seen_keys.add(_dup_key)
+                    all_errors.append({
+                        'level':       level,
+                        'error_id':    '',
+                        'description': description,
+                        'location':    '',
+                    })
+
+                # SVA_WARNING 仅统计；SVA_ERROR/SVA_FATAL 进入 top_errors 并影响最终状态
+                if level == 'SVA_WARNING':
+                    continue
+
+                if len(top_errors) < TOP_N:
+                    pending = {
+                        'level':       level,
+                        'timestamp':   '',
+                        'error_id':    '',
+                        'location':    '',
+                        'description': description,
+                    }
+                    cont_lines = []
                 continue
 
             # ── 通用行首关键词匹配（UVM/VCS/Xcelium 未命中时） ────
