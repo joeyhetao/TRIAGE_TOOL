@@ -32,7 +32,7 @@ trap cleanup EXIT
 mkdir -p "$PKG_TOOL" "$OUT_DIR"
 cp "$ROOT_DIR/README.md" "$PKG_ROOT/"
 
-for item in   app.py state.py blueprints core templates static packages   requirements.txt install_packages.py error_db.xlsx extra_patterns.json pass_patterns.json   DEPLOYMENT.md LLM_USAGE_GUIDE.md
+for item in   app.py state.py blueprints core templates static packages   requirements.txt install_packages.py error_db.xlsx extra_patterns.json pass_patterns.json   DEPLOYMENT.md LLM_USAGE_GUIDE.md log_triage_tool使用说明文档.md
  do
   if [ ! -e "$TOOL_DIR/$item" ]; then
     echo "[ERROR] Missing required release item: $item" >&2
