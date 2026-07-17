@@ -1,7 +1,4 @@
-# ── Python ────────────────────────────────────────────────
-# Bytecode caches — regenerated per Python version on first import.
-# Committing them across Windows (3.14) / WSL (3.10) / intranet (3.6)
-# only causes diffs every run; never useful.
+# Python caches
 __pycache__/
 *.py[cod]
 *.so
@@ -11,63 +8,43 @@ __pycache__/
 venv/
 env/
 
-# pytest / coverage
+# Test / coverage caches
 .pytest_cache/
 .coverage
 htmlcov/
 
-# ── Build artifacts ───────────────────────────────────────
-# PyInstaller intermediate output. dist/ is intentionally NOT ignored —
-# it holds the Windows/Linux distributables (triage_tool.exe / triage_tool).
+# Build and release artifacts
 build/
+dist/
+release/
+*.spec
 *.spec.bak
 
-# ── Application runtime files (auto-created at startup) ──
-# Source-mode runtime files (next to app.py)
+# Runtime files
 log_analysis/triage_tool/uploads/
 log_analysis/triage_tool/reports/
 log_analysis/triage_tool/error_db.xlsx.lock
-
-# Frozen-mode runtime files (next to dist/triage_tool.exe)
-log_analysis/triage_tool/dist/uploads/
-log_analysis/triage_tool/dist/reports/
-log_analysis/triage_tool/dist/error_db.xlsx.lock
-
-# KB rolling backups — auto-rotated by core/db_manager.py (BACKUP_COUNT)
 log_analysis/triage_tool/error_db.bak*.xlsx
-log_analysis/triage_tool/dist/error_db.bak*.xlsx
-# KB activity-stats event log — runtime data, regenerates per deployment
 log_analysis/triage_tool/kb_hits.jsonl
 log_analysis/triage_tool/kb_hits_archive.jsonl
-log_analysis/triage_tool/dist/kb_hits.jsonl
-log_analysis/triage_tool/dist/kb_hits_archive.jsonl
 
-# ── Secrets ───────────────────────────────────────────────
-# LLM config holds a real api_key in dev — never commit.
-# Use environment variables (LLM_ENDPOINT / LLM_API_KEY / LLM_MODEL) in prod.
-log_analysis/triage_tool/llm_config.json
-log_analysis/triage_tool/dist/llm_config.json
+# Secrets and per-machine config
 .secret_key
 log_analysis/triage_tool/.secret_key
-log_analysis/triage_tool/dist/.secret_key
+log_analysis/triage_tool/llm_config.json
 
-# ── IDE / editors ─────────────────────────────────────────
+# Logs and temporary files
+*.log
+*.tmp
+
+# IDE / editors
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# ── Claude Code (per-developer local prefs) ───────────────
-# settings.local.json holds personal permission/env overrides; never commit.
-# Team-shared config goes in .claude/settings.json instead.
-.claude/settings.local.json
-
-# ── OS ─────────────────────────────────────────────────────
+# OS files
 .DS_Store
 Thumbs.db
 desktop.ini
-
-# ── Misc ──────────────────────────────────────────────────
-*.log
-*.tmp

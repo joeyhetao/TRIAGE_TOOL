@@ -1,2 +1,0 @@
-#TC_NAME						RUN_NUM				WAVE			COV 		SVSEED
-tc_sanity								1					  off				 on			random
