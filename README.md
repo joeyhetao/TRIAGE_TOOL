@@ -46,3 +46,21 @@ release/TRIAGE_TOOL-linux-<version>.tar.gz
 发布包只包含 Linux 运行所需源码、模板、静态资源、默认配置、默认知识库、离线 wheels 和部署说明，不包含 `.git`、测试、Windows exe、日志、密钥或开发文档。
 
 详细部署步骤见 `log_analysis/triage_tool/DEPLOYMENT.md`。
+
+## 提交并发布
+
+以后提交/推送代码时统一使用发布脚本：
+
+```bash
+bash scripts/publish_git.sh "commit message"
+```
+
+脚本会按固定顺序执行：
+
+1. Python 编译检查。
+2. 全量测试：`python3 -m pytest -q -s`。
+3. `git add -A` 并提交当前修改。
+4. 基于新 commit 生成 Linux 发布包，并校验发布包不含 `.git`、`tests`、`dist`、`*.exe`、`*.log`、密钥和缓存。
+5. 推送当前分支到 `origin`。
+
+也就是说，后续“上传 git”必须同时完成测试和 Linux 发布包生成。

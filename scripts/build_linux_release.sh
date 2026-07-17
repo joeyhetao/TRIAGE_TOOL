@@ -11,8 +11,8 @@ fi
 
 VERSION="${1:-}"
 if [ -z "$VERSION" ]; then
-  if command -v git >/dev/null 2>&1 && git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    VERSION="$(date +%Y%m%d)-$(git -C "$ROOT_DIR" rev-parse --short HEAD)"
+  if command -v git >/dev/null 2>&1 && (cd "$ROOT_DIR" && git rev-parse --is-inside-work-tree >/dev/null 2>&1); then
+    VERSION="$(date +%Y%m%d)-$(cd "$ROOT_DIR" && git rev-parse --short HEAD)"
   else
     VERSION="$(date +%Y%m%d)"
   fi
