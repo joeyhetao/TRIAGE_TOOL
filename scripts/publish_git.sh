@@ -5,10 +5,11 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TOOL_DIR="$ROOT_DIR/log_analysis/triage_tool"
 REMOTE="${GIT_REMOTE:-origin}"
 BRANCH="${GIT_BRANCH:-$(cd "$ROOT_DIR" && git rev-parse --abbrev-ref HEAD)}"
-COMMIT_MSG="${1:-}"
+COMMIT_MSG="${PUBLISH_COMMIT_MSG:-${1:-}}"
 
 if [ -z "$COMMIT_MSG" ]; then
-  echo 'Usage: bash scripts/publish_git.sh "commit message"' >&2
+  echo 'Usage: bash scripts/publish_git.sh "commit message"
+       or: PUBLISH_COMMIT_MSG="commit message" bash scripts/publish_git.sh' >&2
   exit 2
 fi
 
