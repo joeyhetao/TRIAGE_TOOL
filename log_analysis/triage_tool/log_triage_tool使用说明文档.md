@@ -39,7 +39,29 @@ TRIAGE_TOOL/
 
 发布包不包含 `.git`、`tests`、`dist`、Windows exe、日志、缓存、密钥和开发文档。
 
-## 3. 安装依赖
+
+## 3. 解压发布包
+
+拿到发布包后，先在目标 Linux 机器上解压：
+
+```bash
+tar xzf TRIAGE_TOOL-linux-*.tar.gz
+```
+
+解压后进入工具目录：
+
+```bash
+cd TRIAGE_TOOL/log_analysis/triage_tool
+```
+
+如果发布包放在其他目录，请先 `cd` 到发布包所在目录，或使用发布包的绝对路径：
+
+```bash
+tar xzf /path/to/TRIAGE_TOOL-linux-20260717-c973825.tar.gz
+cd TRIAGE_TOOL/log_analysis/triage_tool
+```
+
+## 4. 安装依赖
 
 进入工具目录：
 
@@ -65,7 +87,7 @@ sudo python3 install_packages.py
 - tkinter 只用于原生文件选择弹窗。
 - tkinter 缺失时，工具会提示手动输入绝对路径，不影响日志分析。
 
-## 4. 启动工具
+## 5. 启动工具
 
 本机访问：
 
@@ -97,7 +119,7 @@ http://<服务器IP>:8080
 nohup python3 app.py --host 0.0.0.0 --port 8080 > ~/triage.log 2>&1 &
 ```
 
-## 5. 日志分析流程
+## 6. 日志分析流程
 
 ### 5.1 上传模式
 
@@ -127,7 +149,7 @@ nohup python3 app.py --host 0.0.0.0 --port 8080 > ~/triage.log 2>&1 &
 
 路径模式最多一次展开 5000 个日志文件。
 
-## 6. 分析结果说明
+## 7. 分析结果说明
 
 结果页左侧是日志列表，右侧是当前日志详情。
 
@@ -148,7 +170,7 @@ nohup python3 app.py --host 0.0.0.0 --port 8080 > ~/triage.log 2>&1 &
 
 这样可以减少同一个日志后续连锁错误带来的噪声，更符合 IC 验证中优先看首错的习惯。
 
-## 7. PASS / FAIL 判定
+## 8. PASS / FAIL 判定
 
 工具会全文扫描日志：
 
@@ -170,7 +192,7 @@ pass_patterns.json
 ]
 ```
 
-## 8. 错误识别范围
+## 9. 错误识别范围
 
 当前内置支持：
 
@@ -195,7 +217,7 @@ pass_patterns.json
 ]
 ```
 
-## 9. 知识库使用
+## 10. 知识库使用
 
 默认知识库文件：
 
@@ -225,7 +247,7 @@ error_db.xlsx
 
 未匹配错误可以在结果页补充原因、模块、解决方案后写回知识库。
 
-## 10. 知识库维护
+## 11. 知识库维护
 
 页面支持：
 
@@ -241,7 +263,7 @@ error_db.xlsx
 
 知识库写入有锁保护，支持多人或多进程场景下尽量避免 Excel 文件损坏。
 
-## 11. 导出报告
+## 12. 导出报告
 
 结果页支持两种导出：
 
@@ -250,7 +272,7 @@ error_db.xlsx
 
 导出文件会生成到运行目录下的 `reports/` 目录。该目录属于运行产物，不进入 Git 和发布包。
 
-## 12. AI 增强功能（可选）
+## 13. AI 增强功能（可选）
 
 不配置 LLM 时，工具以基础版运行，AI 按钮自动隐藏或不可用。
 
@@ -286,7 +308,7 @@ AI 功能包括：
 LLM_USAGE_GUIDE.md
 ```
 
-## 13. 发布包生成
+## 14. 发布包生成
 
 开发机上生成 Linux 发布包：
 
@@ -313,7 +335,7 @@ release/TRIAGE_TOOL-linux-<日期>-<commit>.tar.gz
 - 上传和报告运行目录
 - 开发文档和样例大文件
 
-## 14. 提交并发布
+## 15. 提交并发布
 
 开发者提交代码时统一使用：
 
@@ -332,7 +354,7 @@ bash scripts/publish_git.sh "commit message"
 
 以后不要直接手工 `git push`，除非明确只是临时分支操作。
 
-## 15. 升级迁移
+## 16. 升级迁移
 
 升级时建议保留旧版本运行数据：
 
@@ -349,7 +371,7 @@ done
 - `.secret_key`：Flask session 密钥，保留可减少会话失效。
 - `kb_hits*.jsonl`：知识库活跃度统计。
 
-## 16. 常见问题
+## 17. 常见问题
 
 ### 16.1 页面打不开
 
