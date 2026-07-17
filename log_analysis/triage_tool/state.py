@@ -155,7 +155,7 @@ def _valid_levels() -> set:
 
 
 def _unique_error_counts(results: list) -> dict:
-    """跨所有文件对 all_errors 去重，返回各级别唯一错误数。"""
+    """跨所有文件对每个出错日志的首个非 WARNING 错误去重，返回各级别唯一错误数。"""
     seen   = set()
     counts = {}
     for r in results:

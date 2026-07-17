@@ -74,7 +74,7 @@ UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
 - 多文件**并行解析**（`ThreadPoolExecutor`，`as_completed` 实时回调），批量场景性能优化
 - 全量统计（FATAL/ERROR/WARNING 计数）基于全文所有错误行（即使 top_errors 已满仍继续扫描）
 - **内存模式**：逐行流式读取（`pending` 状态机），内存占用与文件大小无关
-- **`all_errors`**（v1.6 新增）：全文扫描所有 FATAL/ERROR/WARNING 的唯一 `(level, error_id)` 对，用于跨文件去重统计；仅存每种 ID 的首次出现记录，内存开销极低
+- **`all_errors`**（v1.6 新增）：每个出错日志的首个非 WARNING 错误，用于跨文件去重统计；WARNING 不进入该去重列表，避免同一日志后续杂项错误放大汇总噪声
 - **`status`**（v1.6 新增，v1.8 重设计）：单文件 PASS/FAIL 状态；新逻辑见 3.12
 - **`pass_found`**（v1.8 新增）：布尔值，文件中是否找到任意通过标记字符串（见 3.16）
 
@@ -225,7 +225,7 @@ UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
 
 顶部汇总栏的 FATAL/ERROR/WARNING 数量显示**去重后的唯一错误数**：
 
-- 通过 `all_errors` 跨文件聚合，按 `(level, error_id)` 去重（相同 ID 在多个文件中只计1次）
+- 通过 `all_errors` 跨文件聚合：每个出错日志只贡献首个非 WARNING 错误，再按 `(level, error_id)` 去重（相同 ID 在多个文件中只计1次）
 - 数字可点击（链接样式），跳转到独立的去重详情页 `/errors?level=UVM_FATAL`（或 ERROR/WARNING）
 
 **去重详情页（`/errors`）**：
@@ -334,7 +334,7 @@ UVM_ERROR /path/file.sv(142) @ 1000ns: uvm_test_top.env [ID] message
     },
     ...                       # 最多5条
   ],
-  'all_errors': [             # 全文去重唯一错误（含 WARNING）（v1.6 新增）
+  'all_errors': [             # 跨文件去重用首个非 WARNING 错误（v1.6 调整）
     {
       'level':       str,     # UVM_FATAL / UVM_ERROR / UVM_WARNING
       'error_id':    str,

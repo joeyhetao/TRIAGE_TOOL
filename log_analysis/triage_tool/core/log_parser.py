@@ -161,8 +161,7 @@ def parse_log(filepath: str, extra_keywords=None, pass_patterns=None) -> dict:
     top_errors = []
     pending = None    # 等待续行收集的当前条目（仅 top_errors 未满时使用）
     cont_lines = []   # 已收集的续行文本
-    all_errors  = []  # 全文去重错误列表（含 WARNING，每个唯一 error_id 只记一次）
-    _seen_keys  = set()
+    all_errors  = []  # 跨文件去重用：本日志首个非 WARNING 错误（解析结束后由 top_errors 生成）
 
     with open(str(path), encoding='utf-8', errors='replace') as f:
         for raw_line in f:
@@ -208,18 +207,6 @@ def parse_log(filepath: str, extra_keywords=None, pass_patterns=None) -> dict:
                 _line_no  = m.group('line')
                 _location = f"{_file}({_line_no})" if _file else ''
 
-                # 全量去重记录（含 WARNING）：相同 level+error_id 只保留首次出现
-                _dup_key = (level, _err_id.lower() if _err_id
-                            else _msg[:80].lower())
-                if _dup_key not in _seen_keys:
-                    _seen_keys.add(_dup_key)
-                    all_errors.append({
-                        'level':       level,
-                        'error_id':    _err_id,
-                        'description': _msg,
-                        'location':    _location,
-                    })
-
                 # WARNING 仅统计，不计入 top_errors；FATAL/ERROR 才参与匹配
                 if level == 'UVM_WARNING':
                     continue
@@ -247,17 +234,6 @@ def parse_log(filepath: str, extra_keywords=None, pass_patterns=None) -> dict:
 
                     _err_id = vm.group('id').strip()
                     _msg    = vm.group('msg').strip()
-
-                    _dup_key = (level, _err_id.lower() if _err_id
-                                else _msg[:80].lower())
-                    if _dup_key not in _seen_keys:
-                        _seen_keys.add(_dup_key)
-                        all_errors.append({
-                            'level':       level,
-                            'error_id':    _err_id,
-                            'description': _msg,
-                            'location':    '',
-                        })
 
                     # WARNING 仅统计，不进 top_errors（跟 UVM_WARNING 一致）
                     if level == 'WARNING':
@@ -289,17 +265,6 @@ def parse_log(filepath: str, extra_keywords=None, pass_patterns=None) -> dict:
                     _line_no  = xm.group('line')
                     _location = f"{_file}({_line_no})" if _file else ''
 
-                    _dup_key = (level, _err_id.lower() if _err_id
-                                else _msg[:80].lower())
-                    if _dup_key not in _seen_keys:
-                        _seen_keys.add(_dup_key)
-                        all_errors.append({
-                            'level':       level,
-                            'error_id':    _err_id,
-                            'description': _msg,
-                            'location':    _location,
-                        })
-
                     # WARNING 仅统计，不进 top_errors（跟 UVM_WARNING / VCS Warning 一致）
                     if level == 'WARNING':
                         continue
@@ -321,16 +286,6 @@ def parse_log(filepath: str, extra_keywords=None, pass_patterns=None) -> dict:
                 level = sm.group('level').upper()
                 description = sm.group('msg').strip()
                 statistics[level] = statistics.get(level, 0) + 1
-
-                _dup_key = (level, description[:80].lower())
-                if _dup_key not in _seen_keys:
-                    _seen_keys.add(_dup_key)
-                    all_errors.append({
-                        'level':       level,
-                        'error_id':    '',
-                        'description': description,
-                        'location':    '',
-                    })
 
                 # SVA_WARNING 仅统计；SVA_ERROR/SVA_FATAL 进入 top_errors 并影响最终状态
                 if level == 'SVA_WARNING':
@@ -356,17 +311,6 @@ def parse_log(filepath: str, extra_keywords=None, pass_patterns=None) -> dict:
                     description = mg.group(3).strip()
                     statistics[level] = statistics.get(level, 0) + 1
 
-                    _dup_key = (level, _err_id.lower() if _err_id
-                                else description[:80].lower())
-                    if _dup_key not in _seen_keys:
-                        _seen_keys.add(_dup_key)
-                        all_errors.append({
-                            'level':       level,
-                            'error_id':    _err_id,
-                            'description': description,
-                            'location':    '',
-                        })
-
                     if len(top_errors) < TOP_N:
                         pending = {
                             'level':       level,
@@ -384,6 +328,18 @@ def parse_log(filepath: str, extra_keywords=None, pass_patterns=None) -> dict:
                 pending['description'] + ' ' + ' '.join(cont_lines)
             ).strip()
         top_errors.append(pending)
+
+    # 跨文件去重只使用本日志的首个非 WARNING 错误；WARNING 不进入去重列表。
+    if top_errors:
+        first = top_errors[0]
+        all_errors = [{
+            'level':       first.get('level', ''),
+            'error_id':    first.get('error_id', ''),
+            'description': first.get('description', ''),
+            'location':    first.get('location', ''),
+        }]
+    else:
+        all_errors = []
 
     # pass/fail 判断
     # 非 WARNING 类型的计数若任意 > 0 则视为有错误

@@ -186,17 +186,30 @@ class TestParseLog:
         assert entry['description'].startswith('wait tr_cycle_num')
         assert 'com_driver.sv(283)' in entry['location']
 
-    def test_all_errors_deduplication(self, tmp_path):
+    def test_all_errors_keeps_only_first_non_warning_error(self, tmp_path):
         content = (
-            "UVM_ERROR /tb/dut.sv(1) @ 1ns: uvm_test_top [DUP_ERR] first occurrence\n"
-            "UVM_ERROR /tb/dut.sv(2) @ 2ns: uvm_test_top [DUP_ERR] second occurrence\n"
+            "UVM_WARNING /tb/dut.sv(0) @ 0ns: uvm_test_top [WARN_ONLY] warning ignored for dedup\n"
+            "UVM_ERROR /tb/dut.sv(1) @ 1ns: uvm_test_top [FIRST_ERR] first error\n"
+            "UVM_ERROR /tb/dut.sv(2) @ 2ns: uvm_test_top [SECOND_ERR] second error\n"
         )
-        log_file = tmp_path / 'dup.log'
+        log_file = tmp_path / 'first_error.log'
         log_file.write_text(content, encoding='utf-8')
         result = parse_log(str(log_file))
-        dup_errors = [e for e in result['all_errors'] if e['error_id'] == 'DUP_ERR']
-        assert len(dup_errors) == 1  # 去重后只有1条
-        assert result['statistics']['UVM_ERROR'] == 2  # 统计仍为2
+
+        assert result['statistics']['UVM_WARNING'] == 1
+        assert result['statistics']['UVM_ERROR'] == 2
+        assert [e['error_id'] for e in result['top_errors']] == ['FIRST_ERR', 'SECOND_ERR']
+        assert [e['error_id'] for e in result['all_errors']] == ['FIRST_ERR']
+
+    def test_all_errors_empty_for_warning_only_log(self, tmp_path):
+        content = "UVM_WARNING /tb/dut.sv(0) @ 0ns: uvm_test_top [WARN_ONLY] warning only\n"
+        log_file = tmp_path / 'warning_only.log'
+        log_file.write_text(content, encoding='utf-8')
+        result = parse_log(str(log_file))
+
+        assert result['statistics']['UVM_WARNING'] == 1
+        assert result['top_errors'] == []
+        assert result['all_errors'] == []
 
     def test_extra_keywords(self, tmp_path):
         content = "ERROR: custom error message\nFATAL: fatal message\n"
@@ -347,10 +360,9 @@ class TestParseLog:
         assert 'VPI-CT-NS' in ids
         assert 'DPI-UED' in ids
         assert 'SE-LMHW' in ids
-        # DBGACC_REG 在 all_errors 但不在 top_errors（WARNING 不进 top）
-        warning_ids = {e['error_id'] for e in result['all_errors']
-                       if e['level'] == 'WARNING'}
-        assert 'DBGACC_REG' in warning_ids
+        # WARNING 不进 top_errors，也不进入跨日志去重 all_errors
+        assert result['statistics']['WARNING'] == 1
+        assert all(e['level'] != 'WARNING' for e in result['all_errors'])
 
     def test_vcs_continuation_indented(self, tmp_path):
         # VCS 续行使用 2-space 缩进（chipyard#914 实证）
@@ -453,10 +465,9 @@ class TestParseLog:
         log_file.write_text(line, encoding='utf-8')
         result = parse_log(str(log_file))  # 不传 extra_keywords
         assert result['statistics']['WARNING'] == 1
-        # WARNING 不进 top_errors（跟 UVM / VCS 一致），all_errors 仍记录
-        warn_entries = [e for e in result['all_errors'] if e['level'] == 'WARNING']
-        assert len(warn_entries) == 1
-        assert warn_entries[0]['error_id'] == 'DSEM2009'
+        # WARNING 不进 top_errors，也不进入跨日志去重 all_errors
+        assert result['top_errors'] == []
+        assert result['all_errors'] == []
 
     def test_xcelium_severity_SE_double_char(self, tmp_path):
         # 关键回归：*SE (Severe Error) 必须能被识别（不止单字符 severity）
