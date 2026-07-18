@@ -59,8 +59,8 @@ bash scripts/publish_git.sh "commit message"
 
 1. Python 编译检查。
 2. 全量测试：`python3 -m pytest -q -s`。
-3. `git add -A` 并提交当前修改。
-4. 基于新 commit 生成 Linux 发布包，并校验发布包不含 `.git`、`tests`、`dist`、`*.exe`、`*.log`、密钥和缓存。
+3. 生成 Linux 发布包，并校验发布包不含 `.git`、`tests`、`dist`、`*.exe`、`*.log`、密钥和缓存。
+4. `git add -A`，提交当前修改和发布包。
 5. 推送当前分支到 `origin`。
 
-也就是说，后续“上传 git”必须同时完成测试和 Linux 发布包生成。
+也就是说，后续“上传 git”必须同时完成测试、Linux 发布包生成，并把最新发布包一起提交。

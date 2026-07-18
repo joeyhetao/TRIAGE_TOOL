@@ -33,12 +33,7 @@ echo "[2/5] Test suite"
 python3 -m pytest -q -s
 
 cd "$ROOT_DIR"
-echo "[3/5] Commit changes"
-git add -A
-git commit -m "$COMMIT_MSG"
-COMMIT="$(git rev-parse --short HEAD)"
-
-echo "[4/5] Build and verify Linux release package"
+echo "[3/5] Build and verify Linux release package"
 bash scripts/build_linux_release.sh
 ARCHIVE="$(ls -1t release/TRIAGE_TOOL-linux-*.tar.gz | head -1)"
 if tar tzf "$ARCHIVE" | grep -E '(^|/)(\.git|tests|dist|__pycache__|\.pytest_cache|uploads|reports)(/|$)|\.exe$|\.log$|\.secret_key$|llm_config\.json$|sim\.log$'; then
@@ -47,6 +42,11 @@ if tar tzf "$ARCHIVE" | grep -E '(^|/)(\.git|tests|dist|__pycache__|\.pytest_cac
 fi
 SIZE="$(du -h "$ARCHIVE" | awk '{print $1}')"
 echo "[OK] Release package: $ARCHIVE ($SIZE)"
+
+echo "[4/5] Commit changes and release package"
+git add -A
+git commit -m "$COMMIT_MSG"
+COMMIT="$(git rev-parse --short HEAD)"
 
 echo "[5/5] Push"
 git push "$REMOTE" "$BRANCH"

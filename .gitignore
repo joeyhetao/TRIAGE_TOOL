@@ -16,7 +16,8 @@ htmlcov/
 # Build and release artifacts
 build/
 dist/
-release/
+release/*
+!release/TRIAGE_TOOL-linux-*.tar.gz
 *.spec
 *.spec.bak
 
