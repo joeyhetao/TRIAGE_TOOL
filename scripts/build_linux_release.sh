@@ -23,9 +23,11 @@ STAGE="$(mktemp -d)"
 PKG_ROOT="$STAGE/TRIAGE_TOOL"
 PKG_TOOL="$PKG_ROOT/log_analysis/triage_tool"
 OUT_FILE="$OUT_DIR/TRIAGE_TOOL-linux-$VERSION.tar.gz"
+OUT_TMP="$OUT_FILE.tmp.$$"
 
 cleanup() {
   rm -rf "$STAGE"
+  rm -f "$OUT_TMP"
 }
 trap cleanup EXIT
 
@@ -44,8 +46,10 @@ done
 find "$PKG_ROOT"   \( -name '__pycache__' -o -name '.pytest_cache' \) -type d -prune -exec rm -rf {} +
 find "$PKG_ROOT"   \( -name '*.pyc' -o -name '*.pyo' -o -name '*.log' -o -name '*.tmp' -o -name '.secret_key' -o -name 'llm_config.json' \)   -type f -delete
 
-rm -f "$OUT_FILE"
-tar -C "$STAGE" -czf "$OUT_FILE" TRIAGE_TOOL
+rm -f "$OUT_FILE" "$OUT_TMP"
+tar -C "$STAGE" -czf "$OUT_TMP" TRIAGE_TOOL
+mv "$OUT_TMP" "$OUT_FILE"
+find "$OUT_DIR" -maxdepth 1 -type f -name 'TRIAGE_TOOL-linux-*.tar.gz' ! -name "$(basename "$OUT_FILE")" -delete
 
 SIZE="$(du -h "$OUT_FILE" | awk '{print $1}')"
 echo "[OK] Built $OUT_FILE ($SIZE)"
