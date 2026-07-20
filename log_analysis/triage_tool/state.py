@@ -13,6 +13,7 @@ import time
 import uuid
 import threading
 import getpass
+import re
 from pathlib import Path
 from flask import session
 
@@ -158,9 +159,19 @@ def _normalize_error_level(level) -> str:
     return str(level or '').strip().upper()
 
 
-def _dedup_description_signature(description, limit: int = 160) -> str:
+_SV_NUMBER_RE = re.compile(r"(?<![A-Za-z_])[-+]?(?:\d+)?'s?[bodh][0-9a-f_xz?]+", re.IGNORECASE)
+_HEX_NUMBER_RE = re.compile(r"(?<![A-Za-z_])[-+]?0x[0-9a-f_]+", re.IGNORECASE)
+_DECIMAL_NUMBER_RE = re.compile(r"(?<![A-Za-z_])[-+]?\d[\d_]*(?:\.\d[\d_]*)?")
+
+
+def _dedup_description_signature(description, limit=None) -> str:
     normalized = ' '.join(str(description or '').split()).lower()
-    return normalized[:limit]
+    normalized = _SV_NUMBER_RE.sub('<num>', normalized)
+    normalized = _HEX_NUMBER_RE.sub('<num>', normalized)
+    normalized = _DECIMAL_NUMBER_RE.sub('<num>', normalized)
+    if limit is not None:
+        return normalized[:limit]
+    return normalized
 
 
 def _unique_errors_by_level(results: list) -> dict:
@@ -173,18 +184,24 @@ def _unique_errors_by_level(results: list) -> dict:
             if not lvl:
                 continue
             eid = str(err.get('error_id', '') or '').strip()
+            loc = str(err.get('location', '') or '').strip()
             desc = str(err.get('description', '') or '')
             desc_sig = _dedup_description_signature(desc)
+
+            key_parts = [lvl]
             if eid:
-                key = (lvl, eid.lower(), desc_sig)
-            else:
-                key = (lvl, desc_sig)
+                key_parts.append(eid.lower())
+            if loc:
+                key_parts.append(loc.lower())
+            key_parts.append(desc_sig)
+            key = tuple(key_parts)
+
             entry = entries_by_key.get(key)
             if entry is None:
                 entry = {
                     'error_id':    eid,
                     'description': desc,
-                    'location':    err.get('location', ''),
+                    'location':    loc,
                     'files':       [],
                 }
                 entries_by_key[key] = entry

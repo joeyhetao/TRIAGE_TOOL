@@ -52,7 +52,7 @@ class TestResultRoute:
             sess['sid'] = sid
         state._set_results(sid, results, state.DB_DEFAULT)
 
-    def test_unique_error_count_and_list_share_same_source(self, client):
+    def test_unique_error_count_and_list_split_by_source_location(self, client):
         results = [
             {
                 'file': 'case_a.log',
@@ -84,16 +84,16 @@ class TestResultRoute:
         ]
         self._seed_results(client, results)
 
-        assert state._unique_error_counts(results)['UVM_ERROR'] == 2
+        assert state._unique_error_counts(results)['UVM_ERROR'] == 3
         resp = client.get('/errors?level=UVM_ERROR')
 
         assert resp.status_code == 200
-        assert '共 2 条唯一错误'.encode('utf-8') in resp.data
+        assert '\u5171 3 \u6761\u552f\u4e00\u9519\u8bef'.encode('utf-8') in resp.data
         assert b'FIRST_ERR' in resp.data
         assert b'SECOND_ERR' in resp.data
         assert b'case_a.log' in resp.data
         assert b'case_b.log' in resp.data
-        assert '出现在 <b>2</b> 个文件'.encode('utf-8') in resp.data
+        assert '\u51fa\u73b0\u5728 <b>1</b> \u4e2a\u6587\u4ef6'.encode('utf-8') in resp.data
 
     def test_same_error_id_with_different_first_error_descriptions_split(self, client):
         results = [
