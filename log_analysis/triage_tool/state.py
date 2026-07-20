@@ -158,6 +158,11 @@ def _normalize_error_level(level) -> str:
     return str(level or '').strip().upper()
 
 
+def _dedup_description_signature(description, limit: int = 160) -> str:
+    normalized = ' '.join(str(description or '').split()).lower()
+    return normalized[:limit]
+
+
 def _unique_errors_by_level(results: list) -> dict:
     entries_by_key = {}
     grouped = {}
@@ -169,8 +174,11 @@ def _unique_errors_by_level(results: list) -> dict:
                 continue
             eid = str(err.get('error_id', '') or '').strip()
             desc = str(err.get('description', '') or '')
-            key_id = eid.lower() if eid else desc[:80].lower()
-            key = (lvl, key_id)
+            desc_sig = _dedup_description_signature(desc)
+            if eid:
+                key = (lvl, eid.lower(), desc_sig)
+            else:
+                key = (lvl, desc_sig)
             entry = entries_by_key.get(key)
             if entry is None:
                 entry = {

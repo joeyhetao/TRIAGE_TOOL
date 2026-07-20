@@ -68,7 +68,7 @@ class TestResultRoute:
                 'all_errors': [{
                     'level': 'UVM_ERROR',
                     'error_id': 'FIRST_ERR',
-                    'description': 'same failure in another case',
+                    'description': 'first failure',
                     'location': '/tb/b.sv(2)',
                 }],
             },
@@ -94,6 +94,43 @@ class TestResultRoute:
         assert b'case_a.log' in resp.data
         assert b'case_b.log' in resp.data
         assert '出现在 <b>2</b> 个文件'.encode('utf-8') in resp.data
+
+    def test_same_error_id_with_different_first_error_descriptions_split(self, client):
+        results = [
+            {
+                'file': 'compare_fail.log',
+                'all_errors': [{
+                    'level': 'UVM_ERROR',
+                    'error_id': 'rpe_checker',
+                    'description': 'COMPARE_FAIL sth aeoq, AEQ polling mode mismatch',
+                    'location': '/tb/rpe_checker.sv(6083)',
+                }],
+            },
+            {
+                'file': 'axi_write.log',
+                'all_errors': [{
+                    'level': 'UVM_ERROR',
+                    'error_id': 'rpe_checker',
+                    'description': 'axi_write 10th cqe_of_cq, but rm not gen this cqe',
+                    'location': '/tb/rpe_checker.sv(5478)',
+                }],
+            },
+        ]
+        self._seed_results(client, results, sid='dedup-same-id-different-desc')
+
+        grouped = state._unique_errors_by_level(results)['UVM_ERROR']
+        assert state._unique_error_counts(results)['UVM_ERROR'] == 2
+        assert len(grouped) == 2
+        assert grouped[0]['files'] == ['compare_fail.log']
+        assert grouped[1]['files'] == ['axi_write.log']
+
+        resp = client.get('/errors?level=UVM_ERROR')
+
+        assert resp.status_code == 200
+        assert b'COMPARE_FAIL' in resp.data
+        assert b'axi_write' in resp.data
+        assert b'compare_fail.log' in resp.data
+        assert b'axi_write.log' in resp.data
 
     def test_unique_error_level_is_normalized(self, client):
         results = [{
