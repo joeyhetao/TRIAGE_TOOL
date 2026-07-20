@@ -2,6 +2,7 @@
 """Flask API 端点集成测试（使用 Flask test client）。"""
 import json
 import pytest
+import state
 
 
 class TestIndexRoute:
@@ -45,6 +46,79 @@ class TestResultRoute:
     def test_result_no_session(self, client):
         resp = client.get('/result')
         assert resp.status_code == 200  # 无结果时仍返回200，显示空列表
+
+    def _seed_results(self, client, results, sid='dedup-route-test'):
+        with client.session_transaction() as sess:
+            sess['sid'] = sid
+        state._set_results(sid, results, state.DB_DEFAULT)
+
+    def test_unique_error_count_and_list_share_same_source(self, client):
+        results = [
+            {
+                'file': 'case_a.log',
+                'all_errors': [{
+                    'level': 'UVM_ERROR',
+                    'error_id': 'FIRST_ERR',
+                    'description': 'first failure',
+                    'location': '/tb/a.sv(1)',
+                }],
+            },
+            {
+                'file': 'case_b.log',
+                'all_errors': [{
+                    'level': 'UVM_ERROR',
+                    'error_id': 'FIRST_ERR',
+                    'description': 'same failure in another case',
+                    'location': '/tb/b.sv(2)',
+                }],
+            },
+            {
+                'file': 'case_c.log',
+                'all_errors': [{
+                    'level': 'UVM_ERROR',
+                    'error_id': 'SECOND_ERR',
+                    'description': 'second unique failure',
+                    'location': '/tb/c.sv(3)',
+                }],
+            },
+        ]
+        self._seed_results(client, results)
+
+        assert state._unique_error_counts(results)['UVM_ERROR'] == 2
+        resp = client.get('/errors?level=UVM_ERROR')
+
+        assert resp.status_code == 200
+        assert '共 2 条唯一错误'.encode('utf-8') in resp.data
+        assert b'FIRST_ERR' in resp.data
+        assert b'SECOND_ERR' in resp.data
+        assert b'case_a.log' in resp.data
+        assert b'case_b.log' in resp.data
+        assert '出现在 <b>2</b> 个文件'.encode('utf-8') in resp.data
+
+    def test_unique_error_level_is_normalized(self, client):
+        results = [{
+            'file': 'case_norm.log',
+            'all_errors': [{
+                'level': ' uvm_error ',
+                'error_id': 'NORM_ERR',
+                'description': 'normalized level failure',
+                'location': '/tb/norm.sv(4)',
+            }],
+        }]
+        self._seed_results(client, results, sid='dedup-normalized-test')
+
+        assert state._unique_error_counts(results)['UVM_ERROR'] == 1
+        resp = client.get('/errors?level=%20uvm_error%20')
+
+        assert resp.status_code == 200
+        assert '共 1 条唯一错误'.encode('utf-8') in resp.data
+        assert b'NORM_ERR' in resp.data
+
+    def test_errors_empty_session_reports_expired_result(self, client):
+        resp = client.get('/errors?level=UVM_ERROR')
+
+        assert resp.status_code == 200
+        assert '分析结果已过期或服务已重启，请重新分析'.encode('utf-8') in resp.data
 
 
 class TestKBRoutes:

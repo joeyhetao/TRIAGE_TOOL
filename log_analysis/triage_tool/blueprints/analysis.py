@@ -254,30 +254,15 @@ def result():
 def errors_view():
     sid = state._sid()
     results, _ = state._get_results(sid)
-    level = request.args.get('level', '').upper()
+    level = request.args.get('level', '').strip().upper()
     if not level:
         return redirect('/result')
 
-    seen = {}
-    for r in results:
-        for err in r.get('all_errors', []):
-            if err.get('level') != level:
-                continue
-            eid = err.get('error_id', '').strip()
-            key = eid.lower() if eid else err.get('description', '')[:80].lower()
-            if key not in seen:
-                seen[key] = {
-                    'error_id':    eid,
-                    'description': err.get('description', ''),
-                    'location':    err.get('location', ''),
-                    'files':       [],
-                }
-            fname = r.get('file', '')
-            if fname not in seen[key]['files']:
-                seen[key]['files'].append(fname)
-
-    errors = sorted(seen.values(), key=lambda e: -len(e['files']))
-    return render_template('errors.html', errors=errors, level=level)
+    grouped_errors = state._unique_errors_by_level(results)
+    errors = grouped_errors.get(level, [])
+    results_missing = not bool(results)
+    return render_template('errors.html', errors=errors, level=level,
+                           results_missing=results_missing)
 
 
 @analysis_bp.route('/view_log')

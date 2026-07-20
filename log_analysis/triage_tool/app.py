@@ -7,12 +7,14 @@ from urllib.parse import quote as _url_quote
 from flask import Flask, render_template
 
 # ── Linux 终端编码修正 ────────────────────────────────────
-if hasattr(sys.stdout, 'buffer'):
-    sys.stdout = io.TextIOWrapper(
-        sys.stdout.buffer, encoding='utf-8', errors='replace')
-if hasattr(sys.stderr, 'buffer'):
-    sys.stderr = io.TextIOWrapper(
-        sys.stderr.buffer, encoding='utf-8', errors='replace')
+# pytest 的 capture 对象被 TextIOWrapper 接管后会提前关闭，导致 API 测试 teardown 失败。
+if 'pytest' not in sys.modules:
+    if hasattr(sys.stdout, 'buffer'):
+        sys.stdout = io.TextIOWrapper(
+            sys.stdout.buffer, encoding='utf-8', errors='replace')
+    if hasattr(sys.stderr, 'buffer'):
+        sys.stderr = io.TextIOWrapper(
+            sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 import state
 from core import llm_client

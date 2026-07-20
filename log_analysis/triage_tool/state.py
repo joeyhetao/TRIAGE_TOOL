@@ -154,22 +154,46 @@ def _valid_levels() -> set:
             'SVA_ERROR', 'SVA_FATAL', 'SVA_WARNING'} | set(EXTRA_PATTERNS)
 
 
-def _unique_error_counts(results: list) -> dict:
-    """跨所有文件对每个出错日志的首个非 WARNING 错误去重，返回各级别唯一错误数。"""
-    seen   = set()
-    counts = {}
+def _normalize_error_level(level) -> str:
+    return str(level or '').strip().upper()
+
+
+def _unique_errors_by_level(results: list) -> dict:
+    entries_by_key = {}
+    grouped = {}
     for r in results:
+        fname = r.get('file', '')
         for err in r.get('all_errors', []):
-            lvl = err.get('level', '')
-            eid = err.get('error_id', '').lower()
-            key = (lvl, eid if eid else err.get('description', '')[:80].lower())
-            if key not in seen:
-                seen.add(key)
-                counts[lvl] = counts.get(lvl, 0) + 1
+            lvl = _normalize_error_level(err.get('level', ''))
+            if not lvl:
+                continue
+            eid = str(err.get('error_id', '') or '').strip()
+            desc = str(err.get('description', '') or '')
+            key_id = eid.lower() if eid else desc[:80].lower()
+            key = (lvl, key_id)
+            entry = entries_by_key.get(key)
+            if entry is None:
+                entry = {
+                    'error_id':    eid,
+                    'description': desc,
+                    'location':    err.get('location', ''),
+                    'files':       [],
+                }
+                entries_by_key[key] = entry
+                grouped.setdefault(lvl, []).append(entry)
+            if fname and fname not in entry['files']:
+                entry['files'].append(fname)
+    for entries in grouped.values():
+        entries.sort(key=lambda e: -len(e['files']))
+    return grouped
+
+
+def _unique_error_counts(results: list) -> dict:
+    grouped = _unique_errors_by_level(results)
+    counts = {level: len(errors) for level, errors in grouped.items()}
     for k in ('UVM_FATAL', 'UVM_ERROR', 'UVM_WARNING'):
         counts.setdefault(k, 0)
     return counts
-
 
 def _conflict_summary(conflicts: list) -> list:
     """返回冲突条目的摘要字段列表，用于前端展示。"""
