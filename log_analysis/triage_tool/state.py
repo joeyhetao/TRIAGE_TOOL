@@ -45,7 +45,7 @@ MAX_LEN        = 500                         # 表单字段最大字符数
 from core.db_manager import BACKUP_COUNT     # 滚动备份份数（供路由层使用）
 
 # ── 会话存储 ──────────────────────────────────────────────
-_STORE_TTL  = 2 * 3600                       # 2 小时后过期
+_STORE_TTL  = 48 * 3600                      # expire after 48 hours
 _store: dict = {}                            # sid -> {'results', 'db_path', 'file_paths', 'p3_history', 'p3_tokens', 'ts'}
 _store_lock  = threading.Lock()
 
