@@ -48,7 +48,7 @@
       {% endfor %}
     </div>
     {% elif results_missing %}
-    <div class="empty-box">分析结果已过期或服务已重启，请重新分析</div>
+    <div class="empty-box">当前分析结果缓存已过期或程序已重启，请重新分析</div>
     {% else %}
     <div class="empty-box">暂无 {{ level }} 错误记录</div>
     {% endif %}

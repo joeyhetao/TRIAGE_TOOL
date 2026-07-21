@@ -155,7 +155,7 @@ class TestResultRoute:
         resp = client.get('/errors?level=UVM_ERROR')
 
         assert resp.status_code == 200
-        assert '分析结果已过期或服务已重启，请重新分析'.encode('utf-8') in resp.data
+        assert '当前分析结果缓存已过期或程序已重启，请重新分析'.encode('utf-8') in resp.data
 
 
 class TestKBRoutes:
