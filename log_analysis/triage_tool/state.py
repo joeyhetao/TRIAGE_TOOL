@@ -161,13 +161,27 @@ def _normalize_error_level(level) -> str:
 
 _SV_NUMBER_RE = re.compile(r"(?<![A-Za-z_])[-+]?(?:\d+)?'s?[bodh][0-9a-f_xz?]+", re.IGNORECASE)
 _HEX_NUMBER_RE = re.compile(r"(?<![A-Za-z_])[-+]?0x[0-9a-f_]+", re.IGNORECASE)
-_DECIMAL_NUMBER_RE = re.compile(r"(?<![A-Za-z_])[-+]?\d[\d_]*(?:\.\d[\d_]*)?")
+_BARE_HEX_RE = re.compile(
+    r"(?<![A-Za-z0-9_])"
+    r"(?=[0-9a-f_]*[a-f])"
+    r"(?=[0-9a-f_]*(?:\d|_))"
+    r"[0-9a-f_]{2,}"
+    r"(?![A-Za-z0-9_])",
+    re.IGNORECASE,
+)
+_DECIMAL_NUMBER_RE = re.compile(
+    r"(?<![A-Za-z0-9_])"
+    r"[-+]?\d[\d_]*(?:\.\d[\d_]*)?"
+    r"(?=$|[^A-Za-z0-9_]|(?:fs|ps|ns|us|ms|s)\b)",
+    re.IGNORECASE,
+)
 
 
 def _dedup_description_signature(description, limit=None) -> str:
     normalized = ' '.join(str(description or '').split()).lower()
     normalized = _SV_NUMBER_RE.sub('<num>', normalized)
     normalized = _HEX_NUMBER_RE.sub('<num>', normalized)
+    normalized = _BARE_HEX_RE.sub('<num>', normalized)
     normalized = _DECIMAL_NUMBER_RE.sub('<num>', normalized)
     if limit is not None:
         return normalized[:limit]

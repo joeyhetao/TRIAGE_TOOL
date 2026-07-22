@@ -48,6 +48,22 @@ class TestUniqueErrorsByLevel:
             'loop_206082955.log',
         }
 
+    def test_same_location_and_template_ignore_bare_hex_values(self):
+        results = [
+            _result('function_decimal.log', 'ceq of function=187 is full !!!',
+                    location='/share/proj/rpe_rm.sv(5645)', error_id='rpe_rm'),
+            _result('function_hex.log', 'ceq of function=7fc is full !!!',
+                    location='/share/proj/rpe_rm.sv(5645)', error_id='rpe_rm'),
+        ]
+
+        grouped = state._unique_errors_by_level(results)
+
+        assert len(grouped['UVM_ERROR']) == 1
+        assert set(grouped['UVM_ERROR'][0]['files']) == {
+            'function_decimal.log',
+            'function_hex.log',
+        }
+
     def test_same_error_id_but_different_location_splits_groups(self):
         results = [
             _result('a.log', "unpack: calc pkt_len('d70)>packed_data.size('d70):",
@@ -92,3 +108,16 @@ class TestUniqueErrorsByLevel:
         right = "value 16'hab got 'd122, payload 7 at 200ns"
 
         assert state._dedup_description_signature(left) == state._dedup_description_signature(right)
+
+    def test_signature_normalizes_bare_hex_function_values(self):
+        left = 'ceq of function=187 is full !!!'
+        right = 'ceq of function=7fc is full !!!'
+
+        assert state._dedup_description_signature(left) == state._dedup_description_signature(right)
+
+    def test_decimal_signature_does_not_partially_replace_words(self):
+        signature = state._dedup_description_signature('axi_write 10th cqe and id=7fc')
+
+        assert '10th' in signature
+        assert '7fc' not in signature
+        assert 'id=<num>' in signature
