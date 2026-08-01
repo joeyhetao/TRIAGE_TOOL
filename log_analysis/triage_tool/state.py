@@ -202,13 +202,14 @@ def _unique_errors_by_level(results: list) -> dict:
             desc = str(err.get('description', '') or '')
             desc_sig = _dedup_description_signature(desc)
 
-            key_parts = [lvl]
-            if eid:
-                key_parts.append(eid.lower())
-            if loc:
-                key_parts.append(loc.lower())
-            key_parts.append(desc_sig)
-            key = tuple(key_parts)
+            if eid and loc:
+                key = (lvl, eid.lower(), loc.lower())
+            elif eid:
+                key = (lvl, eid.lower(), desc_sig)
+            elif loc:
+                key = (lvl, loc.lower(), desc_sig)
+            else:
+                key = (lvl, desc_sig)
 
             entry = entries_by_key.get(key)
             if entry is None:

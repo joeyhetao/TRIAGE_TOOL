@@ -80,7 +80,7 @@ class TestUniqueErrorsByLevel:
             '/tb/rpe_pkt_base.sv(1131)',
         }
 
-    def test_same_location_but_static_text_diff_splits_groups(self):
+    def test_same_error_id_and_location_ignore_description_differences(self):
         results = [
             _result('a.log', "unpack: calc pkt_len('d70)>packed_data.size('d70):"),
             _result('b.log', "unpack: drop pkt_len('d78)>packed_data.size('d78):"),
@@ -88,7 +88,38 @@ class TestUniqueErrorsByLevel:
 
         grouped = state._unique_errors_by_level(results)
 
-        assert len(grouped['UVM_ERROR']) == 2
+        assert len(grouped['UVM_ERROR']) == 1
+        assert set(grouped['UVM_ERROR'][0]['files']) == {'a.log', 'b.log'}
+
+    def test_same_error_id_and_location_merge_qp_runtime_dump_values(self):
+        results = [
+            _result(
+                'qp_1.log',
+                "|END_OF_QP_CHECK: HCA_LCL_QP<pipe0><HOST0><FUNC'h1e><CHNL'h2><IDX'h53>"
+                ":{ROCE_UD,CONNECT_LPK_1QP} qpc.sq_tx_pi('ha)!=qpc.sq_tx_cur_ci('h1), "
+                "sq may not complete over!",
+                location='/share/proj/rpe_qp.sv(3495)', error_id='rpe_qp',
+            ),
+            _result(
+                'qp_2.log',
+                "|END_OF_QP_CHECK: HCA_LCL_QP<pipe0><HOST0><FUNC'h1e><CHNL'h2><IDX'h53>"
+                ":{ROCE_UD,CONNECT_LPK_2QP} qpc.sq_tx_pi('h9)!=qpc.sq_tx_cur_ci('h0), "
+                "sq may not complete over!",
+                location='/share/proj/rpe_qp.sv(3495)', error_id='rpe_qp',
+            ),
+            _result(
+                'qp_3.log',
+                "|END_OF_QP_CHECK: HCA_LCL_QP<pipe1><HOST0><FUNC'h789><CHNL'h4e><IDX'h171a3>"
+                ":{ROCE_UD,CONNECT_LPK_2QP} qpc.sq_tx_pi('ha)!=qpc.sq_tx_cur_ci('h1), "
+                "sq may not complete over!",
+                location='/share/proj/rpe_qp.sv(3495)', error_id='rpe_qp',
+            ),
+        ]
+
+        grouped = state._unique_errors_by_level(results)
+
+        assert len(grouped['UVM_ERROR']) == 1
+        assert set(grouped['UVM_ERROR'][0]['files']) == {'qp_1.log', 'qp_2.log', 'qp_3.log'}
 
     def test_no_location_old_format_uses_normalized_description(self):
         results = [
