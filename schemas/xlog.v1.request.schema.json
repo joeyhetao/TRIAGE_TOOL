@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "xlog.v1.request.schema.json",
+  "title": "xlog.v1 request envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["api_version", "action"],
+  "properties": {
+    "api_version": {"const": "xlog.v1"},
+    "request_id": {"type": ["string", "null"]},
+    "action": {"enum": ["actions", "schema", "scan"]},
+    "target": {"type": "object"},
+    "args": {"type": "object"},
+    "limits": {"type": "object"}
+  }
+}

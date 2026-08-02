@@ -1,51 +1,31 @@
-# Python caches
+# Python caches and virtual environments
 __pycache__/
 *.py[cod]
 *.so
-
-# Virtual environments
 .venv/
 venv/
 env/
 
-# Test / coverage caches
+# Test and build output
 .pytest_cache/
 .coverage
 htmlcov/
-
-# Build and release artifacts
 build/
 dist/
 release/*
-!release/TRIAGE_TOOL-linux-*.tar.gz
-*.spec
-*.spec.bak
+!release/XLOG-linux-*.tar.gz
 
-# Runtime files
-log_analysis/triage_tool/uploads/
-log_analysis/triage_tool/reports/
-log_analysis/triage_tool/error_db.xlsx.lock
-log_analysis/triage_tool/error_db.bak*.xlsx
-log_analysis/triage_tool/kb_hits.jsonl
-log_analysis/triage_tool/kb_hits_archive.jsonl
-
-# Secrets and per-machine config
-.secret_key
-log_analysis/triage_tool/.secret_key
-log_analysis/triage_tool/llm_config.json
-
-# Logs and temporary files
+# Scan output and local configuration
 *.log
 *.tmp
+*.secret.json
 
-# IDE / editors
+# IDE and OS files
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-
-# OS files
 .DS_Store
 Thumbs.db
 desktop.ini

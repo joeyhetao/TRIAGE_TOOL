@@ -2,7 +2,6 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TOOL_DIR="$ROOT_DIR/log_analysis/triage_tool"
 REMOTE="${GIT_REMOTE:-origin}"
 BRANCH="${GIT_BRANCH:-$(cd "$ROOT_DIR" && git rev-parse --abbrev-ref HEAD)}"
 COMMIT_MSG="${PUBLISH_COMMIT_MSG:-${1:-}}"
@@ -14,29 +13,25 @@ if [ -z "$COMMIT_MSG" ]; then
 fi
 
 cd "$ROOT_DIR"
-
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo "[ERROR] Not inside a git repository: $ROOT_DIR" >&2
   exit 1
 fi
-
 if [ -z "$(git status --porcelain)" ]; then
   echo "[ERROR] No changes to commit." >&2
   exit 1
 fi
 
 echo "[1/5] Compile check"
-cd "$TOOL_DIR"
-python3 -m py_compile app.py state.py core/*.py blueprints/*.py
+python3 -m py_compile src/xlog/*.py
 
 echo "[2/5] Test suite"
-python3 -m pytest -q -s
+PYTHONPATH="$ROOT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m pytest -q
 
-cd "$ROOT_DIR"
 echo "[3/5] Build and verify Linux release package"
 bash scripts/build_linux_release.sh
-ARCHIVE="$(ls -1t release/TRIAGE_TOOL-linux-*.tar.gz | head -1)"
-if tar tzf "$ARCHIVE" | grep -E '(^|/)(\.git|tests|dist|__pycache__|\.pytest_cache|uploads|reports)(/|$)|\.exe$|\.log$|\.secret_key$|llm_config\.json$|sim\.log$'; then
+ARCHIVE="$(ls -1t release/XLOG-linux-*.tar.gz | head -1)"
+if tar tzf "$ARCHIVE" | grep -E '(^|/)(\.git|tests|dist|__pycache__|\.pytest_cache|uploads|reports|blueprints|templates|static)(/|$)|\.exe$|\.log$|\.secret_key$|llm_config\.json$|error_db\.xlsx$|\.whl$'; then
   echo "[ERROR] Forbidden content found in release package: $ARCHIVE" >&2
   exit 1
 fi

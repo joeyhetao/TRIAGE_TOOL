@@ -1,66 +1,96 @@
-# TRIAGE_TOOL
+# xlog
 
-Linux 源码版仿真日志分类分诊工具。
+`xlog` is the regression-log provider for `xregress`. It scans a regression
+directory, extracts simulation errors, keeps the first five non-warning errors
+for every log case, deduplicates first failures, recommends bounded xdebug
+cases, and writes an auditable `xlog_bundle.v1` result.
 
-## 功能
+It is intentionally a CLI/JSON tool. There is no web UI, LLM integration,
+knowledge database, Excel dependency, or single-log upload workflow.
 
-- 批量解析 UVM / VCS / Xcelium / SVA / 自定义关键字日志。
-- 每个日志展示最多 5 条非 warning 错误，首个非 warning 错误用于跨日志去重汇总。
-- 使用 Excel 知识库 `error_db.xlsx` 做错误 ID / 关键词匹配。
-- 支持知识库维护、Excel / HTML 导出、可选 LLM 增强能力。
-
-## 快速启动
-
-```bash
-cd log_analysis/triage_tool
-python3 install_packages.py
-python3 app.py
-```
-
-浏览器访问：
-
-```text
-http://127.0.0.1:5000
-```
-
-局域网访问示例：
+## Quick start
 
 ```bash
-python3 app.py --host 0.0.0.0 --port 8080
+/home/melo.liao/ai_tools/xlog/bin/xlog scan \
+  --root /absolute/path/to/regression \
+  --output /absolute/path/to/run/xlog_bundle.json \
+  --debug-budget 20
 ```
 
-## 生成发布包
+The command prints one `xlog.v1` JSON response to stdout and atomically writes
+the complete bundle to `--output`.
 
-在仓库根目录执行：
+## JSON action
+
+```json
+{
+  "api_version": "xlog.v1",
+  "request_id": "regress-001",
+  "action": "scan",
+  "target": {
+    "regression_root": "/absolute/path/to/regression"
+  },
+  "args": {
+    "output_path": "/absolute/path/to/run/xlog_bundle.json"
+  },
+  "limits": {
+    "max_log_files": 5000,
+    "workers": 8,
+    "debug_budget": 20
+  }
+}
+```
+
+Run it with `bin/xlog --json request.json` or `bin/xlog --json -`. Public
+actions are `actions`, `schema`, and `scan`; use `bin/xlog actions` and
+`bin/xlog schema --action scan --kind request` for machine-readable discovery.
+
+## xdebug recommendation
+
+The bundle contains `debug_recommendation`, a deterministic shortlist of failed
+cases for downstream xdebug. The default budget is 20 failure clusters. Each
+failure cluster also carries its own recommendation record with the selected
+case, alternates, score components, and human-readable reasons.
+
+Every case exposes `simulation_time` with the raw VCS time, unit, normalized
+femtoseconds, and source. xlog uses an explicit simulation-end/report time when
+available; otherwise it uses the largest observed simulation timestamp. CPU,
+wall-clock, elapsed, and real runtime fields are excluded. Within one
+deduplicated failure cluster, xlog selects the candidate with the shortest known
+total simulation time. Cases with unavailable time follow known-time cases and
+then use the stable evidence and seed tie-breakers.
+
+The first-pass recommendation is algorithmic and repeatable. LLMs may be used
+later on xdebug evidence, but not for deciding the initial shortlist.
+
+## Parser configuration
+
+An optional JSON config can set `extra_patterns` and `pass_patterns`:
+
+```json
+{
+  "extra_patterns": ["ERROR", "FATAL", "FAILED"],
+  "pass_patterns": ["JVP TEST PASSED"]
+}
+```
+
+Pass it with `--config /absolute/path/to/parser.json`. Request `args.parser`
+overrides matching config-file fields. The effective result is always recorded
+in the bundle.
+
+## xregress integration
+
+Configure `bin/xlog` as an `xlog_provider`. xregress consumes the generated
+`xlog_bundle.v1`; it must not rescan logs, repeat xlog error clustering, or
+re-rank the xdebug shortlist.
+
+## Development and release
 
 ```bash
+PYTHONPATH=src python3 -m pytest -q
 bash scripts/build_linux_release.sh
+PUBLISH_COMMIT_MSG=Describe-change bash scripts/publish_git.sh
 ```
 
-产物位于：
-
-```text
-release/TRIAGE_TOOL-linux-<version>.tar.gz
-```
-
-发布包只包含 Linux 运行所需源码、模板、静态资源、默认配置、默认知识库、离线 wheels 和部署说明，不包含 `.git`、测试、Windows exe、日志、密钥或开发文档。
-
-详细部署步骤见 `log_analysis/triage_tool/DEPLOYMENT.md`。
-
-## 提交并发布
-
-以后提交/推送代码时统一使用发布脚本：
-
-```bash
-bash scripts/publish_git.sh "commit message"
-```
-
-脚本会按固定顺序执行：
-
-1. Python 编译检查。
-2. 全量测试：`python3 -m pytest -q -s`。
-3. 生成 Linux 发布包，并校验发布包不含 `.git`、`tests`、`dist`、`*.exe`、`*.log`、密钥和缓存。
-4. `git add -A`，提交当前修改和发布包。
-5. 推送当前分支到 `origin`。
-
-也就是说，后续“上传 git”必须同时完成测试、Linux 发布包生成，并把最新发布包一起提交。
+The package requires only Python 3.6+ and the standard library. See `PLAN.md`
+for architecture and extension rules.

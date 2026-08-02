@@ -1,0 +1,13 @@
+{
+  "extra_patterns": [
+    "ERROR",
+    "FATAL",
+    "FAILED",
+    "VIRL_MEM_WARNING",
+    "JVP TEST FAILED",
+    "SVA_ERROR",
+    "SVA_FATAL",
+    "SVA_WARNING"
+  ],
+  "pass_patterns": ["JVP TEST PASSED"]
+}

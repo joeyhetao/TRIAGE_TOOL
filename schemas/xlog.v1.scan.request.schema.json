@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "xlog.v1.scan.request.schema.json",
+  "title": "xlog.v1 scan request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["api_version", "action", "target", "args"],
+  "properties": {
+    "api_version": {"const": "xlog.v1"},
+    "request_id": {"type": ["string", "null"]},
+    "action": {"const": "scan"},
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["regression_root"],
+      "properties": {"regression_root": {"type": "string", "minLength": 1}}
+    },
+    "args": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["output_path"],
+      "properties": {
+        "output_path": {"type": "string", "minLength": 1},
+        "config_path": {"type": "string", "minLength": 1},
+        "parser": {"type": "object"}
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_log_files": {"type": "integer", "minimum": 1},
+        "workers": {"type": "integer", "minimum": 1, "maximum": 64},
+        "debug_budget": {"type": "integer", "minimum": 1}
+      }
+    }
+  }
+}
