@@ -22,7 +22,18 @@
       "properties": {
         "output_path": {"type": "string", "minLength": 1},
         "config_path": {"type": "string", "minLength": 1},
-        "parser": {"type": "object"}
+        "parser": {"type": "object"},
+        "artifacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "log_reference_extraction": {"type": "boolean"},
+            "fsdb_templates": {"type": "array", "items": {"type": "string", "minLength": 1}},
+            "daidir_templates": {"type": "array", "items": {"type": "string", "minLength": 1}},
+            "kdb_templates": {"type": "array", "items": {"type": "string", "minLength": 1}},
+            "run_manifest_templates": {"type": "array", "items": {"type": "string", "minLength": 1}}
+          }
+        }
       }
     },
     "limits": {

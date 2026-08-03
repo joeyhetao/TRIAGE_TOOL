@@ -23,13 +23,23 @@ without reimplementing scanner, clustering, or xdebug recommendation rules.
 
 - A discovered `.log` file is one case. `case_id` is its POSIX path relative to
   the regression root, so equal file names in separate directories stay distinct.
+- Rerun backup logs whose filename ends in `_bk.log` (case-insensitive) are
+  excluded during discovery, before ordering and log-count limits. They never
+  enter parsing, case statistics, first-error clustering, or recommendations.
 - Each case keeps the first five non-warning errors in appearance order.
 - Each case derives `test_id` and `seed` from the log filename. The default rule
   treats a trailing `_<digits>` suffix in the file stem as the seed; unmatched
   names keep the stem as `test_id` and record `seed_parse_status: fallback`.
 - Only the first non-warning error of a failed case contributes to a failure
-  cluster. Its preferred identity is `level + error_id + location`; normalized
-  description is used only when the ID or location is absent.
+  cluster. Its identity is `level + error_id + location + description_template`;
+  dynamic values are normalized but static message changes create a new cluster.
+- Each case publishes a structured primary-error report ID, error type, source
+  location and event time. Each failure cluster publishes a stable SHA-256
+  fingerprint for xregress and xmanager references.
+- Each case publishes deterministic artifact facts for log, FSDB, daidir, KDB
+  and optional xdebug run manifest. Discovery uses explicit log references,
+  same-directory conventions and configured templates only; it never performs a
+  recursive artifact search across the regression.
 - A cluster publishes a deterministic SHA-256 ID, its first sorted member as the
   representative case, member case IDs, the representative real error, and a
   deterministic recommendation record for downstream xdebug selection.
@@ -63,16 +73,20 @@ recommendation path.
   source. Parser priority is an explicit VCS simulation-end/report time, then
   the largest observed simulation timestamp in the log, then `unavailable`.
   CPU, wall-clock, elapsed, and real runtime fields are never simulation time.
+- Recommended debug cases include their artifact snapshot and directly usable
+  xdebug target when FSDB and/or daidir were resolved. Missing or ambiguous
+  artifacts remain structured facts and never change failure classification.
 - `xregress` should consume the recommended primary case first and may use
   alternates if downstream artifacts are missing. Unclustered failures are not
   automatically selected for xdebug.
 
 ## Configuration
 
-Built-in parser defaults preserve the legacy extra-error and PASS markers. An
-optional JSON config supplies `extra_patterns` and `pass_patterns`. Request
-`args.parser` fields override matching config-file fields; omitted fields keep
-their lower-priority values. The bundle records the final effective configuration.
+Built-in defaults preserve the legacy extra-error and PASS markers plus xvp
+artifact naming conventions. An optional JSON config supplies parser fields and
+an `artifacts` object with deterministic path templates. Request `args.parser`
+and `args.artifacts` override matching config-file fields; omitted fields keep
+their lower-priority values. The bundle records both effective configurations.
 
 ## Package Layout
 

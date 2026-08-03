@@ -19,7 +19,8 @@ def test_id_and_location_merge_dynamic_runtime_dumps():
     assert len(clusters) == 1
     assert clusters[0]["case_ids"] == ["a.log", "b.log"]
     assert clusters[0]["representative_case_id"] == "a.log"
-    assert clusters[0]["signature"]["strategy"] == "level_error_id_location"
+    assert clusters[0]["signature"]["strategy"] == "level_error_id_location_description"
+    assert clusters[0]["fingerprint"].startswith("sha256:")
 
 
 def test_location_or_error_id_changes_split_clusters():
@@ -32,11 +33,21 @@ def test_location_or_error_id_changes_split_clusters():
     assert len(clusters) == 3
 
 
+def test_same_id_and_location_with_static_description_change_splits_clusters():
+    cases = [
+        _case("a.log", _error("expected queue to drain")),
+        _case("b.log", _error("unexpected packet order")),
+    ]
+    clusters, _ = build_failure_clusters(cases)
+    assert len(clusters) == 2
+
+
 def test_fallback_signature_normalizes_sv_hex_and_decimal_values():
     assert description_signature("function=187") == description_signature("function=7fc")
     assert description_signature("pkt_len('d70) value=4294967288") == description_signature("pkt_len(32'hff) value=12")
     assert "<num>fc" not in description_signature("function=7fc")
     assert description_signature("10th retry") == "10th retry"
+    assert description_signature("HCA<pipe0><FUNC'h1e><IDX'h53>") == description_signature("HCA<pipe1><FUNC'h789><IDX'h2529>")
 
 
 def test_missing_primary_error_is_reported_as_unclustered_failure():

@@ -9,5 +9,19 @@
     "SVA_FATAL",
     "SVA_WARNING"
   ],
-  "pass_patterns": ["JVP TEST PASSED"]
+  "pass_patterns": ["JVP TEST PASSED"],
+  "artifacts": {
+    "log_reference_extraction": true,
+    "fsdb_templates": [
+      "{log_dir}/{log_stem}.fsdb",
+      "{log_dir}/sim_{test_id}.fsdb",
+      "{log_dir}/sim.fsdb"
+    ],
+    "daidir_templates": [
+      "{log_dir}/simv.daidir",
+      "{regression_root}/simv.daidir"
+    ],
+    "kdb_templates": [],
+    "run_manifest_templates": []
+  }
 }

@@ -70,14 +70,45 @@ def _build_gen_pattern(keywords):
     )
 
 
-def _entry(level, timestamp, error_id, location, description):
+def _entry(level, timestamp, error_id, location, description, error_type=None):
+    event_time = _time_from_text(timestamp, "reported_timestamp")
     return {
         "level": level,
         "timestamp": timestamp,
         "error_id": error_id,
+        "report_id": error_id or None,
+        "error_type": error_type or (level if str(level).upper().startswith("UVM_") else "UNKNOWN"),
         "location": location,
+        "source_location": _source_location(location),
+        "event_time": event_time,
         "description": description,
     }
+
+
+def _source_location(location):
+    text = str(location or "").strip()
+    match = re.match(r"^(?P<path>.*)\((?P<line>\d+)\)$", text)
+    if match:
+        return {
+            "path": os.path.normpath(match.group("path")).replace("\\", "/"),
+            "line": int(match.group("line")),
+            "display": text,
+        }
+    return {"path": None, "line": None, "display": text or None}
+
+
+def _unavailable_event_time():
+    return {
+        "value": None,
+        "unit": None,
+        "normalized_fs": None,
+        "source": "unavailable",
+    }
+
+
+def _time_from_text(value, source):
+    match = _ANY_TIME_PATTERN.search(str(value or ""))
+    return _simulation_time_from_match(match, source) if match else _unavailable_event_time()
 
 
 def _unavailable_simulation_time():
@@ -136,6 +167,15 @@ def _explicit_end_simulation_time(line, in_vcs_report):
 
 def _time_is_larger(candidate, current):
     return current is None or Decimal(candidate["normalized_fs"]) > Decimal(current["normalized_fs"])
+
+
+def _xcelium_error_type(tool):
+    name = str(tool or "").lower()
+    if name in ("xmvlog", "xmverilog", "ncvlog"):
+        return "COMPILE_ERROR"
+    if name in ("xmelab", "ncelab"):
+        return "ELABORATION_ERROR"
+    return "SIM_RUNTIME_ERROR"
 
 
 def _error_result(filepath, error_msg):
@@ -238,7 +278,7 @@ def parse_log(filepath, extra_keywords=None, pass_patterns=None):
                 if level:
                     statistics[level] = statistics.get(level, 0) + 1
                     if level != "WARNING" and len(top_errors) < TOP_ERRORS_PER_CASE:
-                        pending = _entry(level, "", vcs_match.group("id").strip(), "", vcs_match.group("msg").strip())
+                        pending = _entry(level, "", vcs_match.group("id").strip(), "", vcs_match.group("msg").strip(), "UNKNOWN")
                         continuation_lines = []
                 continue
 
@@ -251,7 +291,7 @@ def parse_log(filepath, extra_keywords=None, pass_patterns=None):
                         source_file = xcelium_match.group("file")
                         source_line = xcelium_match.group("line")
                         location = "%s(%s)" % (source_file, source_line) if source_file else ""
-                        pending = _entry(level, "", xcelium_match.group("id").strip(), location, xcelium_match.group("msg").strip())
+                        pending = _entry(level, "", xcelium_match.group("id").strip(), location, xcelium_match.group("msg").strip(), _xcelium_error_type(xcelium_match.group("tool")))
                         continuation_lines = []
                 continue
 
@@ -260,7 +300,7 @@ def parse_log(filepath, extra_keywords=None, pass_patterns=None):
                 level = sva_match.group("level").upper()
                 statistics[level] = statistics.get(level, 0) + 1
                 if level != "SVA_WARNING" and len(top_errors) < TOP_ERRORS_PER_CASE:
-                    pending = _entry(level, "", "", "", sva_match.group("msg").strip())
+                    pending = _entry(level, "", "", "", sva_match.group("msg").strip(), "SV_ASSERTION")
                     continuation_lines = []
                 continue
 
@@ -270,7 +310,7 @@ def parse_log(filepath, extra_keywords=None, pass_patterns=None):
                     level = general_match.group(1).upper()
                     statistics[level] = statistics.get(level, 0) + 1
                     if "WARNING" not in level and len(top_errors) < TOP_ERRORS_PER_CASE:
-                        pending = _entry(level, "", (general_match.group(2) or "").strip(), "", general_match.group(3).strip())
+                        pending = _entry(level, "", (general_match.group(2) or "").strip(), "", general_match.group(3).strip(), "UNKNOWN")
                         continuation_lines = []
 
     if pending is not None:

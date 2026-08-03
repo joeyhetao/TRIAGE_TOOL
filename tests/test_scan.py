@@ -24,6 +24,9 @@ def test_scan_writes_bundle_with_sorted_cases_clusters_and_recommendation(tmp_pa
     (root / "a").mkdir()
     (root / "z" / "case_9.log").write_text("UVM_ERROR /tb/rpe.sv(9) @ 10ns: reporter [QP] ceq of function=7fc is full\n", encoding="utf-8")
     (root / "a" / "case_2.log").write_text("UVM_ERROR /tb/rpe.sv(9) @ 100ns: reporter [QP] ceq of function=187 is full\n", encoding="utf-8")
+    (root / "z" / "case_9.fsdb").write_bytes(b"fsdb")
+    (root / "z" / "simv.daidir").mkdir()
+    (root / "z" / "simv.daidir" / "kdb").mkdir()
     (root / "a" / "pass.LOG").write_text("JVP TEST PASSED\n", encoding="utf-8")
     output = tmp_path / "run" / "xlog_bundle.json"
 
@@ -42,9 +45,14 @@ def test_scan_writes_bundle_with_sorted_cases_clusters_and_recommendation(tmp_pa
     assert bundle["failure_clusters"][0]["representative_case_id"] == "a/case_2.log"
     assert bundle["failure_clusters"][0]["recommendation"]["recommended_case_id"] == "z/case_9.log"
     assert bundle["failure_clusters"][0]["recommendation"]["recommended_simulation_time"]["value"] == "10"
+    assert bundle["failure_clusters"][0]["recommendation"]["recommended_artifacts"]["xdebug_target"] == {
+        "fsdb": str(root / "z" / "case_9.fsdb"),
+        "daidir": str(root / "z" / "simv.daidir"),
+    }
     assert bundle["debug_recommendation"]["policy_version"] == "deterministic.v2"
     assert bundle["debug_recommendation"]["debug_budget"] == 20
     assert bundle["debug_recommendation"]["recommended_debug_cases"][0]["case_id"] == "z/case_9.log"
+    assert bundle["debug_recommendation"]["recommended_debug_cases"][0]["artifacts"]["status"] == "complete"
 
 
 def test_scan_debug_budget_limits_recommendations(tmp_path):
@@ -90,6 +98,30 @@ def test_scan_records_effective_config_and_inline_override(tmp_path):
     assert bundle["parser_config"]["extra_patterns"] == ["PROJECT_FATAL"]
     assert bundle["parser_config"]["pass_patterns"] == []
     assert bundle["cases"][0]["primary_error"]["error_id"] == "P1"
+
+
+def test_scan_excludes_rerun_backup_logs(tmp_path):
+    root = tmp_path / "regression"
+    root.mkdir()
+    (root / "tc_map_active_and_rst_mqp_with_running_967836231.log").write_text(
+        "UVM_ERROR /tb/dut.sv(1) @ 1ns: reporter [PRIMARY] primary failure\n",
+        encoding="utf-8",
+    )
+    (root / "tc_map_active_and_rst_mqp_with_running_967836231_bk.LOG").write_text(
+        "UVM_ERROR /tb/dut.sv(2) @ 2ns: reporter [BACKUP] rerun backup failure\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "bundle.json"
+
+    response = dispatch_request(_request(root, output, limits={"workers": 1}))
+    bundle = json.loads(output.read_text(encoding="utf-8"))
+
+    assert response["ok"] is True
+    assert bundle["summary"]["cases_total"] == 1
+    assert [case["case_id"] for case in bundle["cases"]] == [
+        "tc_map_active_and_rst_mqp_with_running_967836231.log"
+    ]
+    assert bundle["cases"][0]["primary_error"]["error_id"] == "PRIMARY"
 
 
 def test_scan_rejects_empty_root_and_unknown_fields(tmp_path):

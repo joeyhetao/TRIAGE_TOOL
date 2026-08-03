@@ -156,6 +156,7 @@ def build_debug_recommendation(clusters, cases, debug_budget):
             "selected": False,
             "recommended_case_id": default_candidate.get("case_id") if default_candidate else None,
             "recommended_simulation_time": default_candidate.get("simulation_time") if default_candidate else None,
+            "recommended_artifacts": default_candidate.get("artifacts") if default_candidate else None,
             "alternate_case_ids": [case.get("case_id") for case in profile["candidates"][1:]],
             "score_components": profile["score"],
             "reasons": _reasons(profile["score"], default_candidate),
@@ -173,6 +174,7 @@ def build_debug_recommendation(clusters, cases, debug_budget):
             "selected": True,
             "recommended_case_id": candidate.get("case_id"),
             "recommended_simulation_time": candidate.get("simulation_time"),
+            "recommended_artifacts": candidate.get("artifacts"),
             "alternate_case_ids": alternates,
             "reasons": _reasons(profile["score"], candidate),
         })
@@ -186,6 +188,7 @@ def build_debug_recommendation(clusters, cases, debug_budget):
             "seed": candidate.get("seed"),
             "seed_parse_status": candidate.get("seed_parse_status"),
             "simulation_time": candidate.get("simulation_time"),
+            "artifacts": candidate.get("artifacts"),
             "score_components": profile["score"],
             "reasons": cluster["recommendation"]["reasons"],
         })

@@ -30,6 +30,8 @@ def test_parser_merges_continuation_and_excludes_warning(tmp_path):
     assert result["statistics"]["UVM_WARNING"] == 1
     assert len(result["top_errors"]) == 1
     assert result["top_errors"][0]["description"] == "first line expected=0x1 actual=0x2"
+    assert result["top_errors"][0]["event_time"]["normalized_fs"] == "2000000"
+    assert result["top_errors"][0]["source_location"] == {"path": "/tb/dut.sv", "line": 2, "display": "/tb/dut.sv(2)"}
 
 
 def test_parser_supports_vcs_xcelium_sva_and_custom_patterns(tmp_path):
@@ -47,6 +49,8 @@ def test_parser_supports_vcs_xcelium_sva_and_custom_patterns(tmp_path):
     )
     assert [error["error_id"] for error in result["top_errors"]] == ["CNST-CIF", "DSEM2009", "", "MY_ID"]
     assert result["top_errors"][1]["location"] == "dut.sv(17)"
+    assert result["top_errors"][1]["error_type"] == "SIM_RUNTIME_ERROR"
+    assert result["top_errors"][2]["error_type"] == "SV_ASSERTION"
     assert result["status"] == "fail"
 
 

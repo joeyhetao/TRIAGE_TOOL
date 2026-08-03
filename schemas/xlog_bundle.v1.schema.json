@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["api_version", "generated_at", "source", "parser_config", "summary", "cases", "failure_clusters", "debug_recommendation", "unclustered_failure_case_ids"],
   "definitions": {
-    "simulation_time": {
+    "time_info": {
       "type": "object",
       "additionalProperties": false,
       "required": ["value", "unit", "normalized_fs", "source"],
@@ -14,7 +14,126 @@
         "value": {"type": ["string", "null"]},
         "unit": {"type": ["string", "null"], "enum": ["fs", "ps", "ns", "us", "ms", "s", null]},
         "normalized_fs": {"type": ["string", "null"]},
-        "source": {"type": "string", "enum": ["explicit_end_marker", "max_observed_timestamp", "unavailable"]}
+        "source": {"type": "string", "enum": ["explicit_end_marker", "max_observed_timestamp", "reported_timestamp", "unavailable"]}
+      }
+    },
+    "source_location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "line", "display"],
+      "properties": {
+        "path": {"type": ["string", "null"]},
+        "line": {"type": ["integer", "null"], "minimum": 1},
+        "display": {"type": ["string", "null"]}
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "level": {"type": "string"},
+        "error_id": {"type": "string"},
+        "report_id": {"type": ["string", "null"]},
+        "error_type": {"type": "string", "enum": ["UVM_WARNING", "UVM_ERROR", "UVM_FATAL", "SV_ASSERTION", "COMPILE_ERROR", "ELABORATION_ERROR", "SIM_RUNTIME_ERROR", "LICENSE_ERROR", "ENVIRONMENT_ERROR", "TOOL_ERROR", "UNKNOWN"]},
+        "location": {"type": "string"},
+        "source_location": {"$ref": "#/definitions/source_location"},
+        "timestamp": {"type": "string"},
+        "event_time": {"$ref": "#/definitions/time_info"},
+        "description": {"type": "string"}
+      }
+    },
+    "artifact_candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "source", "priority", "expected_kind", "exists", "readable", "file_type", "size_bytes", "state", "reason"],
+      "properties": {
+        "path": {"type": "string"},
+        "source": {"type": "string"},
+        "priority": {"type": "integer", "minimum": 0},
+        "expected_kind": {"type": "string", "enum": ["file", "directory"]},
+        "exists": {"type": "boolean"},
+        "readable": {"type": "boolean"},
+        "file_type": {"type": "string", "enum": ["file", "directory", "other", "missing"]},
+        "size_bytes": {"type": ["integer", "null"], "minimum": 0},
+        "state": {"type": "string", "enum": ["available", "missing", "unreadable", "wrong_type"]},
+        "reason": {"type": ["string", "null"]}
+      }
+    },
+    "artifact_resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "selected", "candidates", "reason"],
+      "properties": {
+        "status": {"type": "string", "enum": ["resolved", "ambiguous", "unavailable"]},
+        "selected": {"anyOf": [{"$ref": "#/definitions/artifact_candidate"}, {"type": "null"}]},
+        "candidates": {"type": "array", "items": {"$ref": "#/definitions/artifact_candidate"}},
+        "reason": {"type": ["string", "null"]}
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "case_directory", "resources", "xdebug_target"],
+      "properties": {
+        "status": {"type": "string", "enum": ["complete", "partial", "ambiguous", "unavailable"]},
+        "case_directory": {"type": "string"},
+        "resources": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["log", "fsdb", "daidir", "kdb", "run_manifest"],
+          "properties": {
+            "log": {"$ref": "#/definitions/artifact_resource"},
+            "fsdb": {"$ref": "#/definitions/artifact_resource"},
+            "daidir": {"$ref": "#/definitions/artifact_resource"},
+            "kdb": {"$ref": "#/definitions/artifact_resource"},
+            "run_manifest": {"$ref": "#/definitions/artifact_resource"}
+          }
+        },
+        "xdebug_target": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "fsdb": {"type": "string", "minLength": 1},
+            "daidir": {"type": "string", "minLength": 1},
+            "run_manifest": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "case_id": {"type": "string"},
+        "relative_log_path": {"type": "string"},
+        "log_path": {"type": "string"},
+        "working_directory": {"type": "string"},
+        "status": {"type": "string", "enum": ["pass", "fail", "error"]},
+        "test_id": {"type": "string"},
+        "seed": {"type": ["integer", "null"]},
+        "seed_parse_status": {"type": "string", "enum": ["parsed", "fallback"]},
+        "simulation_time": {"$ref": "#/definitions/time_info"},
+        "primary_error": {"anyOf": [{"$ref": "#/definitions/error"}, {"type": "null"}]},
+        "top_errors": {"type": "array", "items": {"$ref": "#/definitions/error"}},
+        "artifacts": {"$ref": "#/definitions/artifacts"}
+      }
+    },
+    "failure_cluster": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "cluster_id": {"type": "string"},
+        "fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "representative_case_id": {"type": "string"},
+        "representative_error": {"$ref": "#/definitions/error"},
+        "case_ids": {"type": "array", "items": {"type": "string"}},
+        "recommendation": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "recommended_artifacts": {"anyOf": [{"$ref": "#/definitions/artifacts"}, {"type": "null"}]}
+          }
+        }
       }
     }
   },
@@ -23,33 +142,10 @@
     "generated_at": {"type": "string"},
     "source": {"type": "object"},
     "parser_config": {"type": "object"},
+    "artifact_config": {"type": "object"},
     "summary": {"type": "object"},
-    "cases": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true,
-        "properties": {
-          "simulation_time": {"$ref": "#/definitions/simulation_time"}
-        }
-      }
-    },
-    "failure_clusters": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": true,
-        "properties": {
-          "recommendation": {
-            "type": "object",
-            "additionalProperties": true,
-            "properties": {
-              "recommended_simulation_time": {"$ref": "#/definitions/simulation_time"}
-            }
-          }
-        }
-      }
-    },
+    "cases": {"type": "array", "items": {"$ref": "#/definitions/case"}},
+    "failure_clusters": {"type": "array", "items": {"$ref": "#/definitions/failure_cluster"}},
     "debug_recommendation": {
       "type": "object",
       "additionalProperties": true,
@@ -59,16 +155,7 @@
         "debug_budget": {"type": "integer", "minimum": 1},
         "eligible_cluster_count": {"type": "integer", "minimum": 0},
         "selected_cluster_count": {"type": "integer", "minimum": 0},
-        "recommended_debug_cases": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": true,
-            "properties": {
-              "simulation_time": {"$ref": "#/definitions/simulation_time"}
-            }
-          }
-        },
+        "recommended_debug_cases": {"type": "array", "items": {"type": "object", "additionalProperties": true, "properties": {"artifacts": {"anyOf": [{"$ref": "#/definitions/artifacts"}, {"type": "null"}]}}}},
         "deferred_cluster_ids": {"type": "array", "items": {"type": "string"}}
       }
     },

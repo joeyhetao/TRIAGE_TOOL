@@ -60,17 +60,27 @@ deduplicated failure cluster, xlog selects the candidate with the shortest known
 total simulation time. Cases with unavailable time follow known-time cases and
 then use the stable evidence and seed tie-breakers.
 
+Every case also exposes `artifacts`: resolved or unavailable log, FSDB, daidir,
+KDB and optional run-manifest facts, candidate paths and a ready-to-use
+`xdebug_target`. Discovery only uses paths written in the log, standard
+same-directory names and explicit configuration templates, so xlog does not
+accidentally assign another testcase's wave to the current case.
+
 The first-pass recommendation is algorithmic and repeatable. LLMs may be used
 later on xdebug evidence, but not for deciding the initial shortlist.
 
 ## Parser configuration
 
-An optional JSON config can set `extra_patterns` and `pass_patterns`:
+An optional JSON config can set parser patterns and artifact templates:
 
 ```json
 {
   "extra_patterns": ["ERROR", "FATAL", "FAILED"],
-  "pass_patterns": ["JVP TEST PASSED"]
+  "pass_patterns": ["JVP TEST PASSED"],
+  "artifacts": {
+    "fsdb_templates": ["{log_dir}/{log_stem}.fsdb"],
+    "daidir_templates": ["{log_dir}/simv.daidir"]
+  }
 }
 ```
 

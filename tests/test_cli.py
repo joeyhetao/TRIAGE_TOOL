@@ -18,6 +18,8 @@ def test_actions_and_schema_shortcuts_emit_json(capsys):
     request_schema = json.loads(capsys.readouterr().out)
     assert request_schema["data"]["schema"]["required"] == ["api_version", "action", "target", "args"]
     assert "debug_budget" in request_schema["data"]["schema"]["properties"]["limits"]["properties"]
+    assert "artifacts" in request_schema["data"]["schema"]["properties"]["args"]["properties"]
+    assert "test_id" in schema["data"]["schema"]["definitions"]["case"]["properties"]
 
 
 def test_scan_shortcut_and_json_error_are_machine_readable(tmp_path, capsys):

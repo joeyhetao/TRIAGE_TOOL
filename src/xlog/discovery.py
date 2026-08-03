@@ -12,7 +12,13 @@ def discover_log_files(regression_root, max_log_files):
     try:
         resolved_root = root.resolve()
         files = sorted(
-            (path.resolve() for path in resolved_root.rglob("*") if path.is_file() and path.suffix.lower() == ".log"),
+            (
+                path.resolve()
+                for path in resolved_root.rglob("*")
+                if path.is_file()
+                and path.suffix.lower() == ".log"
+                and not path.name.lower().endswith("_bk.log")
+            ),
             key=lambda path: path.relative_to(resolved_root).as_posix(),
         )
     except OSError as exc:

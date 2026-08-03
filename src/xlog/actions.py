@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 from .bundle import scan_regression, write_bundle
-from .config import DEFAULT_MAX_LOG_FILES, load_effective_parser_config
+from .config import DEFAULT_MAX_LOG_FILES, load_effective_scan_config
 from .errors import XlogError
 from .recommendation import DEFAULT_DEBUG_BUDGET
 
@@ -109,7 +109,7 @@ def _handle_scan(request):
     regression_root = _nonempty_string(target.get("regression_root"), "target.regression_root")
 
     args = _mapping(request.get("args", {}), "args")
-    _strict_fields(args, {"output_path", "config_path", "parser"}, "args")
+    _strict_fields(args, {"output_path", "config_path", "parser", "artifacts"}, "args")
     output_path = _nonempty_string(args.get("output_path"), "args.output_path")
     config_path = args.get("config_path")
     if config_path is not None:
@@ -121,8 +121,8 @@ def _handle_scan(request):
     workers = _positive_int(limits.get("workers"), "limits.workers", None, maximum=64)
     debug_budget = _positive_int(limits.get("debug_budget"), "limits.debug_budget", DEFAULT_DEBUG_BUDGET)
 
-    parser_config = load_effective_parser_config(config_path, args.get("parser"))
-    bundle = scan_regression(regression_root, parser_config, max_log_files, workers, debug_budget)
+    scan_config = load_effective_scan_config(config_path, args.get("parser"), args.get("artifacts"))
+    bundle = scan_regression(regression_root, scan_config["parser"], scan_config["artifacts"], max_log_files, workers, debug_budget)
     resolved_path, sha256 = write_bundle(bundle, output_path)
     return _success_response(
         request,

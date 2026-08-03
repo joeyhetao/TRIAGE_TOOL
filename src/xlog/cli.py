@@ -31,7 +31,7 @@ def _build_parser():
     scan = commands.add_parser("scan", help="Scan a regression directory.")
     scan.add_argument("--root", required=True, help="Absolute regression root directory.")
     scan.add_argument("--output", required=True, help="Absolute xlog_bundle.v1 JSON path.")
-    scan.add_argument("--config", help="Optional absolute parser JSON configuration path.")
+    scan.add_argument("--config", help="Optional absolute scan JSON configuration path for parser and artifact rules.")
     scan.add_argument("--max-log-files", type=int)
     scan.add_argument("--workers", type=int)
     scan.add_argument("--debug-budget", type=int, help="Maximum failure clusters recommended for downstream xdebug. Default: 20.")

@@ -5,6 +5,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .artifacts import build_case_artifacts
 from .dedup import build_failure_clusters
 from .discovery import discover_log_files
 from .errors import XlogError
@@ -16,7 +17,7 @@ def _utc_now():
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def scan_regression(regression_root, parser_config, max_log_files, workers, debug_budget):
+def scan_regression(regression_root, parser_config, artifact_config, max_log_files, workers, debug_budget):
     root, log_files = discover_log_files(regression_root, max_log_files)
     parsed = parse_logs([str(path) for path in log_files], extra_keywords=parser_config["extra_patterns"], pass_patterns=parser_config["pass_patterns"], workers=workers)
     cases = []
@@ -26,6 +27,7 @@ def scan_regression(regression_root, parser_config, max_log_files, workers, debu
             "case_id": relative_path,
             "relative_log_path": relative_path,
             "log_path": str(path),
+            "working_directory": str(path.parent),
             "status": result["status"],
             "pass_found": bool(result.get("pass_found")),
             "statistics": result.get("statistics", {}),
@@ -34,6 +36,7 @@ def scan_regression(regression_root, parser_config, max_log_files, workers, debu
             "simulation_time": result.get("simulation_time"),
         }
         annotate_case_identity(case)
+        case["artifacts"] = build_case_artifacts(path, root, case, artifact_config)
         if result.get("parse_error"):
             case["parse_error"] = result["parse_error"]
         cases.append(case)
@@ -47,12 +50,17 @@ def scan_regression(regression_root, parser_config, max_log_files, workers, debu
         "failure_clusters": len(clusters),
         "debug_recommended_cases": debug_recommendation["selected_cluster_count"],
         "unclustered_failure_cases": len(unclustered),
+        "artifact_cases_complete": sum(case["artifacts"]["status"] == "complete" for case in cases),
+        "artifact_cases_partial": sum(case["artifacts"]["status"] == "partial" for case in cases),
+        "artifact_cases_unavailable": sum(case["artifacts"]["status"] == "unavailable" for case in cases),
+        "artifact_cases_ambiguous": sum(case["artifacts"]["status"] == "ambiguous" for case in cases),
     }
     return {
         "api_version": "xlog_bundle.v1",
         "generated_at": _utc_now(),
         "source": {"regression_root": str(root), "log_suffix": ".log", "max_log_files": max_log_files, "workers": workers},
         "parser_config": parser_config,
+        "artifact_config": artifact_config,
         "summary": summary,
         "cases": cases,
         "failure_clusters": clusters,
