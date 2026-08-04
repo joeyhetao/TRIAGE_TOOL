@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TOOL_DIR="$ROOT_DIR/log_analysis/triage_tool"
 
+bash "$ROOT_DIR/scripts/verify_triage_scope.sh"
+
 if [ ! -f "$TOOL_DIR/app.py" ]; then
   echo "[ERROR] Cannot find triage tool source at $TOOL_DIR" >&2
   exit 1

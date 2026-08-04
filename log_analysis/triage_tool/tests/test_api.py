@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 """Flask API 端点集成测试（使用 Flask test client）。"""
 import json
+from pathlib import Path
+
 import pytest
 import state
+from blueprints import analysis
 
 
 class TestIndexRoute:
@@ -32,6 +35,53 @@ class TestAnalyzeRoute:
             'log_paths': '',
         })
         assert resp.status_code == 400
+
+
+class TestRerunBackupFiltering:
+    def test_backup_log_suffix_is_case_insensitive(self):
+        assert analysis._is_rerun_backup_log('case_bk.log')
+        assert analysis._is_rerun_backup_log('case_bk.LOG')
+        assert not analysis._is_rerun_backup_log('case.log')
+        assert not analysis._is_rerun_backup_log('case_bk.log.old')
+
+    def test_path_mode_does_not_parse_rerun_backup_logs(self, tmp_path, monkeypatch):
+        root = tmp_path / 'logs'
+        root.mkdir()
+        primary = root / 'tc_map_active.log'
+        backup = root / 'tc_map_active_bk.log'
+        primary.write_text('JVP TEST PASSED\n', encoding='utf-8')
+        backup.write_text('UVM_ERROR /tb/dut.sv(1) @ 1ns: reporter [BACKUP] ignored\n', encoding='utf-8')
+
+        parsed_paths = []
+
+        def fake_parse_logs(paths, **kwargs):
+            parsed_paths.extend(paths)
+            return [{
+                'file': Path(paths[0]).name,
+                'filepath': paths[0],
+                'statistics': {},
+                'status': 'pass',
+                'top_errors': [],
+                'all_errors': [],
+            }]
+
+        monkeypatch.setattr(analysis, 'parse_logs', fake_parse_logs)
+        monkeypatch.setattr(analysis, 'run_match', lambda results, db_path, progress_cb=None: results)
+        monkeypatch.setattr(analysis.state, '_set_results', lambda *args, **kwargs: None)
+        job_id = 'bk-filter-test'
+        job = {
+            'phase': 'pending', 'parse_done': 0, 'match_done': 0, 'total': 0,
+            'pct': 0, 'logs': [], 'redirect': None, 'error': None, 'ts': 0,
+        }
+        monkeypatch.setitem(state._jobs, job_id, job)
+
+        analysis._run_analysis(
+            job_id, 'test-sid', [str(root / '*.log')], str(tmp_path / 'db.xlsx'), True)
+
+        assert parsed_paths == [str(primary.resolve())]
+        assert job['total'] == 1
+        assert job['phase'] == 'done'
+        assert any('已剔除 1 个 rerun 备份日志' in line for line in job['logs'])
 
 
 class TestProgressStatusRoute:

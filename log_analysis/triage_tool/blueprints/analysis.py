@@ -20,6 +20,11 @@ from core.db_manager import ensure_db
 analysis_bp = Blueprint('analysis', __name__)
 
 
+def _is_rerun_backup_log(filename: str) -> bool:
+    """判断是否为 rerun 生成的备份日志；这类日志不应进入分析。"""
+    return Path(filename).name.lower().endswith('_bk.log')
+
+
 def _run_analysis(job_id: str, sid: str, input_data: list,
                   db_path: str, path_mode: bool) -> None:
     """后台线程：解析日志 → 知识库匹配 → 存储结果，全程更新 state._jobs[job_id]。
@@ -37,16 +42,26 @@ def _run_analysis(job_id: str, sid: str, input_data: list,
         job['logs'].append(f"[{_ts()}] 正在扫描文件...")
         saved_paths = []
         not_found   = []
+        skipped_backups = []
         for pattern in input_data:
             matched   = sorted(_glob.glob(pattern, recursive=True))
-            log_files = [str(Path(fp).resolve())
-                         for fp in matched
-                         if Path(fp).is_file()
-                         and Path(fp).suffix.lower() == '.log']
+            log_files = []
+            for fp in matched:
+                path = Path(fp)
+                if not path.is_file() or path.suffix.lower() != '.log':
+                    continue
+                if _is_rerun_backup_log(path.name):
+                    skipped_backups.append(str(path))
+                    continue
+                log_files.append(str(path.resolve()))
             if log_files:
                 saved_paths.extend(log_files)
             else:
                 not_found.append(pattern)
+
+        if skipped_backups:
+            job['logs'].append(
+                f"[{_ts()}] 已剔除 {len(skipped_backups)} 个 rerun 备份日志（*_bk.log）")
 
         if not saved_paths:
             job['phase'] = 'error'
@@ -152,8 +167,12 @@ def analyze():
             return jsonify({'error': '请至少上传一个日志文件'}), 400
 
         saved_paths = []
+        skipped_backup_uploads = 0
         for f in files:
             if f.filename == '':
+                continue
+            if _is_rerun_backup_log(f.filename):
+                skipped_backup_uploads += 1
                 continue
             f.seek(0, 2)
             file_size = f.tell()
@@ -166,6 +185,8 @@ def analyze():
             saved_paths.append(str(save_path))
 
         if not saved_paths:
+            if skipped_backup_uploads:
+                return jsonify({'error': '上传文件均为 rerun 备份日志（*_bk.log），已全部剔除'}), 400
             return jsonify({'error': '文件保存失败'}), 500
         input_data = saved_paths
 
@@ -178,7 +199,8 @@ def analyze():
             'match_done':  0,
             'total':       0 if path_mode else len(input_data),
             'pct':         0,
-            'logs':        [],
+            'logs':        ([f'已剔除 {skipped_backup_uploads} 个 rerun 备份日志（*_bk.log）']
+                            if not path_mode and skipped_backup_uploads else []),
             'redirect':    None,
             'error':       None,
             'ts':          time.time(),

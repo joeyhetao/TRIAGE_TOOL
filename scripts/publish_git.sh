@@ -4,7 +4,16 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TOOL_DIR="$ROOT_DIR/log_analysis/triage_tool"
 REMOTE="${GIT_REMOTE:-origin}"
-BRANCH="${GIT_BRANCH:-$(cd "$ROOT_DIR" && git rev-parse --abbrev-ref HEAD)}"
+CURRENT_BRANCH="$(cd "$ROOT_DIR" && git rev-parse --abbrev-ref HEAD)"
+if [ "$CURRENT_BRANCH" = "HEAD" ]; then
+  echo "[ERROR] Detached HEAD cannot be published." >&2
+  exit 1
+fi
+if [ -n "${GIT_BRANCH:-}" ] && [ "$GIT_BRANCH" != "$CURRENT_BRANCH" ]; then
+  echo "[ERROR] GIT_BRANCH must match the checked-out branch: $CURRENT_BRANCH" >&2
+  exit 1
+fi
+BRANCH="$CURRENT_BRANCH"
 COMMIT_MSG="${PUBLISH_COMMIT_MSG:-${1:-}}"
 
 if [ -z "$COMMIT_MSG" ]; then
@@ -14,6 +23,8 @@ if [ -z "$COMMIT_MSG" ]; then
 fi
 
 cd "$ROOT_DIR"
+
+bash "$ROOT_DIR/scripts/verify_triage_scope.sh" "$REMOTE" "$BRANCH"
 
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo "[ERROR] Not inside a git repository: $ROOT_DIR" >&2

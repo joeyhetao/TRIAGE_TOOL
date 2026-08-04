@@ -6,6 +6,7 @@ Linux 源码版仿真日志分类分诊工具。
 
 - 批量解析 UVM / VCS / Xcelium / SVA / 自定义关键字日志。
 - 每个日志展示最多 5 条非 warning 错误，首个非 warning 错误用于跨日志去重汇总。
+- 路径扫描和上传均自动剔除 rerun 备份日志（文件名以 `_bk.log` 结尾，大小写不敏感）。
 - 使用 Excel 知识库 `error_db.xlsx` 做错误 ID / 关键词匹配。
 - 支持知识库维护、Excel / HTML 导出、可选 LLM 增强能力。
 
