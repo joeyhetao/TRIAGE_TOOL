@@ -80,6 +80,13 @@ recommendation path.
   alternates if downstream artifacts are missing. Unclustered failures are not
   automatically selected for xdebug.
 
+The recommendation is a deterministic default triage priority, not an xregress
+investigation permission limit. An xregress agent may explicitly elevate a
+deferred or unclustered case only when it records the existing xlog case/cluster
+and artifact references, a reason, and a separate exploration debug budget.
+That override must not change xlog clustering, ranking, artifact facts, or this
+recommendation algorithm.
+
 ## Configuration
 
 Built-in defaults preserve the legacy extra-error and PASS markers plus xvp
