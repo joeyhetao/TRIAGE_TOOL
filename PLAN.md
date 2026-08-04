@@ -19,6 +19,17 @@ contains one JSON action response only; diagnostics use stderr. The complete
 scan result is atomically written as `xlog_bundle.v1` so xregress can import it
 without reimplementing scanner, clustering, or xdebug recommendation rules.
 
+### Bundle schema evolution
+
+`xlog_bundle.v1` keeps its envelope major version while carrying a compatible
+`schema_revision`. A missing revision means legacy `1.0`. Minor revisions may add
+structured fields, but consumers must preserve and accept older valid bundles.
+`description_template` and `description_template_status` are introduced in revision
+`1.1`: a new producer must emit either a normalized template with `present`, or
+`unavailable` with a reason. A 1.0 bundle may omit both; its consumer must represent
+the template as unknown rather than reconstructing it from log text. Making a
+non-empty template universally mandatory would require a future major bundle version.
+
 ## Data Ownership
 
 - A discovered `.log` file is one case. `case_id` is its POSIX path relative to
@@ -34,8 +45,14 @@ without reimplementing scanner, clustering, or xdebug recommendation rules.
   cluster. Its identity is `level + error_id + location + description_template`;
   dynamic values are normalized but static message changes create a new cluster.
 - Each case publishes a structured primary-error report ID, error type, source
-  location and event time. Each failure cluster publishes a stable SHA-256
-  fingerprint for xregress and xmanager references.
+  location and event time. Revision 1.1 additionally publishes normalized
+  `description_template` plus `description_template_status`; each failure cluster
+  publishes the same template/status and a stable SHA-256 fingerprint for xregress
+  and xmanager references.
+- `description_template` is a versioned structured fact, never an xlog inference.
+  Its absence in a valid legacy bundle remains unknown. xlog never labels an error
+  private/public, chooses a wiki routing target, or names a public ErrorDomain;
+  those are LLM knowledge choices.
 - Each case publishes deterministic artifact facts for log, FSDB, daidir, KDB
   and optional xdebug run manifest. Discovery uses explicit log references,
   same-directory conventions and configured templates only; it never performs a

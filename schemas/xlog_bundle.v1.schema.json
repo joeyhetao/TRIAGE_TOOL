@@ -39,7 +39,9 @@
         "source_location": {"$ref": "#/definitions/source_location"},
         "timestamp": {"type": "string"},
         "event_time": {"$ref": "#/definitions/time_info"},
-        "description": {"type": "string"}
+        "description": {"type": "string"},
+        "description_template": {"type": "string"},
+        "description_template_status": {"type": "string", "enum": ["present", "unavailable"]}
       }
     },
     "artifact_candidate": {
@@ -139,6 +141,7 @@
   },
   "properties": {
     "api_version": {"const": "xlog_bundle.v1"},
+    "schema_revision": {"type": "string", "pattern": "^1\\.[0-9]+$"},
     "generated_at": {"type": "string"},
     "source": {"type": "object"},
     "parser_config": {"type": "object"},

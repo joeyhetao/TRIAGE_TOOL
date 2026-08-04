@@ -5,6 +5,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from .config import TOP_ERRORS_PER_CASE
+from .dedup import description_signature
 
 
 _UVM_PATTERN = re.compile(
@@ -317,6 +318,10 @@ def parse_log(filepath, extra_keywords=None, pass_patterns=None):
         if continuation_lines:
             pending["description"] = (pending["description"] + " " + " ".join(continuation_lines)).strip()
         top_errors.append(pending)
+
+    for error in top_errors:
+        error["description_template"] = description_signature(error.get("description", ""))
+        error["description_template_status"] = "present"
 
     primary_error = top_errors[0] if top_errors else None
     non_warning = {key: value for key, value in statistics.items() if "WARNING" not in key.upper()}

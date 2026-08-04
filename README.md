@@ -20,6 +20,11 @@ knowledge database, Excel dependency, or single-log upload workflow.
 The command prints one `xlog.v1` JSON response to stdout and atomically writes
 the complete bundle to `--output`.
 
+New scans emit `xlog_bundle.v1` with `schema_revision: "1.1"`. Primary errors and
+failure-cluster signatures contain a normalized `description_template` and a
+`description_template_status`. Consumers must still accept legacy 1.0 bundles that
+omit those fields and represent the template as unknown rather than reconstructing it.
+
 ## JSON action
 
 ```json

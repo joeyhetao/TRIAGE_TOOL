@@ -31,12 +31,19 @@ def _location_identity(error):
     return str(error.get("location", "") or "").strip()
 
 
+def _description_template(error):
+    template = error.get("description_template")
+    if error.get("description_template_status") == "present" and isinstance(template, str):
+        return template
+    return description_signature(error.get("description", ""))
+
+
 def _identity_parts(error):
     return {
         "level": str(error.get("level", "") or "").strip().upper(),
         "error_id": str(error.get("error_id", "") or "").strip().lower(),
         "location": _location_identity(error).lower(),
-        "description_template": description_signature(error.get("description", "")),
+        "description_template": _description_template(error),
     }
 
 

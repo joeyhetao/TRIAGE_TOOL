@@ -57,6 +57,7 @@ def scan_regression(regression_root, parser_config, artifact_config, max_log_fil
     }
     return {
         "api_version": "xlog_bundle.v1",
+        "schema_revision": "1.1",
         "generated_at": _utc_now(),
         "source": {"regression_root": str(root), "log_suffix": ".log", "max_log_files": max_log_files, "workers": workers},
         "parser_config": parser_config,
