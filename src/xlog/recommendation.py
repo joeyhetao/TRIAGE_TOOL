@@ -140,6 +140,19 @@ def _choose_candidate(candidates):
     return candidates[0] if candidates else None
 
 
+def _case_reference(case):
+    if not case:
+        return None
+    return {
+        "case_id": case.get("case_id"),
+        "test_id": case.get("test_id"),
+        "seed": case.get("seed"),
+        "seed_parse_status": case.get("seed_parse_status"),
+        "simulation_time": case.get("simulation_time"),
+        "artifacts": case.get("artifacts"),
+    }
+
+
 def build_debug_recommendation(clusters, cases, debug_budget):
     cases_by_id = {case["case_id"]: case for case in cases}
     profiled = [(cluster, _cluster_profile(cluster, cases_by_id)) for cluster in clusters]
@@ -158,6 +171,8 @@ def build_debug_recommendation(clusters, cases, debug_budget):
             "recommended_simulation_time": default_candidate.get("simulation_time") if default_candidate else None,
             "recommended_artifacts": default_candidate.get("artifacts") if default_candidate else None,
             "alternate_case_ids": [case.get("case_id") for case in profile["candidates"][1:]],
+            "recommended_case": _case_reference(default_candidate),
+            "alternate_cases": [_case_reference(case) for case in profile["candidates"][1:]],
             "score_components": profile["score"],
             "reasons": _reasons(profile["score"], default_candidate),
         }
@@ -176,6 +191,12 @@ def build_debug_recommendation(clusters, cases, debug_budget):
             "recommended_simulation_time": candidate.get("simulation_time"),
             "recommended_artifacts": candidate.get("artifacts"),
             "alternate_case_ids": alternates,
+            "recommended_case": _case_reference(candidate),
+            "alternate_cases": [
+                _case_reference(case)
+                for case in profile["candidates"]
+                if case.get("case_id") != candidate.get("case_id")
+            ],
             "reasons": _reasons(profile["score"], candidate),
         })
         selected_cluster_ids.add(cluster.get("cluster_id"))
@@ -189,6 +210,11 @@ def build_debug_recommendation(clusters, cases, debug_budget):
             "seed_parse_status": candidate.get("seed_parse_status"),
             "simulation_time": candidate.get("simulation_time"),
             "artifacts": candidate.get("artifacts"),
+            "alternate_cases": [
+                _case_reference(case)
+                for case in profile["candidates"]
+                if case.get("case_id") != candidate.get("case_id")
+            ],
             "score_components": profile["score"],
             "reasons": cluster["recommendation"]["reasons"],
         })

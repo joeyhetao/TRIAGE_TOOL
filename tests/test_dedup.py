@@ -9,6 +9,24 @@ def _error(description, error_id="rpe_qp", location="rpe_qp.sv(3495)"):
     return {"level": "UVM_ERROR", "error_id": error_id, "location": location, "description": description}
 
 
+def _public_error(description, location):
+    return {
+        "level": "ERROR",
+        "error_id": "SE",
+        "location": location,
+        "description": description,
+        "error_type": "TOOL_ERROR",
+        "producer": "vcs",
+        "scope_hint": {
+            "candidate": "shared_public",
+            "status": "non_authoritative",
+            "producer": "vcs",
+            "basis": ["producer=vcs", "error_type=TOOL_ERROR"],
+            "final_routing": "undetermined",
+        },
+    }
+
+
 def test_id_and_location_merge_dynamic_runtime_dumps():
     cases = [
         _case("b.log", _error("END_OF_QP_CHECK HCA_LCL_QP<pipe0><FUNC'h1e> qpc.sq_tx_pi('h9)!=qpc.sq_tx_cur_ci('h0)")),
@@ -40,6 +58,18 @@ def test_same_id_and_location_with_static_description_change_splits_clusters():
     ]
     clusters, _ = build_failure_clusters(cases)
     assert len(clusters) == 2
+
+
+def test_public_error_ignores_path_line_and_dynamic_values_for_clustering():
+    cases = [
+        _case("a.log", _public_error("/project/a/rtl/dut.sv:17 token 123 failed", "/project/a/rtl/dut.sv(17)")),
+        _case("b.log", _public_error("/project/b/rtl/dut.sv:912 token 987 failed", "/project/b/rtl/dut.sv(912)")),
+    ]
+    clusters, _ = build_failure_clusters(cases)
+    assert len(clusters) == 1
+    assert clusters[0]["signature"]["strategy"] == "level_error_id_producer_portable_description"
+    assert clusters[0]["signature"]["description_template"] == "<path> token <num> failed"
+    assert clusters[0]["signature"]["scope_hint"]["final_routing"] == "undetermined"
 
 
 def test_fallback_signature_normalizes_sv_hex_and_decimal_values():

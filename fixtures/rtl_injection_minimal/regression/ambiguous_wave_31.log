@@ -1,0 +1,3 @@
+UVM_ERROR /project/env/injection_check.sv(300) @ 3ns: reporter [INJECT_AMBIGUOUS] injected signal did not toggle
+Wave candidate: ambiguous_a.fsdb
+Wave candidate: ambiguous_b.fsdb

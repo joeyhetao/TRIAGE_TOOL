@@ -5,7 +5,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from .config import TOP_ERRORS_PER_CASE
-from .dedup import description_signature
+from .dedup import description_signature, portable_error_signature, scope_hint
 
 
 _UVM_PATTERN = re.compile(
@@ -71,7 +71,7 @@ def _build_gen_pattern(keywords):
     )
 
 
-def _entry(level, timestamp, error_id, location, description, error_type=None):
+def _entry(level, timestamp, error_id, location, description, error_type=None, producer="unknown"):
     event_time = _time_from_text(timestamp, "reported_timestamp")
     return {
         "level": level,
@@ -79,6 +79,7 @@ def _entry(level, timestamp, error_id, location, description, error_type=None):
         "error_id": error_id,
         "report_id": error_id or None,
         "error_type": error_type or (level if str(level).upper().startswith("UVM_") else "UNKNOWN"),
+        "producer": producer,
         "location": location,
         "source_location": _source_location(location),
         "event_time": event_time,
@@ -269,6 +270,7 @@ def parse_log(filepath, extra_keywords=None, pass_patterns=None):
                         match.group("id").strip(),
                         location,
                         match.group("msg").strip(),
+                        producer="uvm",
                     )
                     continuation_lines = []
                 continue
@@ -279,7 +281,15 @@ def parse_log(filepath, extra_keywords=None, pass_patterns=None):
                 if level:
                     statistics[level] = statistics.get(level, 0) + 1
                     if level != "WARNING" and len(top_errors) < TOP_ERRORS_PER_CASE:
-                        pending = _entry(level, "", vcs_match.group("id").strip(), "", vcs_match.group("msg").strip(), "UNKNOWN")
+                        pending = _entry(
+                            level,
+                            "",
+                            vcs_match.group("id").strip(),
+                            "",
+                            vcs_match.group("msg").strip(),
+                            "TOOL_ERROR",
+                            "vcs",
+                        )
                         continuation_lines = []
                 continue
 
@@ -292,7 +302,15 @@ def parse_log(filepath, extra_keywords=None, pass_patterns=None):
                         source_file = xcelium_match.group("file")
                         source_line = xcelium_match.group("line")
                         location = "%s(%s)" % (source_file, source_line) if source_file else ""
-                        pending = _entry(level, "", xcelium_match.group("id").strip(), location, xcelium_match.group("msg").strip(), _xcelium_error_type(xcelium_match.group("tool")))
+                        pending = _entry(
+                            level,
+                            "",
+                            xcelium_match.group("id").strip(),
+                            location,
+                            xcelium_match.group("msg").strip(),
+                            _xcelium_error_type(xcelium_match.group("tool")),
+                            "xcelium",
+                        )
                         continuation_lines = []
                 continue
 
@@ -301,7 +319,7 @@ def parse_log(filepath, extra_keywords=None, pass_patterns=None):
                 level = sva_match.group("level").upper()
                 statistics[level] = statistics.get(level, 0) + 1
                 if level != "SVA_WARNING" and len(top_errors) < TOP_ERRORS_PER_CASE:
-                    pending = _entry(level, "", "", "", sva_match.group("msg").strip(), "SV_ASSERTION")
+                    pending = _entry(level, "", "", "", sva_match.group("msg").strip(), "SV_ASSERTION", "sva")
                     continuation_lines = []
                 continue
 
@@ -311,7 +329,15 @@ def parse_log(filepath, extra_keywords=None, pass_patterns=None):
                     level = general_match.group(1).upper()
                     statistics[level] = statistics.get(level, 0) + 1
                     if "WARNING" not in level and len(top_errors) < TOP_ERRORS_PER_CASE:
-                        pending = _entry(level, "", (general_match.group(2) or "").strip(), "", general_match.group(3).strip(), "UNKNOWN")
+                        pending = _entry(
+                            level,
+                            "",
+                            (general_match.group(2) or "").strip(),
+                            "",
+                            general_match.group(3).strip(),
+                            "UNKNOWN",
+                            "configured",
+                        )
                         continuation_lines = []
 
     if pending is not None:
@@ -320,8 +346,13 @@ def parse_log(filepath, extra_keywords=None, pass_patterns=None):
         top_errors.append(pending)
 
     for error in top_errors:
-        error["description_template"] = description_signature(error.get("description", ""))
+        error["scope_hint"] = scope_hint(error)
+        error["description_template"] = description_signature(
+            error.get("description", ""),
+            normalize_paths=error["scope_hint"]["candidate"] == "shared_public",
+        )
         error["description_template_status"] = "present"
+        error["portable_signature"] = portable_error_signature(error)
 
     primary_error = top_errors[0] if top_errors else None
     non_warning = {key: value for key, value in statistics.items() if "WARNING" not in key.upper()}

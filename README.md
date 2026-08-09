@@ -20,10 +20,14 @@ knowledge database, Excel dependency, or single-log upload workflow.
 The command prints one `xlog.v1` JSON response to stdout and atomically writes
 the complete bundle to `--output`.
 
-New scans emit `xlog_bundle.v1` with `schema_revision: "1.1"`. Primary errors and
+New scans emit `xlog_bundle.v1` with `schema_revision: "1.2"`. Primary errors and
 failure-cluster signatures contain a normalized `description_template` and a
 `description_template_status`. Consumers must still accept legacy 1.0 bundles that
 omit those fields and represent the template as unknown rather than reconstructing it.
+Revision 1.2 also publishes a non-authoritative `scope_hint`, a path-independent
+`portable_signature`, and full recommended/alternate case snapshots. The hint is
+only a candidate clue: `final_routing` remains `undetermined`, and xlog emits no
+root-cause or Wiki-routing decision.
 
 ## JSON action
 
@@ -71,6 +75,11 @@ KDB and optional run-manifest facts, candidate paths and a ready-to-use
 same-directory names and explicit configuration templates, so xlog does not
 accidentally assign another testcase's wave to the current case.
 
+The cluster recommendation includes both ID lists and complete
+`recommended_case` / `alternate_cases` snapshots. This lets xregress use an
+alternate without rediscovering artifacts when the shortest-time recommendation
+has missing or ambiguous debug data.
+
 The first-pass recommendation is algorithmic and repeatable. LLMs may be used
 later on xdebug evidence, but not for deciding the initial shortlist.
 
@@ -98,6 +107,16 @@ in the bundle.
 Configure `bin/xlog` as an `xlog_provider`. xregress consumes the generated
 `xlog_bundle.v1`; it must not rescan logs, repeat xlog error clustering, or
 re-rank the xdebug shortlist.
+
+The canonical first-stage import fixture is
+`fixtures/rtl_injection_minimal/xlog_bundle.fixture.json`. Regenerate it with:
+
+```bash
+PYTHONPATH=src python3 scripts/generate_fixture_bundle.py
+```
+
+Scan `fixtures/rtl_injection_minimal/regression` directly when machine-local
+artifact paths are needed for an xdebug availability test.
 
 ## Development and release
 

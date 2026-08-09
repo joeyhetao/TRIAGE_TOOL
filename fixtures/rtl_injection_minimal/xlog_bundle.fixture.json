@@ -1,0 +1,3433 @@
+{
+  "api_version": "xlog_bundle.v1",
+  "artifact_config": {
+    "daidir_templates": [
+      "{log_dir}/simv.daidir",
+      "{regression_root}/simv.daidir"
+    ],
+    "fsdb_templates": [
+      "{log_dir}/{log_stem}.fsdb",
+      "{log_dir}/sim_{test_id}.fsdb",
+      "{log_dir}/sim.fsdb"
+    ],
+    "kdb_templates": [],
+    "log_reference_extraction": true,
+    "run_manifest_templates": []
+  },
+  "cases": [
+    {
+      "artifacts": {
+        "case_directory": "/fixture/rtl_injection_minimal",
+        "resources": {
+          "daidir": {
+            "candidates": [
+              {
+                "exists": false,
+                "expected_kind": "directory",
+                "file_type": "missing",
+                "path": "/fixture/rtl_injection_minimal/simv.daidir",
+                "priority": 10,
+                "readable": false,
+                "reason": "not_found",
+                "size_bytes": null,
+                "source": "configured_template",
+                "state": "missing"
+              }
+            ],
+            "reason": "no_existing_candidates",
+            "selected": null,
+            "status": "unavailable"
+          },
+          "fsdb": {
+            "candidates": [
+              {
+                "exists": true,
+                "expected_kind": "file",
+                "file_type": "file",
+                "path": "/fixture/rtl_injection_minimal/ambiguous_a.fsdb",
+                "priority": 0,
+                "readable": true,
+                "reason": null,
+                "size_bytes": 39,
+                "source": "log_reference",
+                "state": "available"
+              },
+              {
+                "exists": true,
+                "expected_kind": "file",
+                "file_type": "file",
+                "path": "/fixture/rtl_injection_minimal/ambiguous_b.fsdb",
+                "priority": 0,
+                "readable": true,
+                "reason": null,
+                "size_bytes": 39,
+                "source": "log_reference",
+                "state": "available"
+              },
+              {
+                "exists": false,
+                "expected_kind": "file",
+                "file_type": "missing",
+                "path": "/fixture/rtl_injection_minimal/ambiguous_wave_31.fsdb",
+                "priority": 10,
+                "readable": false,
+                "reason": "not_found",
+                "size_bytes": null,
+                "source": "configured_template",
+                "state": "missing"
+              },
+              {
+                "exists": false,
+                "expected_kind": "file",
+                "file_type": "missing",
+                "path": "/fixture/rtl_injection_minimal/sim_ambiguous_wave.fsdb",
+                "priority": 11,
+                "readable": false,
+                "reason": "not_found",
+                "size_bytes": null,
+                "source": "configured_template",
+                "state": "missing"
+              },
+              {
+                "exists": false,
+                "expected_kind": "file",
+                "file_type": "missing",
+                "path": "/fixture/rtl_injection_minimal/sim.fsdb",
+                "priority": 12,
+                "readable": false,
+                "reason": "not_found",
+                "size_bytes": null,
+                "source": "configured_template",
+                "state": "missing"
+              }
+            ],
+            "reason": "multiple_best_candidates",
+            "selected": null,
+            "status": "ambiguous"
+          },
+          "kdb": {
+            "candidates": [],
+            "reason": "no_candidates",
+            "selected": null,
+            "status": "unavailable"
+          },
+          "log": {
+            "candidates": [
+              {
+                "exists": true,
+                "expected_kind": "file",
+                "file_type": "file",
+                "path": "/fixture/rtl_injection_minimal/ambiguous_wave_31.log",
+                "priority": 0,
+                "readable": true,
+                "reason": null,
+                "size_bytes": 179,
+                "source": "discovered_log",
+                "state": "available"
+              }
+            ],
+            "reason": null,
+            "selected": {
+              "exists": true,
+              "expected_kind": "file",
+              "file_type": "file",
+              "path": "/fixture/rtl_injection_minimal/ambiguous_wave_31.log",
+              "priority": 0,
+              "readable": true,
+              "reason": null,
+              "size_bytes": 179,
+              "source": "discovered_log",
+              "state": "available"
+            },
+            "status": "resolved"
+          },
+          "run_manifest": {
+            "candidates": [],
+            "reason": "no_candidates",
+            "selected": null,
+            "status": "unavailable"
+          }
+        },
+        "status": "ambiguous",
+        "xdebug_target": {}
+      },
+      "case_id": "ambiguous_wave_31.log",
+      "log_path": "/fixture/rtl_injection_minimal/ambiguous_wave_31.log",
+      "pass_found": false,
+      "primary_error": {
+        "description": "injected signal did not toggle",
+        "description_template": "injected signal did not toggle",
+        "description_template_status": "present",
+        "error_id": "INJECT_AMBIGUOUS",
+        "error_type": "UVM_ERROR",
+        "event_time": {
+          "normalized_fs": "3000000",
+          "source": "reported_timestamp",
+          "unit": "ns",
+          "value": "3"
+        },
+        "level": "UVM_ERROR",
+        "location": "/project/env/injection_check.sv(300)",
+        "portable_signature": {
+          "description_template": "injected signal did not toggle",
+          "fingerprint": "sha256:c8519960ccd8538f3d2c0ad369a83a868c0486bec11d7755d4fb0ff54fadcefd",
+          "strategy": "level_error_id_producer_description.v1"
+        },
+        "producer": "uvm",
+        "report_id": "INJECT_AMBIGUOUS",
+        "scope_hint": {
+          "basis": [
+            "producer=uvm",
+            "error_type=UVM_ERROR"
+          ],
+          "candidate": "environment_private",
+          "final_routing": "undetermined",
+          "producer": "uvm",
+          "status": "non_authoritative"
+        },
+        "source_location": {
+          "display": "/project/env/injection_check.sv(300)",
+          "line": 300,
+          "path": "/project/env/injection_check.sv"
+        },
+        "timestamp": "3ns"
+      },
+      "relative_log_path": "ambiguous_wave_31.log",
+      "seed": 31,
+      "seed_parse_status": "parsed",
+      "simulation_time": {
+        "normalized_fs": "3000000",
+        "source": "max_observed_timestamp",
+        "unit": "ns",
+        "value": "3"
+      },
+      "statistics": {
+        "ERROR": 0,
+        "FAILED": 0,
+        "FATAL": 0,
+        "JVP TEST FAILED": 0,
+        "SVA_ERROR": 0,
+        "SVA_FATAL": 0,
+        "SVA_WARNING": 0,
+        "UVM_ERROR": 1,
+        "UVM_FATAL": 0,
+        "UVM_WARNING": 0,
+        "VIRL_MEM_WARNING": 0
+      },
+      "status": "fail",
+      "test_id": "ambiguous_wave",
+      "top_errors": [
+        {
+          "description": "injected signal did not toggle",
+          "description_template": "injected signal did not toggle",
+          "description_template_status": "present",
+          "error_id": "INJECT_AMBIGUOUS",
+          "error_type": "UVM_ERROR",
+          "event_time": {
+            "normalized_fs": "3000000",
+            "source": "reported_timestamp",
+            "unit": "ns",
+            "value": "3"
+          },
+          "level": "UVM_ERROR",
+          "location": "/project/env/injection_check.sv(300)",
+          "portable_signature": {
+            "description_template": "injected signal did not toggle",
+            "fingerprint": "sha256:c8519960ccd8538f3d2c0ad369a83a868c0486bec11d7755d4fb0ff54fadcefd",
+            "strategy": "level_error_id_producer_description.v1"
+          },
+          "producer": "uvm",
+          "report_id": "INJECT_AMBIGUOUS",
+          "scope_hint": {
+            "basis": [
+              "producer=uvm",
+              "error_type=UVM_ERROR"
+            ],
+            "candidate": "environment_private",
+            "final_routing": "undetermined",
+            "producer": "uvm",
+            "status": "non_authoritative"
+          },
+          "source_location": {
+            "display": "/project/env/injection_check.sv(300)",
+            "line": 300,
+            "path": "/project/env/injection_check.sv"
+          },
+          "timestamp": "3ns"
+        }
+      ],
+      "working_directory": "/fixture/rtl_injection_minimal"
+    },
+    {
+      "artifacts": {
+        "case_directory": "/fixture/rtl_injection_minimal/private_complete",
+        "resources": {
+          "daidir": {
+            "candidates": [
+              {
+                "exists": true,
+                "expected_kind": "directory",
+                "file_type": "directory",
+                "path": "/fixture/rtl_injection_minimal/private_complete/simv.daidir",
+                "priority": 0,
+                "readable": true,
+                "reason": null,
+                "size_bytes": null,
+                "source": "log_reference",
+                "state": "available"
+              },
+              {
+                "exists": false,
+                "expected_kind": "directory",
+                "file_type": "missing",
+                "path": "/fixture/rtl_injection_minimal/simv.daidir",
+                "priority": 11,
+                "readable": false,
+                "reason": "not_found",
+                "size_bytes": null,
+                "source": "configured_template",
+                "state": "missing"
+              }
+            ],
+            "reason": null,
+            "selected": {
+              "exists": true,
+              "expected_kind": "directory",
+              "file_type": "directory",
+              "path": "/fixture/rtl_injection_minimal/private_complete/simv.daidir",
+              "priority": 0,
+              "readable": true,
+              "reason": null,
+              "size_bytes": null,
+              "source": "log_reference",
+              "state": "available"
+            },
+            "status": "resolved"
+          },
+          "fsdb": {
+            "candidates": [
+              {
+                "exists": true,
+                "expected_kind": "file",
+                "file_type": "file",
+                "path": "/fixture/rtl_injection_minimal/private_complete/private_queue_22.fsdb",
+                "priority": 0,
+                "readable": true,
+                "reason": null,
+                "size_bytes": 37,
+                "source": "log_reference",
+                "state": "available"
+              },
+              {
+                "exists": false,
+                "expected_kind": "file",
+                "file_type": "missing",
+                "path": "/fixture/rtl_injection_minimal/private_complete/sim_private_queue.fsdb",
+                "priority": 11,
+                "readable": false,
+                "reason": "not_found",
+                "size_bytes": null,
+                "source": "configured_template",
+                "state": "missing"
+              },
+              {
+                "exists": false,
+                "expected_kind": "file",
+                "file_type": "missing",
+                "path": "/fixture/rtl_injection_minimal/private_complete/sim.fsdb",
+                "priority": 12,
+                "readable": false,
+                "reason": "not_found",
+                "size_bytes": null,
+                "source": "configured_template",
+                "state": "missing"
+              }
+            ],
+            "reason": null,
+            "selected": {
+              "exists": true,
+              "expected_kind": "file",
+              "file_type": "file",
+              "path": "/fixture/rtl_injection_minimal/private_complete/private_queue_22.fsdb",
+              "priority": 0,
+              "readable": true,
+              "reason": null,
+              "size_bytes": 37,
+              "source": "log_reference",
+              "state": "available"
+            },
+            "status": "resolved"
+          },
+          "kdb": {
+            "candidates": [
+              {
+                "exists": true,
+                "expected_kind": "directory",
+                "file_type": "directory",
+                "path": "/fixture/rtl_injection_minimal/private_complete/simv.daidir/kdb",
+                "priority": 5,
+                "readable": true,
+                "reason": null,
+                "size_bytes": null,
+                "source": "resolved_daidir",
+                "state": "available"
+              }
+            ],
+            "reason": null,
+            "selected": {
+              "exists": true,
+              "expected_kind": "directory",
+              "file_type": "directory",
+              "path": "/fixture/rtl_injection_minimal/private_complete/simv.daidir/kdb",
+              "priority": 5,
+              "readable": true,
+              "reason": null,
+              "size_bytes": null,
+              "source": "resolved_daidir",
+              "state": "available"
+            },
+            "status": "resolved"
+          },
+          "log": {
+            "candidates": [
+              {
+                "exists": true,
+                "expected_kind": "file",
+                "file_type": "file",
+                "path": "/fixture/rtl_injection_minimal/private_complete/private_queue_22.log",
+                "priority": 0,
+                "readable": true,
+                "reason": null,
+                "size_bytes": 158,
+                "source": "discovered_log",
+                "state": "available"
+              }
+            ],
+            "reason": null,
+            "selected": {
+              "exists": true,
+              "expected_kind": "file",
+              "file_type": "file",
+              "path": "/fixture/rtl_injection_minimal/private_complete/private_queue_22.log",
+              "priority": 0,
+              "readable": true,
+              "reason": null,
+              "size_bytes": 158,
+              "source": "discovered_log",
+              "state": "available"
+            },
+            "status": "resolved"
+          },
+          "run_manifest": {
+            "candidates": [],
+            "reason": "no_candidates",
+            "selected": null,
+            "status": "unavailable"
+          }
+        },
+        "status": "complete",
+        "xdebug_target": {
+          "daidir": "/fixture/rtl_injection_minimal/private_complete/simv.daidir",
+          "fsdb": "/fixture/rtl_injection_minimal/private_complete/private_queue_22.fsdb"
+        }
+      },
+      "case_id": "private_complete/private_queue_22.log",
+      "log_path": "/fixture/rtl_injection_minimal/private_complete/private_queue_22.log",
+      "pass_found": false,
+      "primary_error": {
+        "description": "queue 0x22 is full at index 93",
+        "description_template": "queue <num> is full at index <num>",
+        "description_template_status": "present",
+        "error_id": "QUEUE_FULL",
+        "error_type": "UVM_ERROR",
+        "event_time": {
+          "normalized_fs": "20000000",
+          "source": "reported_timestamp",
+          "unit": "ns",
+          "value": "20"
+        },
+        "level": "UVM_ERROR",
+        "location": "/project/env/qmon.sv(210)",
+        "portable_signature": {
+          "description_template": "queue <num> is full at index <num>",
+          "fingerprint": "sha256:386402506ef7a7b23d4ac5e53f2c9ff31bf36200898730c78d544ea70b6884b2",
+          "strategy": "level_error_id_producer_description.v1"
+        },
+        "producer": "uvm",
+        "report_id": "QUEUE_FULL",
+        "scope_hint": {
+          "basis": [
+            "producer=uvm",
+            "error_type=UVM_ERROR"
+          ],
+          "candidate": "environment_private",
+          "final_routing": "undetermined",
+          "producer": "uvm",
+          "status": "non_authoritative"
+        },
+        "source_location": {
+          "display": "/project/env/qmon.sv(210)",
+          "line": 210,
+          "path": "/project/env/qmon.sv"
+        },
+        "timestamp": "20ns"
+      },
+      "relative_log_path": "private_complete/private_queue_22.log",
+      "seed": 22,
+      "seed_parse_status": "parsed",
+      "simulation_time": {
+        "normalized_fs": "20000000",
+        "source": "max_observed_timestamp",
+        "unit": "ns",
+        "value": "20"
+      },
+      "statistics": {
+        "ERROR": 0,
+        "FAILED": 0,
+        "FATAL": 0,
+        "JVP TEST FAILED": 0,
+        "SVA_ERROR": 0,
+        "SVA_FATAL": 0,
+        "SVA_WARNING": 0,
+        "UVM_ERROR": 1,
+        "UVM_FATAL": 0,
+        "UVM_WARNING": 0,
+        "VIRL_MEM_WARNING": 0
+      },
+      "status": "fail",
+      "test_id": "private_queue",
+      "top_errors": [
+        {
+          "description": "queue 0x22 is full at index 93",
+          "description_template": "queue <num> is full at index <num>",
+          "description_template_status": "present",
+          "error_id": "QUEUE_FULL",
+          "error_type": "UVM_ERROR",
+          "event_time": {
+            "normalized_fs": "20000000",
+            "source": "reported_timestamp",
+            "unit": "ns",
+            "value": "20"
+          },
+          "level": "UVM_ERROR",
+          "location": "/project/env/qmon.sv(210)",
+          "portable_signature": {
+            "description_template": "queue <num> is full at index <num>",
+            "fingerprint": "sha256:386402506ef7a7b23d4ac5e53f2c9ff31bf36200898730c78d544ea70b6884b2",
+            "strategy": "level_error_id_producer_description.v1"
+          },
+          "producer": "uvm",
+          "report_id": "QUEUE_FULL",
+          "scope_hint": {
+            "basis": [
+              "producer=uvm",
+              "error_type=UVM_ERROR"
+            ],
+            "candidate": "environment_private",
+            "final_routing": "undetermined",
+            "producer": "uvm",
+            "status": "non_authoritative"
+          },
+          "source_location": {
+            "display": "/project/env/qmon.sv(210)",
+            "line": 210,
+            "path": "/project/env/qmon.sv"
+          },
+          "timestamp": "20ns"
+        }
+      ],
+      "working_directory": "/fixture/rtl_injection_minimal/private_complete"
+    },
+    {
+      "artifacts": {
+        "case_directory": "/fixture/rtl_injection_minimal/private_missing",
+        "resources": {
+          "daidir": {
+            "candidates": [
+              {
+                "exists": false,
+                "expected_kind": "directory",
+                "file_type": "missing",
+                "path": "/fixture/rtl_injection_minimal/private_missing/simv.daidir",
+                "priority": 10,
+                "readable": false,
+                "reason": "not_found",
+                "size_bytes": null,
+                "source": "configured_template",
+                "state": "missing"
+              },
+              {
+                "exists": false,
+                "expected_kind": "directory",
+                "file_type": "missing",
+                "path": "/fixture/rtl_injection_minimal/simv.daidir",
+                "priority": 11,
+                "readable": false,
+                "reason": "not_found",
+                "size_bytes": null,
+                "source": "configured_template",
+                "state": "missing"
+              }
+            ],
+            "reason": "no_existing_candidates",
+            "selected": null,
+            "status": "unavailable"
+          },
+          "fsdb": {
+            "candidates": [
+              {
+                "exists": false,
+                "expected_kind": "file",
+                "file_type": "missing",
+                "path": "/fixture/rtl_injection_minimal/private_missing/private_queue_21.fsdb",
+                "priority": 10,
+                "readable": false,
+                "reason": "not_found",
+                "size_bytes": null,
+                "source": "configured_template",
+                "state": "missing"
+              },
+              {
+                "exists": false,
+                "expected_kind": "file",
+                "file_type": "missing",
+                "path": "/fixture/rtl_injection_minimal/private_missing/sim_private_queue.fsdb",
+                "priority": 11,
+                "readable": false,
+                "reason": "not_found",
+                "size_bytes": null,
+                "source": "configured_template",
+                "state": "missing"
+              },
+              {
+                "exists": false,
+                "expected_kind": "file",
+                "file_type": "missing",
+                "path": "/fixture/rtl_injection_minimal/private_missing/sim.fsdb",
+                "priority": 12,
+                "readable": false,
+                "reason": "not_found",
+                "size_bytes": null,
+                "source": "configured_template",
+                "state": "missing"
+              }
+            ],
+            "reason": "no_existing_candidates",
+            "selected": null,
+            "status": "unavailable"
+          },
+          "kdb": {
+            "candidates": [],
+            "reason": "no_candidates",
+            "selected": null,
+            "status": "unavailable"
+          },
+          "log": {
+            "candidates": [
+              {
+                "exists": true,
+                "expected_kind": "file",
+                "file_type": "file",
+                "path": "/fixture/rtl_injection_minimal/private_missing/private_queue_21.log",
+                "priority": 0,
+                "readable": true,
+                "reason": null,
+                "size_bytes": 96,
+                "source": "discovered_log",
+                "state": "available"
+              }
+            ],
+            "reason": null,
+            "selected": {
+              "exists": true,
+              "expected_kind": "file",
+              "file_type": "file",
+              "path": "/fixture/rtl_injection_minimal/private_missing/private_queue_21.log",
+              "priority": 0,
+              "readable": true,
+              "reason": null,
+              "size_bytes": 96,
+              "source": "discovered_log",
+              "state": "available"
+            },
+            "status": "resolved"
+          },
+          "run_manifest": {
+            "candidates": [],
+            "reason": "no_candidates",
+            "selected": null,
+            "status": "unavailable"
+          }
+        },
+        "status": "unavailable",
+        "xdebug_target": {}
+      },
+      "case_id": "private_missing/private_queue_21.log",
+      "log_path": "/fixture/rtl_injection_minimal/private_missing/private_queue_21.log",
+      "pass_found": false,
+      "primary_error": {
+        "description": "queue 0x10 is full at index 17",
+        "description_template": "queue <num> is full at index <num>",
+        "description_template_status": "present",
+        "error_id": "QUEUE_FULL",
+        "error_type": "UVM_ERROR",
+        "event_time": {
+          "normalized_fs": "5000000",
+          "source": "reported_timestamp",
+          "unit": "ns",
+          "value": "5"
+        },
+        "level": "UVM_ERROR",
+        "location": "/project/env/qmon.sv(210)",
+        "portable_signature": {
+          "description_template": "queue <num> is full at index <num>",
+          "fingerprint": "sha256:386402506ef7a7b23d4ac5e53f2c9ff31bf36200898730c78d544ea70b6884b2",
+          "strategy": "level_error_id_producer_description.v1"
+        },
+        "producer": "uvm",
+        "report_id": "QUEUE_FULL",
+        "scope_hint": {
+          "basis": [
+            "producer=uvm",
+            "error_type=UVM_ERROR"
+          ],
+          "candidate": "environment_private",
+          "final_routing": "undetermined",
+          "producer": "uvm",
+          "status": "non_authoritative"
+        },
+        "source_location": {
+          "display": "/project/env/qmon.sv(210)",
+          "line": 210,
+          "path": "/project/env/qmon.sv"
+        },
+        "timestamp": "5ns"
+      },
+      "relative_log_path": "private_missing/private_queue_21.log",
+      "seed": 21,
+      "seed_parse_status": "parsed",
+      "simulation_time": {
+        "normalized_fs": "5000000",
+        "source": "max_observed_timestamp",
+        "unit": "ns",
+        "value": "5"
+      },
+      "statistics": {
+        "ERROR": 0,
+        "FAILED": 0,
+        "FATAL": 0,
+        "JVP TEST FAILED": 0,
+        "SVA_ERROR": 0,
+        "SVA_FATAL": 0,
+        "SVA_WARNING": 0,
+        "UVM_ERROR": 1,
+        "UVM_FATAL": 0,
+        "UVM_WARNING": 0,
+        "VIRL_MEM_WARNING": 0
+      },
+      "status": "fail",
+      "test_id": "private_queue",
+      "top_errors": [
+        {
+          "description": "queue 0x10 is full at index 17",
+          "description_template": "queue <num> is full at index <num>",
+          "description_template_status": "present",
+          "error_id": "QUEUE_FULL",
+          "error_type": "UVM_ERROR",
+          "event_time": {
+            "normalized_fs": "5000000",
+            "source": "reported_timestamp",
+            "unit": "ns",
+            "value": "5"
+          },
+          "level": "UVM_ERROR",
+          "location": "/project/env/qmon.sv(210)",
+          "portable_signature": {
+            "description_template": "queue <num> is full at index <num>",
+            "fingerprint": "sha256:386402506ef7a7b23d4ac5e53f2c9ff31bf36200898730c78d544ea70b6884b2",
+            "strategy": "level_error_id_producer_description.v1"
+          },
+          "producer": "uvm",
+          "report_id": "QUEUE_FULL",
+          "scope_hint": {
+            "basis": [
+              "producer=uvm",
+              "error_type=UVM_ERROR"
+            ],
+            "candidate": "environment_private",
+            "final_routing": "undetermined",
+            "producer": "uvm",
+            "status": "non_authoritative"
+          },
+          "source_location": {
+            "display": "/project/env/qmon.sv(210)",
+            "line": 210,
+            "path": "/project/env/qmon.sv"
+          },
+          "timestamp": "5ns"
+        }
+      ],
+      "working_directory": "/fixture/rtl_injection_minimal/private_missing"
+    },
+    {
+      "artifacts": {
+        "case_directory": "/fixture/rtl_injection_minimal",
+        "resources": {
+          "daidir": {
+            "candidates": [
+              {
+                "exists": false,
+                "expected_kind": "directory",
+                "file_type": "missing",
+                "path": "/fixture/rtl_injection_minimal/simv.daidir",
+                "priority": 10,
+                "readable": false,
+                "reason": "not_found",
+                "size_bytes": null,
+                "source": "configured_template",
+                "state": "missing"
+              }
+            ],
+            "reason": "no_existing_candidates",
+            "selected": null,
+            "status": "unavailable"
+          },
+          "fsdb": {
+            "candidates": [
+              {
+                "exists": false,
+                "expected_kind": "file",
+                "file_type": "missing",
+                "path": "/fixture/rtl_injection_minimal/public_compile_11.fsdb",
+                "priority": 10,
+                "readable": false,
+                "reason": "not_found",
+                "size_bytes": null,
+                "source": "configured_template",
+                "state": "missing"
+              },
+              {
+                "exists": false,
+                "expected_kind": "file",
+                "file_type": "missing",
+                "path": "/fixture/rtl_injection_minimal/sim_public_compile.fsdb",
+                "priority": 11,
+                "readable": false,
+                "reason": "not_found",
+                "size_bytes": null,
+                "source": "configured_template",
+                "state": "missing"
+              },
+              {
+                "exists": false,
+                "expected_kind": "file",
+                "file_type": "missing",
+                "path": "/fixture/rtl_injection_minimal/sim.fsdb",
+                "priority": 12,
+                "readable": false,
+                "reason": "not_found",
+                "size_bytes": null,
+                "source": "configured_template",
+                "state": "missing"
+              }
+            ],
+            "reason": "no_existing_candidates",
+            "selected": null,
+            "status": "unavailable"
+          },
+          "kdb": {
+            "candidates": [],
+            "reason": "no_candidates",
+            "selected": null,
+            "status": "unavailable"
+          },
+          "log": {
+            "candidates": [
+              {
+                "exists": true,
+                "expected_kind": "file",
+                "file_type": "file",
+                "path": "/fixture/rtl_injection_minimal/public_compile_11.log",
+                "priority": 0,
+                "readable": true,
+                "reason": null,
+                "size_bytes": 87,
+                "source": "discovered_log",
+                "state": "available"
+              }
+            ],
+            "reason": null,
+            "selected": {
+              "exists": true,
+              "expected_kind": "file",
+              "file_type": "file",
+              "path": "/fixture/rtl_injection_minimal/public_compile_11.log",
+              "priority": 0,
+              "readable": true,
+              "reason": null,
+              "size_bytes": 87,
+              "source": "discovered_log",
+              "state": "available"
+            },
+            "status": "resolved"
+          },
+          "run_manifest": {
+            "candidates": [],
+            "reason": "no_candidates",
+            "selected": null,
+            "status": "unavailable"
+          }
+        },
+        "status": "unavailable",
+        "xdebug_target": {}
+      },
+      "case_id": "public_compile_11.log",
+      "log_path": "/fixture/rtl_injection_minimal/public_compile_11.log",
+      "pass_found": false,
+      "primary_error": {
+        "description": "/project/injected_a/rtl/cache_ctrl.sv:73 injected width mismatch value 0x1f",
+        "description_template": "<path> injected width mismatch value <num>",
+        "description_template_status": "present",
+        "error_id": "SE",
+        "error_type": "TOOL_ERROR",
+        "event_time": {
+          "normalized_fs": null,
+          "source": "unavailable",
+          "unit": null,
+          "value": null
+        },
+        "level": "ERROR",
+        "location": "",
+        "portable_signature": {
+          "description_template": "<path> injected width mismatch value <num>",
+          "fingerprint": "sha256:10f62fc891c84cc01f3f4132724cf7cbd32c015261f4810dc2967647a406443c",
+          "strategy": "level_error_id_producer_description.v1"
+        },
+        "producer": "vcs",
+        "report_id": "SE",
+        "scope_hint": {
+          "basis": [
+            "producer=vcs",
+            "error_type=TOOL_ERROR"
+          ],
+          "candidate": "shared_public",
+          "final_routing": "undetermined",
+          "producer": "vcs",
+          "status": "non_authoritative"
+        },
+        "source_location": {
+          "display": null,
+          "line": null,
+          "path": null
+        },
+        "timestamp": ""
+      },
+      "relative_log_path": "public_compile_11.log",
+      "seed": 11,
+      "seed_parse_status": "parsed",
+      "simulation_time": {
+        "normalized_fs": null,
+        "source": "unavailable",
+        "unit": null,
+        "value": null
+      },
+      "statistics": {
+        "ERROR": 1,
+        "FAILED": 0,
+        "FATAL": 0,
+        "JVP TEST FAILED": 0,
+        "SVA_ERROR": 0,
+        "SVA_FATAL": 0,
+        "SVA_WARNING": 0,
+        "UVM_ERROR": 0,
+        "UVM_FATAL": 0,
+        "UVM_WARNING": 0,
+        "VIRL_MEM_WARNING": 0
+      },
+      "status": "fail",
+      "test_id": "public_compile",
+      "top_errors": [
+        {
+          "description": "/project/injected_a/rtl/cache_ctrl.sv:73 injected width mismatch value 0x1f",
+          "description_template": "<path> injected width mismatch value <num>",
+          "description_template_status": "present",
+          "error_id": "SE",
+          "error_type": "TOOL_ERROR",
+          "event_time": {
+            "normalized_fs": null,
+            "source": "unavailable",
+            "unit": null,
+            "value": null
+          },
+          "level": "ERROR",
+          "location": "",
+          "portable_signature": {
+            "description_template": "<path> injected width mismatch value <num>",
+            "fingerprint": "sha256:10f62fc891c84cc01f3f4132724cf7cbd32c015261f4810dc2967647a406443c",
+            "strategy": "level_error_id_producer_description.v1"
+          },
+          "producer": "vcs",
+          "report_id": "SE",
+          "scope_hint": {
+            "basis": [
+              "producer=vcs",
+              "error_type=TOOL_ERROR"
+            ],
+            "candidate": "shared_public",
+            "final_routing": "undetermined",
+            "producer": "vcs",
+            "status": "non_authoritative"
+          },
+          "source_location": {
+            "display": null,
+            "line": null,
+            "path": null
+          },
+          "timestamp": ""
+        }
+      ],
+      "working_directory": "/fixture/rtl_injection_minimal"
+    },
+    {
+      "artifacts": {
+        "case_directory": "/fixture/rtl_injection_minimal",
+        "resources": {
+          "daidir": {
+            "candidates": [
+              {
+                "exists": false,
+                "expected_kind": "directory",
+                "file_type": "missing",
+                "path": "/fixture/rtl_injection_minimal/simv.daidir",
+                "priority": 10,
+                "readable": false,
+                "reason": "not_found",
+                "size_bytes": null,
+                "source": "configured_template",
+                "state": "missing"
+              }
+            ],
+            "reason": "no_existing_candidates",
+            "selected": null,
+            "status": "unavailable"
+          },
+          "fsdb": {
+            "candidates": [
+              {
+                "exists": false,
+                "expected_kind": "file",
+                "file_type": "missing",
+                "path": "/fixture/rtl_injection_minimal/public_compile_12.fsdb",
+                "priority": 10,
+                "readable": false,
+                "reason": "not_found",
+                "size_bytes": null,
+                "source": "configured_template",
+                "state": "missing"
+              },
+              {
+                "exists": false,
+                "expected_kind": "file",
+                "file_type": "missing",
+                "path": "/fixture/rtl_injection_minimal/sim_public_compile.fsdb",
+                "priority": 11,
+                "readable": false,
+                "reason": "not_found",
+                "size_bytes": null,
+                "source": "configured_template",
+                "state": "missing"
+              },
+              {
+                "exists": false,
+                "expected_kind": "file",
+                "file_type": "missing",
+                "path": "/fixture/rtl_injection_minimal/sim.fsdb",
+                "priority": 12,
+                "readable": false,
+                "reason": "not_found",
+                "size_bytes": null,
+                "source": "configured_template",
+                "state": "missing"
+              }
+            ],
+            "reason": "no_existing_candidates",
+            "selected": null,
+            "status": "unavailable"
+          },
+          "kdb": {
+            "candidates": [],
+            "reason": "no_candidates",
+            "selected": null,
+            "status": "unavailable"
+          },
+          "log": {
+            "candidates": [
+              {
+                "exists": true,
+                "expected_kind": "file",
+                "file_type": "file",
+                "path": "/fixture/rtl_injection_minimal/public_compile_12.log",
+                "priority": 0,
+                "readable": true,
+                "reason": null,
+                "size_bytes": 85,
+                "source": "discovered_log",
+                "state": "available"
+              }
+            ],
+            "reason": null,
+            "selected": {
+              "exists": true,
+              "expected_kind": "file",
+              "file_type": "file",
+              "path": "/fixture/rtl_injection_minimal/public_compile_12.log",
+              "priority": 0,
+              "readable": true,
+              "reason": null,
+              "size_bytes": 85,
+              "source": "discovered_log",
+              "state": "available"
+            },
+            "status": "resolved"
+          },
+          "run_manifest": {
+            "candidates": [],
+            "reason": "no_candidates",
+            "selected": null,
+            "status": "unavailable"
+          }
+        },
+        "status": "unavailable",
+        "xdebug_target": {}
+      },
+      "case_id": "public_compile_12.log",
+      "log_path": "/fixture/rtl_injection_minimal/public_compile_12.log",
+      "pass_found": false,
+      "primary_error": {
+        "description": "/workspace/other/rtl/cache_ctrl.sv:991 injected width mismatch value 0x2a",
+        "description_template": "<path> injected width mismatch value <num>",
+        "description_template_status": "present",
+        "error_id": "SE",
+        "error_type": "TOOL_ERROR",
+        "event_time": {
+          "normalized_fs": null,
+          "source": "unavailable",
+          "unit": null,
+          "value": null
+        },
+        "level": "ERROR",
+        "location": "",
+        "portable_signature": {
+          "description_template": "<path> injected width mismatch value <num>",
+          "fingerprint": "sha256:10f62fc891c84cc01f3f4132724cf7cbd32c015261f4810dc2967647a406443c",
+          "strategy": "level_error_id_producer_description.v1"
+        },
+        "producer": "vcs",
+        "report_id": "SE",
+        "scope_hint": {
+          "basis": [
+            "producer=vcs",
+            "error_type=TOOL_ERROR"
+          ],
+          "candidate": "shared_public",
+          "final_routing": "undetermined",
+          "producer": "vcs",
+          "status": "non_authoritative"
+        },
+        "source_location": {
+          "display": null,
+          "line": null,
+          "path": null
+        },
+        "timestamp": ""
+      },
+      "relative_log_path": "public_compile_12.log",
+      "seed": 12,
+      "seed_parse_status": "parsed",
+      "simulation_time": {
+        "normalized_fs": null,
+        "source": "unavailable",
+        "unit": null,
+        "value": null
+      },
+      "statistics": {
+        "ERROR": 1,
+        "FAILED": 0,
+        "FATAL": 0,
+        "JVP TEST FAILED": 0,
+        "SVA_ERROR": 0,
+        "SVA_FATAL": 0,
+        "SVA_WARNING": 0,
+        "UVM_ERROR": 0,
+        "UVM_FATAL": 0,
+        "UVM_WARNING": 0,
+        "VIRL_MEM_WARNING": 0
+      },
+      "status": "fail",
+      "test_id": "public_compile",
+      "top_errors": [
+        {
+          "description": "/workspace/other/rtl/cache_ctrl.sv:991 injected width mismatch value 0x2a",
+          "description_template": "<path> injected width mismatch value <num>",
+          "description_template_status": "present",
+          "error_id": "SE",
+          "error_type": "TOOL_ERROR",
+          "event_time": {
+            "normalized_fs": null,
+            "source": "unavailable",
+            "unit": null,
+            "value": null
+          },
+          "level": "ERROR",
+          "location": "",
+          "portable_signature": {
+            "description_template": "<path> injected width mismatch value <num>",
+            "fingerprint": "sha256:10f62fc891c84cc01f3f4132724cf7cbd32c015261f4810dc2967647a406443c",
+            "strategy": "level_error_id_producer_description.v1"
+          },
+          "producer": "vcs",
+          "report_id": "SE",
+          "scope_hint": {
+            "basis": [
+              "producer=vcs",
+              "error_type=TOOL_ERROR"
+            ],
+            "candidate": "shared_public",
+            "final_routing": "undetermined",
+            "producer": "vcs",
+            "status": "non_authoritative"
+          },
+          "source_location": {
+            "display": null,
+            "line": null,
+            "path": null
+          },
+          "timestamp": ""
+        }
+      ],
+      "working_directory": "/fixture/rtl_injection_minimal"
+    }
+  ],
+  "debug_recommendation": {
+    "debug_budget": 20,
+    "deferred_cluster_ids": [],
+    "eligible_cluster_count": 3,
+    "policy_version": "deterministic.v2",
+    "recommended_debug_cases": [
+      {
+        "alternate_cases": [
+          {
+            "artifacts": {
+              "case_directory": "/fixture/rtl_injection_minimal/private_complete",
+              "resources": {
+                "daidir": {
+                  "candidates": [
+                    {
+                      "exists": true,
+                      "expected_kind": "directory",
+                      "file_type": "directory",
+                      "path": "/fixture/rtl_injection_minimal/private_complete/simv.daidir",
+                      "priority": 0,
+                      "readable": true,
+                      "reason": null,
+                      "size_bytes": null,
+                      "source": "log_reference",
+                      "state": "available"
+                    },
+                    {
+                      "exists": false,
+                      "expected_kind": "directory",
+                      "file_type": "missing",
+                      "path": "/fixture/rtl_injection_minimal/simv.daidir",
+                      "priority": 11,
+                      "readable": false,
+                      "reason": "not_found",
+                      "size_bytes": null,
+                      "source": "configured_template",
+                      "state": "missing"
+                    }
+                  ],
+                  "reason": null,
+                  "selected": {
+                    "exists": true,
+                    "expected_kind": "directory",
+                    "file_type": "directory",
+                    "path": "/fixture/rtl_injection_minimal/private_complete/simv.daidir",
+                    "priority": 0,
+                    "readable": true,
+                    "reason": null,
+                    "size_bytes": null,
+                    "source": "log_reference",
+                    "state": "available"
+                  },
+                  "status": "resolved"
+                },
+                "fsdb": {
+                  "candidates": [
+                    {
+                      "exists": true,
+                      "expected_kind": "file",
+                      "file_type": "file",
+                      "path": "/fixture/rtl_injection_minimal/private_complete/private_queue_22.fsdb",
+                      "priority": 0,
+                      "readable": true,
+                      "reason": null,
+                      "size_bytes": 37,
+                      "source": "log_reference",
+                      "state": "available"
+                    },
+                    {
+                      "exists": false,
+                      "expected_kind": "file",
+                      "file_type": "missing",
+                      "path": "/fixture/rtl_injection_minimal/private_complete/sim_private_queue.fsdb",
+                      "priority": 11,
+                      "readable": false,
+                      "reason": "not_found",
+                      "size_bytes": null,
+                      "source": "configured_template",
+                      "state": "missing"
+                    },
+                    {
+                      "exists": false,
+                      "expected_kind": "file",
+                      "file_type": "missing",
+                      "path": "/fixture/rtl_injection_minimal/private_complete/sim.fsdb",
+                      "priority": 12,
+                      "readable": false,
+                      "reason": "not_found",
+                      "size_bytes": null,
+                      "source": "configured_template",
+                      "state": "missing"
+                    }
+                  ],
+                  "reason": null,
+                  "selected": {
+                    "exists": true,
+                    "expected_kind": "file",
+                    "file_type": "file",
+                    "path": "/fixture/rtl_injection_minimal/private_complete/private_queue_22.fsdb",
+                    "priority": 0,
+                    "readable": true,
+                    "reason": null,
+                    "size_bytes": 37,
+                    "source": "log_reference",
+                    "state": "available"
+                  },
+                  "status": "resolved"
+                },
+                "kdb": {
+                  "candidates": [
+                    {
+                      "exists": true,
+                      "expected_kind": "directory",
+                      "file_type": "directory",
+                      "path": "/fixture/rtl_injection_minimal/private_complete/simv.daidir/kdb",
+                      "priority": 5,
+                      "readable": true,
+                      "reason": null,
+                      "size_bytes": null,
+                      "source": "resolved_daidir",
+                      "state": "available"
+                    }
+                  ],
+                  "reason": null,
+                  "selected": {
+                    "exists": true,
+                    "expected_kind": "directory",
+                    "file_type": "directory",
+                    "path": "/fixture/rtl_injection_minimal/private_complete/simv.daidir/kdb",
+                    "priority": 5,
+                    "readable": true,
+                    "reason": null,
+                    "size_bytes": null,
+                    "source": "resolved_daidir",
+                    "state": "available"
+                  },
+                  "status": "resolved"
+                },
+                "log": {
+                  "candidates": [
+                    {
+                      "exists": true,
+                      "expected_kind": "file",
+                      "file_type": "file",
+                      "path": "/fixture/rtl_injection_minimal/private_complete/private_queue_22.log",
+                      "priority": 0,
+                      "readable": true,
+                      "reason": null,
+                      "size_bytes": 158,
+                      "source": "discovered_log",
+                      "state": "available"
+                    }
+                  ],
+                  "reason": null,
+                  "selected": {
+                    "exists": true,
+                    "expected_kind": "file",
+                    "file_type": "file",
+                    "path": "/fixture/rtl_injection_minimal/private_complete/private_queue_22.log",
+                    "priority": 0,
+                    "readable": true,
+                    "reason": null,
+                    "size_bytes": 158,
+                    "source": "discovered_log",
+                    "state": "available"
+                  },
+                  "status": "resolved"
+                },
+                "run_manifest": {
+                  "candidates": [],
+                  "reason": "no_candidates",
+                  "selected": null,
+                  "status": "unavailable"
+                }
+              },
+              "status": "complete",
+              "xdebug_target": {
+                "daidir": "/fixture/rtl_injection_minimal/private_complete/simv.daidir",
+                "fsdb": "/fixture/rtl_injection_minimal/private_complete/private_queue_22.fsdb"
+              }
+            },
+            "case_id": "private_complete/private_queue_22.log",
+            "seed": 22,
+            "seed_parse_status": "parsed",
+            "simulation_time": {
+              "normalized_fs": "20000000",
+              "source": "max_observed_timestamp",
+              "unit": "ns",
+              "value": "20"
+            },
+            "test_id": "private_queue"
+          }
+        ],
+        "artifacts": {
+          "case_directory": "/fixture/rtl_injection_minimal/private_missing",
+          "resources": {
+            "daidir": {
+              "candidates": [
+                {
+                  "exists": false,
+                  "expected_kind": "directory",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/private_missing/simv.daidir",
+                  "priority": 10,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                },
+                {
+                  "exists": false,
+                  "expected_kind": "directory",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/simv.daidir",
+                  "priority": 11,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                }
+              ],
+              "reason": "no_existing_candidates",
+              "selected": null,
+              "status": "unavailable"
+            },
+            "fsdb": {
+              "candidates": [
+                {
+                  "exists": false,
+                  "expected_kind": "file",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/private_missing/private_queue_21.fsdb",
+                  "priority": 10,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                },
+                {
+                  "exists": false,
+                  "expected_kind": "file",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/private_missing/sim_private_queue.fsdb",
+                  "priority": 11,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                },
+                {
+                  "exists": false,
+                  "expected_kind": "file",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/private_missing/sim.fsdb",
+                  "priority": 12,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                }
+              ],
+              "reason": "no_existing_candidates",
+              "selected": null,
+              "status": "unavailable"
+            },
+            "kdb": {
+              "candidates": [],
+              "reason": "no_candidates",
+              "selected": null,
+              "status": "unavailable"
+            },
+            "log": {
+              "candidates": [
+                {
+                  "exists": true,
+                  "expected_kind": "file",
+                  "file_type": "file",
+                  "path": "/fixture/rtl_injection_minimal/private_missing/private_queue_21.log",
+                  "priority": 0,
+                  "readable": true,
+                  "reason": null,
+                  "size_bytes": 96,
+                  "source": "discovered_log",
+                  "state": "available"
+                }
+              ],
+              "reason": null,
+              "selected": {
+                "exists": true,
+                "expected_kind": "file",
+                "file_type": "file",
+                "path": "/fixture/rtl_injection_minimal/private_missing/private_queue_21.log",
+                "priority": 0,
+                "readable": true,
+                "reason": null,
+                "size_bytes": 96,
+                "source": "discovered_log",
+                "state": "available"
+              },
+              "status": "resolved"
+            },
+            "run_manifest": {
+              "candidates": [],
+              "reason": "no_candidates",
+              "selected": null,
+              "status": "unavailable"
+            }
+          },
+          "status": "unavailable",
+          "xdebug_target": {}
+        },
+        "case_id": "private_missing/private_queue_21.log",
+        "cluster_id": "error-b5f45ff05166f2bffc99fa2b6ac68f47cb32504227d3a3cc4f776b2e2fb1c772",
+        "log_path": "/fixture/rtl_injection_minimal/private_missing/private_queue_21.log",
+        "rank": 1,
+        "reasons": [
+          "error severity",
+          "distinct_tests=1",
+          "max_same_test_seeds=2",
+          "occurrences=2",
+          "simulation_time=5ns (max_observed_timestamp)"
+        ],
+        "score_components": {
+          "distinct_test_count": 1,
+          "max_same_test_seed_count": 2,
+          "occurrence_count": 2,
+          "severity_rank": 2,
+          "signature_completeness": 3
+        },
+        "seed": 21,
+        "seed_parse_status": "parsed",
+        "simulation_time": {
+          "normalized_fs": "5000000",
+          "source": "max_observed_timestamp",
+          "unit": "ns",
+          "value": "5"
+        },
+        "test_id": "private_queue"
+      },
+      {
+        "alternate_cases": [
+          {
+            "artifacts": {
+              "case_directory": "/fixture/rtl_injection_minimal",
+              "resources": {
+                "daidir": {
+                  "candidates": [
+                    {
+                      "exists": false,
+                      "expected_kind": "directory",
+                      "file_type": "missing",
+                      "path": "/fixture/rtl_injection_minimal/simv.daidir",
+                      "priority": 10,
+                      "readable": false,
+                      "reason": "not_found",
+                      "size_bytes": null,
+                      "source": "configured_template",
+                      "state": "missing"
+                    }
+                  ],
+                  "reason": "no_existing_candidates",
+                  "selected": null,
+                  "status": "unavailable"
+                },
+                "fsdb": {
+                  "candidates": [
+                    {
+                      "exists": false,
+                      "expected_kind": "file",
+                      "file_type": "missing",
+                      "path": "/fixture/rtl_injection_minimal/public_compile_12.fsdb",
+                      "priority": 10,
+                      "readable": false,
+                      "reason": "not_found",
+                      "size_bytes": null,
+                      "source": "configured_template",
+                      "state": "missing"
+                    },
+                    {
+                      "exists": false,
+                      "expected_kind": "file",
+                      "file_type": "missing",
+                      "path": "/fixture/rtl_injection_minimal/sim_public_compile.fsdb",
+                      "priority": 11,
+                      "readable": false,
+                      "reason": "not_found",
+                      "size_bytes": null,
+                      "source": "configured_template",
+                      "state": "missing"
+                    },
+                    {
+                      "exists": false,
+                      "expected_kind": "file",
+                      "file_type": "missing",
+                      "path": "/fixture/rtl_injection_minimal/sim.fsdb",
+                      "priority": 12,
+                      "readable": false,
+                      "reason": "not_found",
+                      "size_bytes": null,
+                      "source": "configured_template",
+                      "state": "missing"
+                    }
+                  ],
+                  "reason": "no_existing_candidates",
+                  "selected": null,
+                  "status": "unavailable"
+                },
+                "kdb": {
+                  "candidates": [],
+                  "reason": "no_candidates",
+                  "selected": null,
+                  "status": "unavailable"
+                },
+                "log": {
+                  "candidates": [
+                    {
+                      "exists": true,
+                      "expected_kind": "file",
+                      "file_type": "file",
+                      "path": "/fixture/rtl_injection_minimal/public_compile_12.log",
+                      "priority": 0,
+                      "readable": true,
+                      "reason": null,
+                      "size_bytes": 85,
+                      "source": "discovered_log",
+                      "state": "available"
+                    }
+                  ],
+                  "reason": null,
+                  "selected": {
+                    "exists": true,
+                    "expected_kind": "file",
+                    "file_type": "file",
+                    "path": "/fixture/rtl_injection_minimal/public_compile_12.log",
+                    "priority": 0,
+                    "readable": true,
+                    "reason": null,
+                    "size_bytes": 85,
+                    "source": "discovered_log",
+                    "state": "available"
+                  },
+                  "status": "resolved"
+                },
+                "run_manifest": {
+                  "candidates": [],
+                  "reason": "no_candidates",
+                  "selected": null,
+                  "status": "unavailable"
+                }
+              },
+              "status": "unavailable",
+              "xdebug_target": {}
+            },
+            "case_id": "public_compile_12.log",
+            "seed": 12,
+            "seed_parse_status": "parsed",
+            "simulation_time": {
+              "normalized_fs": null,
+              "source": "unavailable",
+              "unit": null,
+              "value": null
+            },
+            "test_id": "public_compile"
+          }
+        ],
+        "artifacts": {
+          "case_directory": "/fixture/rtl_injection_minimal",
+          "resources": {
+            "daidir": {
+              "candidates": [
+                {
+                  "exists": false,
+                  "expected_kind": "directory",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/simv.daidir",
+                  "priority": 10,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                }
+              ],
+              "reason": "no_existing_candidates",
+              "selected": null,
+              "status": "unavailable"
+            },
+            "fsdb": {
+              "candidates": [
+                {
+                  "exists": false,
+                  "expected_kind": "file",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/public_compile_11.fsdb",
+                  "priority": 10,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                },
+                {
+                  "exists": false,
+                  "expected_kind": "file",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/sim_public_compile.fsdb",
+                  "priority": 11,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                },
+                {
+                  "exists": false,
+                  "expected_kind": "file",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/sim.fsdb",
+                  "priority": 12,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                }
+              ],
+              "reason": "no_existing_candidates",
+              "selected": null,
+              "status": "unavailable"
+            },
+            "kdb": {
+              "candidates": [],
+              "reason": "no_candidates",
+              "selected": null,
+              "status": "unavailable"
+            },
+            "log": {
+              "candidates": [
+                {
+                  "exists": true,
+                  "expected_kind": "file",
+                  "file_type": "file",
+                  "path": "/fixture/rtl_injection_minimal/public_compile_11.log",
+                  "priority": 0,
+                  "readable": true,
+                  "reason": null,
+                  "size_bytes": 87,
+                  "source": "discovered_log",
+                  "state": "available"
+                }
+              ],
+              "reason": null,
+              "selected": {
+                "exists": true,
+                "expected_kind": "file",
+                "file_type": "file",
+                "path": "/fixture/rtl_injection_minimal/public_compile_11.log",
+                "priority": 0,
+                "readable": true,
+                "reason": null,
+                "size_bytes": 87,
+                "source": "discovered_log",
+                "state": "available"
+              },
+              "status": "resolved"
+            },
+            "run_manifest": {
+              "candidates": [],
+              "reason": "no_candidates",
+              "selected": null,
+              "status": "unavailable"
+            }
+          },
+          "status": "unavailable",
+          "xdebug_target": {}
+        },
+        "case_id": "public_compile_11.log",
+        "cluster_id": "error-10f62fc891c84cc01f3f4132724cf7cbd32c015261f4810dc2967647a406443c",
+        "log_path": "/fixture/rtl_injection_minimal/public_compile_11.log",
+        "rank": 2,
+        "reasons": [
+          "error severity",
+          "distinct_tests=1",
+          "max_same_test_seeds=2",
+          "occurrences=2",
+          "simulation_time=unavailable"
+        ],
+        "score_components": {
+          "distinct_test_count": 1,
+          "max_same_test_seed_count": 2,
+          "occurrence_count": 2,
+          "severity_rank": 2,
+          "signature_completeness": 2
+        },
+        "seed": 11,
+        "seed_parse_status": "parsed",
+        "simulation_time": {
+          "normalized_fs": null,
+          "source": "unavailable",
+          "unit": null,
+          "value": null
+        },
+        "test_id": "public_compile"
+      },
+      {
+        "alternate_cases": [],
+        "artifacts": {
+          "case_directory": "/fixture/rtl_injection_minimal",
+          "resources": {
+            "daidir": {
+              "candidates": [
+                {
+                  "exists": false,
+                  "expected_kind": "directory",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/simv.daidir",
+                  "priority": 10,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                }
+              ],
+              "reason": "no_existing_candidates",
+              "selected": null,
+              "status": "unavailable"
+            },
+            "fsdb": {
+              "candidates": [
+                {
+                  "exists": true,
+                  "expected_kind": "file",
+                  "file_type": "file",
+                  "path": "/fixture/rtl_injection_minimal/ambiguous_a.fsdb",
+                  "priority": 0,
+                  "readable": true,
+                  "reason": null,
+                  "size_bytes": 39,
+                  "source": "log_reference",
+                  "state": "available"
+                },
+                {
+                  "exists": true,
+                  "expected_kind": "file",
+                  "file_type": "file",
+                  "path": "/fixture/rtl_injection_minimal/ambiguous_b.fsdb",
+                  "priority": 0,
+                  "readable": true,
+                  "reason": null,
+                  "size_bytes": 39,
+                  "source": "log_reference",
+                  "state": "available"
+                },
+                {
+                  "exists": false,
+                  "expected_kind": "file",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/ambiguous_wave_31.fsdb",
+                  "priority": 10,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                },
+                {
+                  "exists": false,
+                  "expected_kind": "file",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/sim_ambiguous_wave.fsdb",
+                  "priority": 11,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                },
+                {
+                  "exists": false,
+                  "expected_kind": "file",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/sim.fsdb",
+                  "priority": 12,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                }
+              ],
+              "reason": "multiple_best_candidates",
+              "selected": null,
+              "status": "ambiguous"
+            },
+            "kdb": {
+              "candidates": [],
+              "reason": "no_candidates",
+              "selected": null,
+              "status": "unavailable"
+            },
+            "log": {
+              "candidates": [
+                {
+                  "exists": true,
+                  "expected_kind": "file",
+                  "file_type": "file",
+                  "path": "/fixture/rtl_injection_minimal/ambiguous_wave_31.log",
+                  "priority": 0,
+                  "readable": true,
+                  "reason": null,
+                  "size_bytes": 179,
+                  "source": "discovered_log",
+                  "state": "available"
+                }
+              ],
+              "reason": null,
+              "selected": {
+                "exists": true,
+                "expected_kind": "file",
+                "file_type": "file",
+                "path": "/fixture/rtl_injection_minimal/ambiguous_wave_31.log",
+                "priority": 0,
+                "readable": true,
+                "reason": null,
+                "size_bytes": 179,
+                "source": "discovered_log",
+                "state": "available"
+              },
+              "status": "resolved"
+            },
+            "run_manifest": {
+              "candidates": [],
+              "reason": "no_candidates",
+              "selected": null,
+              "status": "unavailable"
+            }
+          },
+          "status": "ambiguous",
+          "xdebug_target": {}
+        },
+        "case_id": "ambiguous_wave_31.log",
+        "cluster_id": "error-53d314fdb6adc98fbbce52fc8e29847545ae76a94aebc51ce35b6efbf65169ff",
+        "log_path": "/fixture/rtl_injection_minimal/ambiguous_wave_31.log",
+        "rank": 3,
+        "reasons": [
+          "error severity",
+          "distinct_tests=1",
+          "max_same_test_seeds=1",
+          "occurrences=1",
+          "simulation_time=3ns (max_observed_timestamp)"
+        ],
+        "score_components": {
+          "distinct_test_count": 1,
+          "max_same_test_seed_count": 1,
+          "occurrence_count": 1,
+          "severity_rank": 2,
+          "signature_completeness": 3
+        },
+        "seed": 31,
+        "seed_parse_status": "parsed",
+        "simulation_time": {
+          "normalized_fs": "3000000",
+          "source": "max_observed_timestamp",
+          "unit": "ns",
+          "value": "3"
+        },
+        "test_id": "ambiguous_wave"
+      }
+    ],
+    "selected_cluster_count": 3
+  },
+  "failure_clusters": [
+    {
+      "case_ids": [
+        "public_compile_11.log",
+        "public_compile_12.log"
+      ],
+      "cluster_id": "error-10f62fc891c84cc01f3f4132724cf7cbd32c015261f4810dc2967647a406443c",
+      "fingerprint": "sha256:10f62fc891c84cc01f3f4132724cf7cbd32c015261f4810dc2967647a406443c",
+      "log_paths": [
+        "/fixture/rtl_injection_minimal/public_compile_11.log",
+        "/fixture/rtl_injection_minimal/public_compile_12.log"
+      ],
+      "occurrence_count": 2,
+      "recommendation": {
+        "alternate_case_ids": [
+          "public_compile_12.log"
+        ],
+        "alternate_cases": [
+          {
+            "artifacts": {
+              "case_directory": "/fixture/rtl_injection_minimal",
+              "resources": {
+                "daidir": {
+                  "candidates": [
+                    {
+                      "exists": false,
+                      "expected_kind": "directory",
+                      "file_type": "missing",
+                      "path": "/fixture/rtl_injection_minimal/simv.daidir",
+                      "priority": 10,
+                      "readable": false,
+                      "reason": "not_found",
+                      "size_bytes": null,
+                      "source": "configured_template",
+                      "state": "missing"
+                    }
+                  ],
+                  "reason": "no_existing_candidates",
+                  "selected": null,
+                  "status": "unavailable"
+                },
+                "fsdb": {
+                  "candidates": [
+                    {
+                      "exists": false,
+                      "expected_kind": "file",
+                      "file_type": "missing",
+                      "path": "/fixture/rtl_injection_minimal/public_compile_12.fsdb",
+                      "priority": 10,
+                      "readable": false,
+                      "reason": "not_found",
+                      "size_bytes": null,
+                      "source": "configured_template",
+                      "state": "missing"
+                    },
+                    {
+                      "exists": false,
+                      "expected_kind": "file",
+                      "file_type": "missing",
+                      "path": "/fixture/rtl_injection_minimal/sim_public_compile.fsdb",
+                      "priority": 11,
+                      "readable": false,
+                      "reason": "not_found",
+                      "size_bytes": null,
+                      "source": "configured_template",
+                      "state": "missing"
+                    },
+                    {
+                      "exists": false,
+                      "expected_kind": "file",
+                      "file_type": "missing",
+                      "path": "/fixture/rtl_injection_minimal/sim.fsdb",
+                      "priority": 12,
+                      "readable": false,
+                      "reason": "not_found",
+                      "size_bytes": null,
+                      "source": "configured_template",
+                      "state": "missing"
+                    }
+                  ],
+                  "reason": "no_existing_candidates",
+                  "selected": null,
+                  "status": "unavailable"
+                },
+                "kdb": {
+                  "candidates": [],
+                  "reason": "no_candidates",
+                  "selected": null,
+                  "status": "unavailable"
+                },
+                "log": {
+                  "candidates": [
+                    {
+                      "exists": true,
+                      "expected_kind": "file",
+                      "file_type": "file",
+                      "path": "/fixture/rtl_injection_minimal/public_compile_12.log",
+                      "priority": 0,
+                      "readable": true,
+                      "reason": null,
+                      "size_bytes": 85,
+                      "source": "discovered_log",
+                      "state": "available"
+                    }
+                  ],
+                  "reason": null,
+                  "selected": {
+                    "exists": true,
+                    "expected_kind": "file",
+                    "file_type": "file",
+                    "path": "/fixture/rtl_injection_minimal/public_compile_12.log",
+                    "priority": 0,
+                    "readable": true,
+                    "reason": null,
+                    "size_bytes": 85,
+                    "source": "discovered_log",
+                    "state": "available"
+                  },
+                  "status": "resolved"
+                },
+                "run_manifest": {
+                  "candidates": [],
+                  "reason": "no_candidates",
+                  "selected": null,
+                  "status": "unavailable"
+                }
+              },
+              "status": "unavailable",
+              "xdebug_target": {}
+            },
+            "case_id": "public_compile_12.log",
+            "seed": 12,
+            "seed_parse_status": "parsed",
+            "simulation_time": {
+              "normalized_fs": null,
+              "source": "unavailable",
+              "unit": null,
+              "value": null
+            },
+            "test_id": "public_compile"
+          }
+        ],
+        "rank": 2,
+        "reasons": [
+          "error severity",
+          "distinct_tests=1",
+          "max_same_test_seeds=2",
+          "occurrences=2",
+          "simulation_time=unavailable"
+        ],
+        "recommended_artifacts": {
+          "case_directory": "/fixture/rtl_injection_minimal",
+          "resources": {
+            "daidir": {
+              "candidates": [
+                {
+                  "exists": false,
+                  "expected_kind": "directory",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/simv.daidir",
+                  "priority": 10,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                }
+              ],
+              "reason": "no_existing_candidates",
+              "selected": null,
+              "status": "unavailable"
+            },
+            "fsdb": {
+              "candidates": [
+                {
+                  "exists": false,
+                  "expected_kind": "file",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/public_compile_11.fsdb",
+                  "priority": 10,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                },
+                {
+                  "exists": false,
+                  "expected_kind": "file",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/sim_public_compile.fsdb",
+                  "priority": 11,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                },
+                {
+                  "exists": false,
+                  "expected_kind": "file",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/sim.fsdb",
+                  "priority": 12,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                }
+              ],
+              "reason": "no_existing_candidates",
+              "selected": null,
+              "status": "unavailable"
+            },
+            "kdb": {
+              "candidates": [],
+              "reason": "no_candidates",
+              "selected": null,
+              "status": "unavailable"
+            },
+            "log": {
+              "candidates": [
+                {
+                  "exists": true,
+                  "expected_kind": "file",
+                  "file_type": "file",
+                  "path": "/fixture/rtl_injection_minimal/public_compile_11.log",
+                  "priority": 0,
+                  "readable": true,
+                  "reason": null,
+                  "size_bytes": 87,
+                  "source": "discovered_log",
+                  "state": "available"
+                }
+              ],
+              "reason": null,
+              "selected": {
+                "exists": true,
+                "expected_kind": "file",
+                "file_type": "file",
+                "path": "/fixture/rtl_injection_minimal/public_compile_11.log",
+                "priority": 0,
+                "readable": true,
+                "reason": null,
+                "size_bytes": 87,
+                "source": "discovered_log",
+                "state": "available"
+              },
+              "status": "resolved"
+            },
+            "run_manifest": {
+              "candidates": [],
+              "reason": "no_candidates",
+              "selected": null,
+              "status": "unavailable"
+            }
+          },
+          "status": "unavailable",
+          "xdebug_target": {}
+        },
+        "recommended_case": {
+          "artifacts": {
+            "case_directory": "/fixture/rtl_injection_minimal",
+            "resources": {
+              "daidir": {
+                "candidates": [
+                  {
+                    "exists": false,
+                    "expected_kind": "directory",
+                    "file_type": "missing",
+                    "path": "/fixture/rtl_injection_minimal/simv.daidir",
+                    "priority": 10,
+                    "readable": false,
+                    "reason": "not_found",
+                    "size_bytes": null,
+                    "source": "configured_template",
+                    "state": "missing"
+                  }
+                ],
+                "reason": "no_existing_candidates",
+                "selected": null,
+                "status": "unavailable"
+              },
+              "fsdb": {
+                "candidates": [
+                  {
+                    "exists": false,
+                    "expected_kind": "file",
+                    "file_type": "missing",
+                    "path": "/fixture/rtl_injection_minimal/public_compile_11.fsdb",
+                    "priority": 10,
+                    "readable": false,
+                    "reason": "not_found",
+                    "size_bytes": null,
+                    "source": "configured_template",
+                    "state": "missing"
+                  },
+                  {
+                    "exists": false,
+                    "expected_kind": "file",
+                    "file_type": "missing",
+                    "path": "/fixture/rtl_injection_minimal/sim_public_compile.fsdb",
+                    "priority": 11,
+                    "readable": false,
+                    "reason": "not_found",
+                    "size_bytes": null,
+                    "source": "configured_template",
+                    "state": "missing"
+                  },
+                  {
+                    "exists": false,
+                    "expected_kind": "file",
+                    "file_type": "missing",
+                    "path": "/fixture/rtl_injection_minimal/sim.fsdb",
+                    "priority": 12,
+                    "readable": false,
+                    "reason": "not_found",
+                    "size_bytes": null,
+                    "source": "configured_template",
+                    "state": "missing"
+                  }
+                ],
+                "reason": "no_existing_candidates",
+                "selected": null,
+                "status": "unavailable"
+              },
+              "kdb": {
+                "candidates": [],
+                "reason": "no_candidates",
+                "selected": null,
+                "status": "unavailable"
+              },
+              "log": {
+                "candidates": [
+                  {
+                    "exists": true,
+                    "expected_kind": "file",
+                    "file_type": "file",
+                    "path": "/fixture/rtl_injection_minimal/public_compile_11.log",
+                    "priority": 0,
+                    "readable": true,
+                    "reason": null,
+                    "size_bytes": 87,
+                    "source": "discovered_log",
+                    "state": "available"
+                  }
+                ],
+                "reason": null,
+                "selected": {
+                  "exists": true,
+                  "expected_kind": "file",
+                  "file_type": "file",
+                  "path": "/fixture/rtl_injection_minimal/public_compile_11.log",
+                  "priority": 0,
+                  "readable": true,
+                  "reason": null,
+                  "size_bytes": 87,
+                  "source": "discovered_log",
+                  "state": "available"
+                },
+                "status": "resolved"
+              },
+              "run_manifest": {
+                "candidates": [],
+                "reason": "no_candidates",
+                "selected": null,
+                "status": "unavailable"
+              }
+            },
+            "status": "unavailable",
+            "xdebug_target": {}
+          },
+          "case_id": "public_compile_11.log",
+          "seed": 11,
+          "seed_parse_status": "parsed",
+          "simulation_time": {
+            "normalized_fs": null,
+            "source": "unavailable",
+            "unit": null,
+            "value": null
+          },
+          "test_id": "public_compile"
+        },
+        "recommended_case_id": "public_compile_11.log",
+        "recommended_simulation_time": {
+          "normalized_fs": null,
+          "source": "unavailable",
+          "unit": null,
+          "value": null
+        },
+        "score_components": {
+          "distinct_test_count": 1,
+          "max_same_test_seed_count": 2,
+          "occurrence_count": 2,
+          "severity_rank": 2,
+          "signature_completeness": 2
+        },
+        "selected": true
+      },
+      "representative_case_id": "public_compile_11.log",
+      "representative_error": {
+        "description": "/project/injected_a/rtl/cache_ctrl.sv:73 injected width mismatch value 0x1f",
+        "description_template": "<path> injected width mismatch value <num>",
+        "description_template_status": "present",
+        "error_id": "SE",
+        "error_type": "TOOL_ERROR",
+        "event_time": {
+          "normalized_fs": null,
+          "source": "unavailable",
+          "unit": null,
+          "value": null
+        },
+        "level": "ERROR",
+        "location": "",
+        "portable_signature": {
+          "description_template": "<path> injected width mismatch value <num>",
+          "fingerprint": "sha256:10f62fc891c84cc01f3f4132724cf7cbd32c015261f4810dc2967647a406443c",
+          "strategy": "level_error_id_producer_description.v1"
+        },
+        "producer": "vcs",
+        "report_id": "SE",
+        "scope_hint": {
+          "basis": [
+            "producer=vcs",
+            "error_type=TOOL_ERROR"
+          ],
+          "candidate": "shared_public",
+          "final_routing": "undetermined",
+          "producer": "vcs",
+          "status": "non_authoritative"
+        },
+        "source_location": {
+          "display": null,
+          "line": null,
+          "path": null
+        },
+        "timestamp": ""
+      },
+      "signature": {
+        "description_template": "<path> injected width mismatch value <num>",
+        "error_id": "SE",
+        "fingerprint": "sha256:10f62fc891c84cc01f3f4132724cf7cbd32c015261f4810dc2967647a406443c",
+        "level": "ERROR",
+        "location": "",
+        "portable_signature": {
+          "description_template": "<path> injected width mismatch value <num>",
+          "fingerprint": "sha256:10f62fc891c84cc01f3f4132724cf7cbd32c015261f4810dc2967647a406443c",
+          "strategy": "level_error_id_producer_description.v1"
+        },
+        "scope_hint": {
+          "basis": [
+            "producer=vcs",
+            "error_type=TOOL_ERROR"
+          ],
+          "candidate": "shared_public",
+          "final_routing": "undetermined",
+          "producer": "vcs",
+          "status": "non_authoritative"
+        },
+        "source_location": {
+          "display": null,
+          "line": null,
+          "path": null
+        },
+        "strategy": "level_error_id_producer_portable_description"
+      }
+    },
+    {
+      "case_ids": [
+        "ambiguous_wave_31.log"
+      ],
+      "cluster_id": "error-53d314fdb6adc98fbbce52fc8e29847545ae76a94aebc51ce35b6efbf65169ff",
+      "fingerprint": "sha256:53d314fdb6adc98fbbce52fc8e29847545ae76a94aebc51ce35b6efbf65169ff",
+      "log_paths": [
+        "/fixture/rtl_injection_minimal/ambiguous_wave_31.log"
+      ],
+      "occurrence_count": 1,
+      "recommendation": {
+        "alternate_case_ids": [],
+        "alternate_cases": [],
+        "rank": 3,
+        "reasons": [
+          "error severity",
+          "distinct_tests=1",
+          "max_same_test_seeds=1",
+          "occurrences=1",
+          "simulation_time=3ns (max_observed_timestamp)"
+        ],
+        "recommended_artifacts": {
+          "case_directory": "/fixture/rtl_injection_minimal",
+          "resources": {
+            "daidir": {
+              "candidates": [
+                {
+                  "exists": false,
+                  "expected_kind": "directory",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/simv.daidir",
+                  "priority": 10,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                }
+              ],
+              "reason": "no_existing_candidates",
+              "selected": null,
+              "status": "unavailable"
+            },
+            "fsdb": {
+              "candidates": [
+                {
+                  "exists": true,
+                  "expected_kind": "file",
+                  "file_type": "file",
+                  "path": "/fixture/rtl_injection_minimal/ambiguous_a.fsdb",
+                  "priority": 0,
+                  "readable": true,
+                  "reason": null,
+                  "size_bytes": 39,
+                  "source": "log_reference",
+                  "state": "available"
+                },
+                {
+                  "exists": true,
+                  "expected_kind": "file",
+                  "file_type": "file",
+                  "path": "/fixture/rtl_injection_minimal/ambiguous_b.fsdb",
+                  "priority": 0,
+                  "readable": true,
+                  "reason": null,
+                  "size_bytes": 39,
+                  "source": "log_reference",
+                  "state": "available"
+                },
+                {
+                  "exists": false,
+                  "expected_kind": "file",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/ambiguous_wave_31.fsdb",
+                  "priority": 10,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                },
+                {
+                  "exists": false,
+                  "expected_kind": "file",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/sim_ambiguous_wave.fsdb",
+                  "priority": 11,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                },
+                {
+                  "exists": false,
+                  "expected_kind": "file",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/sim.fsdb",
+                  "priority": 12,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                }
+              ],
+              "reason": "multiple_best_candidates",
+              "selected": null,
+              "status": "ambiguous"
+            },
+            "kdb": {
+              "candidates": [],
+              "reason": "no_candidates",
+              "selected": null,
+              "status": "unavailable"
+            },
+            "log": {
+              "candidates": [
+                {
+                  "exists": true,
+                  "expected_kind": "file",
+                  "file_type": "file",
+                  "path": "/fixture/rtl_injection_minimal/ambiguous_wave_31.log",
+                  "priority": 0,
+                  "readable": true,
+                  "reason": null,
+                  "size_bytes": 179,
+                  "source": "discovered_log",
+                  "state": "available"
+                }
+              ],
+              "reason": null,
+              "selected": {
+                "exists": true,
+                "expected_kind": "file",
+                "file_type": "file",
+                "path": "/fixture/rtl_injection_minimal/ambiguous_wave_31.log",
+                "priority": 0,
+                "readable": true,
+                "reason": null,
+                "size_bytes": 179,
+                "source": "discovered_log",
+                "state": "available"
+              },
+              "status": "resolved"
+            },
+            "run_manifest": {
+              "candidates": [],
+              "reason": "no_candidates",
+              "selected": null,
+              "status": "unavailable"
+            }
+          },
+          "status": "ambiguous",
+          "xdebug_target": {}
+        },
+        "recommended_case": {
+          "artifacts": {
+            "case_directory": "/fixture/rtl_injection_minimal",
+            "resources": {
+              "daidir": {
+                "candidates": [
+                  {
+                    "exists": false,
+                    "expected_kind": "directory",
+                    "file_type": "missing",
+                    "path": "/fixture/rtl_injection_minimal/simv.daidir",
+                    "priority": 10,
+                    "readable": false,
+                    "reason": "not_found",
+                    "size_bytes": null,
+                    "source": "configured_template",
+                    "state": "missing"
+                  }
+                ],
+                "reason": "no_existing_candidates",
+                "selected": null,
+                "status": "unavailable"
+              },
+              "fsdb": {
+                "candidates": [
+                  {
+                    "exists": true,
+                    "expected_kind": "file",
+                    "file_type": "file",
+                    "path": "/fixture/rtl_injection_minimal/ambiguous_a.fsdb",
+                    "priority": 0,
+                    "readable": true,
+                    "reason": null,
+                    "size_bytes": 39,
+                    "source": "log_reference",
+                    "state": "available"
+                  },
+                  {
+                    "exists": true,
+                    "expected_kind": "file",
+                    "file_type": "file",
+                    "path": "/fixture/rtl_injection_minimal/ambiguous_b.fsdb",
+                    "priority": 0,
+                    "readable": true,
+                    "reason": null,
+                    "size_bytes": 39,
+                    "source": "log_reference",
+                    "state": "available"
+                  },
+                  {
+                    "exists": false,
+                    "expected_kind": "file",
+                    "file_type": "missing",
+                    "path": "/fixture/rtl_injection_minimal/ambiguous_wave_31.fsdb",
+                    "priority": 10,
+                    "readable": false,
+                    "reason": "not_found",
+                    "size_bytes": null,
+                    "source": "configured_template",
+                    "state": "missing"
+                  },
+                  {
+                    "exists": false,
+                    "expected_kind": "file",
+                    "file_type": "missing",
+                    "path": "/fixture/rtl_injection_minimal/sim_ambiguous_wave.fsdb",
+                    "priority": 11,
+                    "readable": false,
+                    "reason": "not_found",
+                    "size_bytes": null,
+                    "source": "configured_template",
+                    "state": "missing"
+                  },
+                  {
+                    "exists": false,
+                    "expected_kind": "file",
+                    "file_type": "missing",
+                    "path": "/fixture/rtl_injection_minimal/sim.fsdb",
+                    "priority": 12,
+                    "readable": false,
+                    "reason": "not_found",
+                    "size_bytes": null,
+                    "source": "configured_template",
+                    "state": "missing"
+                  }
+                ],
+                "reason": "multiple_best_candidates",
+                "selected": null,
+                "status": "ambiguous"
+              },
+              "kdb": {
+                "candidates": [],
+                "reason": "no_candidates",
+                "selected": null,
+                "status": "unavailable"
+              },
+              "log": {
+                "candidates": [
+                  {
+                    "exists": true,
+                    "expected_kind": "file",
+                    "file_type": "file",
+                    "path": "/fixture/rtl_injection_minimal/ambiguous_wave_31.log",
+                    "priority": 0,
+                    "readable": true,
+                    "reason": null,
+                    "size_bytes": 179,
+                    "source": "discovered_log",
+                    "state": "available"
+                  }
+                ],
+                "reason": null,
+                "selected": {
+                  "exists": true,
+                  "expected_kind": "file",
+                  "file_type": "file",
+                  "path": "/fixture/rtl_injection_minimal/ambiguous_wave_31.log",
+                  "priority": 0,
+                  "readable": true,
+                  "reason": null,
+                  "size_bytes": 179,
+                  "source": "discovered_log",
+                  "state": "available"
+                },
+                "status": "resolved"
+              },
+              "run_manifest": {
+                "candidates": [],
+                "reason": "no_candidates",
+                "selected": null,
+                "status": "unavailable"
+              }
+            },
+            "status": "ambiguous",
+            "xdebug_target": {}
+          },
+          "case_id": "ambiguous_wave_31.log",
+          "seed": 31,
+          "seed_parse_status": "parsed",
+          "simulation_time": {
+            "normalized_fs": "3000000",
+            "source": "max_observed_timestamp",
+            "unit": "ns",
+            "value": "3"
+          },
+          "test_id": "ambiguous_wave"
+        },
+        "recommended_case_id": "ambiguous_wave_31.log",
+        "recommended_simulation_time": {
+          "normalized_fs": "3000000",
+          "source": "max_observed_timestamp",
+          "unit": "ns",
+          "value": "3"
+        },
+        "score_components": {
+          "distinct_test_count": 1,
+          "max_same_test_seed_count": 1,
+          "occurrence_count": 1,
+          "severity_rank": 2,
+          "signature_completeness": 3
+        },
+        "selected": true
+      },
+      "representative_case_id": "ambiguous_wave_31.log",
+      "representative_error": {
+        "description": "injected signal did not toggle",
+        "description_template": "injected signal did not toggle",
+        "description_template_status": "present",
+        "error_id": "INJECT_AMBIGUOUS",
+        "error_type": "UVM_ERROR",
+        "event_time": {
+          "normalized_fs": "3000000",
+          "source": "reported_timestamp",
+          "unit": "ns",
+          "value": "3"
+        },
+        "level": "UVM_ERROR",
+        "location": "/project/env/injection_check.sv(300)",
+        "portable_signature": {
+          "description_template": "injected signal did not toggle",
+          "fingerprint": "sha256:c8519960ccd8538f3d2c0ad369a83a868c0486bec11d7755d4fb0ff54fadcefd",
+          "strategy": "level_error_id_producer_description.v1"
+        },
+        "producer": "uvm",
+        "report_id": "INJECT_AMBIGUOUS",
+        "scope_hint": {
+          "basis": [
+            "producer=uvm",
+            "error_type=UVM_ERROR"
+          ],
+          "candidate": "environment_private",
+          "final_routing": "undetermined",
+          "producer": "uvm",
+          "status": "non_authoritative"
+        },
+        "source_location": {
+          "display": "/project/env/injection_check.sv(300)",
+          "line": 300,
+          "path": "/project/env/injection_check.sv"
+        },
+        "timestamp": "3ns"
+      },
+      "signature": {
+        "description_template": "injected signal did not toggle",
+        "error_id": "INJECT_AMBIGUOUS",
+        "fingerprint": "sha256:53d314fdb6adc98fbbce52fc8e29847545ae76a94aebc51ce35b6efbf65169ff",
+        "level": "UVM_ERROR",
+        "location": "/project/env/injection_check.sv(300)",
+        "portable_signature": {
+          "description_template": "injected signal did not toggle",
+          "fingerprint": "sha256:c8519960ccd8538f3d2c0ad369a83a868c0486bec11d7755d4fb0ff54fadcefd",
+          "strategy": "level_error_id_producer_description.v1"
+        },
+        "scope_hint": {
+          "basis": [
+            "producer=uvm",
+            "error_type=UVM_ERROR"
+          ],
+          "candidate": "environment_private",
+          "final_routing": "undetermined",
+          "producer": "uvm",
+          "status": "non_authoritative"
+        },
+        "source_location": {
+          "display": "/project/env/injection_check.sv(300)",
+          "line": 300,
+          "path": "/project/env/injection_check.sv"
+        },
+        "strategy": "level_error_id_location_description"
+      }
+    },
+    {
+      "case_ids": [
+        "private_complete/private_queue_22.log",
+        "private_missing/private_queue_21.log"
+      ],
+      "cluster_id": "error-b5f45ff05166f2bffc99fa2b6ac68f47cb32504227d3a3cc4f776b2e2fb1c772",
+      "fingerprint": "sha256:b5f45ff05166f2bffc99fa2b6ac68f47cb32504227d3a3cc4f776b2e2fb1c772",
+      "log_paths": [
+        "/fixture/rtl_injection_minimal/private_complete/private_queue_22.log",
+        "/fixture/rtl_injection_minimal/private_missing/private_queue_21.log"
+      ],
+      "occurrence_count": 2,
+      "recommendation": {
+        "alternate_case_ids": [
+          "private_complete/private_queue_22.log"
+        ],
+        "alternate_cases": [
+          {
+            "artifacts": {
+              "case_directory": "/fixture/rtl_injection_minimal/private_complete",
+              "resources": {
+                "daidir": {
+                  "candidates": [
+                    {
+                      "exists": true,
+                      "expected_kind": "directory",
+                      "file_type": "directory",
+                      "path": "/fixture/rtl_injection_minimal/private_complete/simv.daidir",
+                      "priority": 0,
+                      "readable": true,
+                      "reason": null,
+                      "size_bytes": null,
+                      "source": "log_reference",
+                      "state": "available"
+                    },
+                    {
+                      "exists": false,
+                      "expected_kind": "directory",
+                      "file_type": "missing",
+                      "path": "/fixture/rtl_injection_minimal/simv.daidir",
+                      "priority": 11,
+                      "readable": false,
+                      "reason": "not_found",
+                      "size_bytes": null,
+                      "source": "configured_template",
+                      "state": "missing"
+                    }
+                  ],
+                  "reason": null,
+                  "selected": {
+                    "exists": true,
+                    "expected_kind": "directory",
+                    "file_type": "directory",
+                    "path": "/fixture/rtl_injection_minimal/private_complete/simv.daidir",
+                    "priority": 0,
+                    "readable": true,
+                    "reason": null,
+                    "size_bytes": null,
+                    "source": "log_reference",
+                    "state": "available"
+                  },
+                  "status": "resolved"
+                },
+                "fsdb": {
+                  "candidates": [
+                    {
+                      "exists": true,
+                      "expected_kind": "file",
+                      "file_type": "file",
+                      "path": "/fixture/rtl_injection_minimal/private_complete/private_queue_22.fsdb",
+                      "priority": 0,
+                      "readable": true,
+                      "reason": null,
+                      "size_bytes": 37,
+                      "source": "log_reference",
+                      "state": "available"
+                    },
+                    {
+                      "exists": false,
+                      "expected_kind": "file",
+                      "file_type": "missing",
+                      "path": "/fixture/rtl_injection_minimal/private_complete/sim_private_queue.fsdb",
+                      "priority": 11,
+                      "readable": false,
+                      "reason": "not_found",
+                      "size_bytes": null,
+                      "source": "configured_template",
+                      "state": "missing"
+                    },
+                    {
+                      "exists": false,
+                      "expected_kind": "file",
+                      "file_type": "missing",
+                      "path": "/fixture/rtl_injection_minimal/private_complete/sim.fsdb",
+                      "priority": 12,
+                      "readable": false,
+                      "reason": "not_found",
+                      "size_bytes": null,
+                      "source": "configured_template",
+                      "state": "missing"
+                    }
+                  ],
+                  "reason": null,
+                  "selected": {
+                    "exists": true,
+                    "expected_kind": "file",
+                    "file_type": "file",
+                    "path": "/fixture/rtl_injection_minimal/private_complete/private_queue_22.fsdb",
+                    "priority": 0,
+                    "readable": true,
+                    "reason": null,
+                    "size_bytes": 37,
+                    "source": "log_reference",
+                    "state": "available"
+                  },
+                  "status": "resolved"
+                },
+                "kdb": {
+                  "candidates": [
+                    {
+                      "exists": true,
+                      "expected_kind": "directory",
+                      "file_type": "directory",
+                      "path": "/fixture/rtl_injection_minimal/private_complete/simv.daidir/kdb",
+                      "priority": 5,
+                      "readable": true,
+                      "reason": null,
+                      "size_bytes": null,
+                      "source": "resolved_daidir",
+                      "state": "available"
+                    }
+                  ],
+                  "reason": null,
+                  "selected": {
+                    "exists": true,
+                    "expected_kind": "directory",
+                    "file_type": "directory",
+                    "path": "/fixture/rtl_injection_minimal/private_complete/simv.daidir/kdb",
+                    "priority": 5,
+                    "readable": true,
+                    "reason": null,
+                    "size_bytes": null,
+                    "source": "resolved_daidir",
+                    "state": "available"
+                  },
+                  "status": "resolved"
+                },
+                "log": {
+                  "candidates": [
+                    {
+                      "exists": true,
+                      "expected_kind": "file",
+                      "file_type": "file",
+                      "path": "/fixture/rtl_injection_minimal/private_complete/private_queue_22.log",
+                      "priority": 0,
+                      "readable": true,
+                      "reason": null,
+                      "size_bytes": 158,
+                      "source": "discovered_log",
+                      "state": "available"
+                    }
+                  ],
+                  "reason": null,
+                  "selected": {
+                    "exists": true,
+                    "expected_kind": "file",
+                    "file_type": "file",
+                    "path": "/fixture/rtl_injection_minimal/private_complete/private_queue_22.log",
+                    "priority": 0,
+                    "readable": true,
+                    "reason": null,
+                    "size_bytes": 158,
+                    "source": "discovered_log",
+                    "state": "available"
+                  },
+                  "status": "resolved"
+                },
+                "run_manifest": {
+                  "candidates": [],
+                  "reason": "no_candidates",
+                  "selected": null,
+                  "status": "unavailable"
+                }
+              },
+              "status": "complete",
+              "xdebug_target": {
+                "daidir": "/fixture/rtl_injection_minimal/private_complete/simv.daidir",
+                "fsdb": "/fixture/rtl_injection_minimal/private_complete/private_queue_22.fsdb"
+              }
+            },
+            "case_id": "private_complete/private_queue_22.log",
+            "seed": 22,
+            "seed_parse_status": "parsed",
+            "simulation_time": {
+              "normalized_fs": "20000000",
+              "source": "max_observed_timestamp",
+              "unit": "ns",
+              "value": "20"
+            },
+            "test_id": "private_queue"
+          }
+        ],
+        "rank": 1,
+        "reasons": [
+          "error severity",
+          "distinct_tests=1",
+          "max_same_test_seeds=2",
+          "occurrences=2",
+          "simulation_time=5ns (max_observed_timestamp)"
+        ],
+        "recommended_artifacts": {
+          "case_directory": "/fixture/rtl_injection_minimal/private_missing",
+          "resources": {
+            "daidir": {
+              "candidates": [
+                {
+                  "exists": false,
+                  "expected_kind": "directory",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/private_missing/simv.daidir",
+                  "priority": 10,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                },
+                {
+                  "exists": false,
+                  "expected_kind": "directory",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/simv.daidir",
+                  "priority": 11,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                }
+              ],
+              "reason": "no_existing_candidates",
+              "selected": null,
+              "status": "unavailable"
+            },
+            "fsdb": {
+              "candidates": [
+                {
+                  "exists": false,
+                  "expected_kind": "file",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/private_missing/private_queue_21.fsdb",
+                  "priority": 10,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                },
+                {
+                  "exists": false,
+                  "expected_kind": "file",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/private_missing/sim_private_queue.fsdb",
+                  "priority": 11,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                },
+                {
+                  "exists": false,
+                  "expected_kind": "file",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/private_missing/sim.fsdb",
+                  "priority": 12,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                }
+              ],
+              "reason": "no_existing_candidates",
+              "selected": null,
+              "status": "unavailable"
+            },
+            "kdb": {
+              "candidates": [],
+              "reason": "no_candidates",
+              "selected": null,
+              "status": "unavailable"
+            },
+            "log": {
+              "candidates": [
+                {
+                  "exists": true,
+                  "expected_kind": "file",
+                  "file_type": "file",
+                  "path": "/fixture/rtl_injection_minimal/private_missing/private_queue_21.log",
+                  "priority": 0,
+                  "readable": true,
+                  "reason": null,
+                  "size_bytes": 96,
+                  "source": "discovered_log",
+                  "state": "available"
+                }
+              ],
+              "reason": null,
+              "selected": {
+                "exists": true,
+                "expected_kind": "file",
+                "file_type": "file",
+                "path": "/fixture/rtl_injection_minimal/private_missing/private_queue_21.log",
+                "priority": 0,
+                "readable": true,
+                "reason": null,
+                "size_bytes": 96,
+                "source": "discovered_log",
+                "state": "available"
+              },
+              "status": "resolved"
+            },
+            "run_manifest": {
+              "candidates": [],
+              "reason": "no_candidates",
+              "selected": null,
+              "status": "unavailable"
+            }
+          },
+          "status": "unavailable",
+          "xdebug_target": {}
+        },
+        "recommended_case": {
+          "artifacts": {
+            "case_directory": "/fixture/rtl_injection_minimal/private_missing",
+            "resources": {
+              "daidir": {
+                "candidates": [
+                  {
+                    "exists": false,
+                    "expected_kind": "directory",
+                    "file_type": "missing",
+                    "path": "/fixture/rtl_injection_minimal/private_missing/simv.daidir",
+                    "priority": 10,
+                    "readable": false,
+                    "reason": "not_found",
+                    "size_bytes": null,
+                    "source": "configured_template",
+                    "state": "missing"
+                  },
+                  {
+                    "exists": false,
+                    "expected_kind": "directory",
+                    "file_type": "missing",
+                    "path": "/fixture/rtl_injection_minimal/simv.daidir",
+                    "priority": 11,
+                    "readable": false,
+                    "reason": "not_found",
+                    "size_bytes": null,
+                    "source": "configured_template",
+                    "state": "missing"
+                  }
+                ],
+                "reason": "no_existing_candidates",
+                "selected": null,
+                "status": "unavailable"
+              },
+              "fsdb": {
+                "candidates": [
+                  {
+                    "exists": false,
+                    "expected_kind": "file",
+                    "file_type": "missing",
+                    "path": "/fixture/rtl_injection_minimal/private_missing/private_queue_21.fsdb",
+                    "priority": 10,
+                    "readable": false,
+                    "reason": "not_found",
+                    "size_bytes": null,
+                    "source": "configured_template",
+                    "state": "missing"
+                  },
+                  {
+                    "exists": false,
+                    "expected_kind": "file",
+                    "file_type": "missing",
+                    "path": "/fixture/rtl_injection_minimal/private_missing/sim_private_queue.fsdb",
+                    "priority": 11,
+                    "readable": false,
+                    "reason": "not_found",
+                    "size_bytes": null,
+                    "source": "configured_template",
+                    "state": "missing"
+                  },
+                  {
+                    "exists": false,
+                    "expected_kind": "file",
+                    "file_type": "missing",
+                    "path": "/fixture/rtl_injection_minimal/private_missing/sim.fsdb",
+                    "priority": 12,
+                    "readable": false,
+                    "reason": "not_found",
+                    "size_bytes": null,
+                    "source": "configured_template",
+                    "state": "missing"
+                  }
+                ],
+                "reason": "no_existing_candidates",
+                "selected": null,
+                "status": "unavailable"
+              },
+              "kdb": {
+                "candidates": [],
+                "reason": "no_candidates",
+                "selected": null,
+                "status": "unavailable"
+              },
+              "log": {
+                "candidates": [
+                  {
+                    "exists": true,
+                    "expected_kind": "file",
+                    "file_type": "file",
+                    "path": "/fixture/rtl_injection_minimal/private_missing/private_queue_21.log",
+                    "priority": 0,
+                    "readable": true,
+                    "reason": null,
+                    "size_bytes": 96,
+                    "source": "discovered_log",
+                    "state": "available"
+                  }
+                ],
+                "reason": null,
+                "selected": {
+                  "exists": true,
+                  "expected_kind": "file",
+                  "file_type": "file",
+                  "path": "/fixture/rtl_injection_minimal/private_missing/private_queue_21.log",
+                  "priority": 0,
+                  "readable": true,
+                  "reason": null,
+                  "size_bytes": 96,
+                  "source": "discovered_log",
+                  "state": "available"
+                },
+                "status": "resolved"
+              },
+              "run_manifest": {
+                "candidates": [],
+                "reason": "no_candidates",
+                "selected": null,
+                "status": "unavailable"
+              }
+            },
+            "status": "unavailable",
+            "xdebug_target": {}
+          },
+          "case_id": "private_missing/private_queue_21.log",
+          "seed": 21,
+          "seed_parse_status": "parsed",
+          "simulation_time": {
+            "normalized_fs": "5000000",
+            "source": "max_observed_timestamp",
+            "unit": "ns",
+            "value": "5"
+          },
+          "test_id": "private_queue"
+        },
+        "recommended_case_id": "private_missing/private_queue_21.log",
+        "recommended_simulation_time": {
+          "normalized_fs": "5000000",
+          "source": "max_observed_timestamp",
+          "unit": "ns",
+          "value": "5"
+        },
+        "score_components": {
+          "distinct_test_count": 1,
+          "max_same_test_seed_count": 2,
+          "occurrence_count": 2,
+          "severity_rank": 2,
+          "signature_completeness": 3
+        },
+        "selected": true
+      },
+      "representative_case_id": "private_complete/private_queue_22.log",
+      "representative_error": {
+        "description": "queue 0x22 is full at index 93",
+        "description_template": "queue <num> is full at index <num>",
+        "description_template_status": "present",
+        "error_id": "QUEUE_FULL",
+        "error_type": "UVM_ERROR",
+        "event_time": {
+          "normalized_fs": "20000000",
+          "source": "reported_timestamp",
+          "unit": "ns",
+          "value": "20"
+        },
+        "level": "UVM_ERROR",
+        "location": "/project/env/qmon.sv(210)",
+        "portable_signature": {
+          "description_template": "queue <num> is full at index <num>",
+          "fingerprint": "sha256:386402506ef7a7b23d4ac5e53f2c9ff31bf36200898730c78d544ea70b6884b2",
+          "strategy": "level_error_id_producer_description.v1"
+        },
+        "producer": "uvm",
+        "report_id": "QUEUE_FULL",
+        "scope_hint": {
+          "basis": [
+            "producer=uvm",
+            "error_type=UVM_ERROR"
+          ],
+          "candidate": "environment_private",
+          "final_routing": "undetermined",
+          "producer": "uvm",
+          "status": "non_authoritative"
+        },
+        "source_location": {
+          "display": "/project/env/qmon.sv(210)",
+          "line": 210,
+          "path": "/project/env/qmon.sv"
+        },
+        "timestamp": "20ns"
+      },
+      "signature": {
+        "description_template": "queue <num> is full at index <num>",
+        "error_id": "QUEUE_FULL",
+        "fingerprint": "sha256:b5f45ff05166f2bffc99fa2b6ac68f47cb32504227d3a3cc4f776b2e2fb1c772",
+        "level": "UVM_ERROR",
+        "location": "/project/env/qmon.sv(210)",
+        "portable_signature": {
+          "description_template": "queue <num> is full at index <num>",
+          "fingerprint": "sha256:386402506ef7a7b23d4ac5e53f2c9ff31bf36200898730c78d544ea70b6884b2",
+          "strategy": "level_error_id_producer_description.v1"
+        },
+        "scope_hint": {
+          "basis": [
+            "producer=uvm",
+            "error_type=UVM_ERROR"
+          ],
+          "candidate": "environment_private",
+          "final_routing": "undetermined",
+          "producer": "uvm",
+          "status": "non_authoritative"
+        },
+        "source_location": {
+          "display": "/project/env/qmon.sv(210)",
+          "line": 210,
+          "path": "/project/env/qmon.sv"
+        },
+        "strategy": "level_error_id_location_description"
+      }
+    }
+  ],
+  "generated_at": "2000-01-01T00:00:00Z",
+  "parser_config": {
+    "extra_patterns": [
+      "ERROR",
+      "FATAL",
+      "FAILED",
+      "VIRL_MEM_WARNING",
+      "JVP TEST FAILED",
+      "SVA_ERROR",
+      "SVA_FATAL",
+      "SVA_WARNING"
+    ],
+    "pass_patterns": [
+      "JVP TEST PASSED"
+    ]
+  },
+  "schema_revision": "1.2",
+  "source": {
+    "log_suffix": ".log",
+    "max_log_files": 100,
+    "regression_root": "/fixture/rtl_injection_minimal",
+    "workers": 1
+  },
+  "summary": {
+    "artifact_cases_ambiguous": 1,
+    "artifact_cases_complete": 1,
+    "artifact_cases_partial": 0,
+    "artifact_cases_unavailable": 3,
+    "cases_error": 0,
+    "cases_failed": 5,
+    "cases_passed": 0,
+    "cases_total": 5,
+    "debug_recommended_cases": 3,
+    "failure_clusters": 3,
+    "unclustered_failure_cases": 0
+  },
+  "unclustered_failure_case_ids": []
+}

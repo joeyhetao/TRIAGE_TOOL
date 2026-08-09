@@ -33,7 +33,7 @@ def test_scan_writes_bundle_with_sorted_cases_clusters_and_recommendation(tmp_pa
     response = dispatch_request(_request(root, output, limits={"workers": 1}))
     bundle = json.loads(output.read_text(encoding="utf-8"))
     assert response["ok"] is True
-    assert bundle["schema_revision"] == "1.1"
+    assert bundle["schema_revision"] == "1.2"
     assert bundle["cases"][0]["primary_error"]["description_template_status"] == "present"
     assert bundle["cases"][0]["primary_error"]["description_template"] == "ceq of function=<num> is full"
     assert response["summary"]["cases_total"] == 3
@@ -47,6 +47,8 @@ def test_scan_writes_bundle_with_sorted_cases_clusters_and_recommendation(tmp_pa
     assert bundle["failure_clusters"][0]["case_ids"] == ["a/case_2.log", "z/case_9.log"]
     assert bundle["failure_clusters"][0]["representative_case_id"] == "a/case_2.log"
     assert bundle["failure_clusters"][0]["recommendation"]["recommended_case_id"] == "z/case_9.log"
+    assert bundle["failure_clusters"][0]["recommendation"]["recommended_case"]["seed"] == 9
+    assert bundle["failure_clusters"][0]["recommendation"]["alternate_cases"][0]["case_id"] == "a/case_2.log"
     assert bundle["failure_clusters"][0]["recommendation"]["recommended_simulation_time"]["value"] == "10"
     assert bundle["failure_clusters"][0]["recommendation"]["recommended_artifacts"]["xdebug_target"] == {
         "fsdb": str(root / "z" / "case_9.fsdb"),
@@ -56,6 +58,7 @@ def test_scan_writes_bundle_with_sorted_cases_clusters_and_recommendation(tmp_pa
     assert bundle["debug_recommendation"]["debug_budget"] == 20
     assert bundle["debug_recommendation"]["recommended_debug_cases"][0]["case_id"] == "z/case_9.log"
     assert bundle["debug_recommendation"]["recommended_debug_cases"][0]["artifacts"]["status"] == "complete"
+    assert bundle["debug_recommendation"]["recommended_debug_cases"][0]["alternate_cases"][0]["artifacts"]["status"] == "unavailable"
 
 
 def test_scan_debug_budget_limits_recommendations(tmp_path):

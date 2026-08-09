@@ -27,6 +27,28 @@
         "display": {"type": ["string", "null"]}
       }
     },
+    "scope_hint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidate", "status", "producer", "basis", "final_routing"],
+      "properties": {
+        "candidate": {"type": "string", "enum": ["shared_public", "environment_private", "unknown"]},
+        "status": {"const": "non_authoritative"},
+        "producer": {"type": "string", "enum": ["uvm", "vcs", "xcelium", "sva", "configured", "unknown"]},
+        "basis": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "final_routing": {"const": "undetermined"}
+      }
+    },
+    "portable_signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["strategy", "description_template", "fingerprint"],
+      "properties": {
+        "strategy": {"const": "level_error_id_producer_description.v1"},
+        "description_template": {"type": "string"},
+        "fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    },
     "error": {
       "type": "object",
       "additionalProperties": true,
@@ -34,6 +56,7 @@
         "level": {"type": "string"},
         "error_id": {"type": "string"},
         "report_id": {"type": ["string", "null"]},
+        "producer": {"type": "string", "enum": ["uvm", "vcs", "xcelium", "sva", "configured", "unknown"]},
         "error_type": {"type": "string", "enum": ["UVM_WARNING", "UVM_ERROR", "UVM_FATAL", "SV_ASSERTION", "COMPILE_ERROR", "ELABORATION_ERROR", "SIM_RUNTIME_ERROR", "LICENSE_ERROR", "ENVIRONMENT_ERROR", "TOOL_ERROR", "UNKNOWN"]},
         "location": {"type": "string"},
         "source_location": {"$ref": "#/definitions/source_location"},
@@ -41,7 +64,9 @@
         "event_time": {"$ref": "#/definitions/time_info"},
         "description": {"type": "string"},
         "description_template": {"type": "string"},
-        "description_template_status": {"type": "string", "enum": ["present", "unavailable"]}
+        "description_template_status": {"type": "string", "enum": ["present", "unavailable"]},
+        "scope_hint": {"$ref": "#/definitions/scope_hint"},
+        "portable_signature": {"$ref": "#/definitions/portable_signature"}
       }
     },
     "artifact_candidate": {
@@ -120,28 +145,73 @@
         "artifacts": {"$ref": "#/definitions/artifacts"}
       }
     },
+    "case_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["case_id", "test_id", "seed", "seed_parse_status", "simulation_time", "artifacts"],
+      "properties": {
+        "case_id": {"type": "string"},
+        "test_id": {"type": "string"},
+        "seed": {"type": ["integer", "null"]},
+        "seed_parse_status": {"type": "string", "enum": ["parsed", "fallback"]},
+        "simulation_time": {"$ref": "#/definitions/time_info"},
+        "artifacts": {"$ref": "#/definitions/artifacts"}
+      }
+    },
+    "cluster_signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["strategy", "level", "error_id", "location", "source_location", "description_template", "scope_hint", "portable_signature", "fingerprint"],
+      "properties": {
+        "strategy": {"type": "string", "enum": ["level_error_id_location_description", "level_error_id_producer_portable_description"]},
+        "level": {"type": "string"},
+        "error_id": {"type": "string"},
+        "location": {"type": "string"},
+        "source_location": {"$ref": "#/definitions/source_location"},
+        "description_template": {"type": "string"},
+        "scope_hint": {"$ref": "#/definitions/scope_hint"},
+        "portable_signature": {"$ref": "#/definitions/portable_signature"},
+        "fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    },
+    "cluster_recommendation": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["rank", "selected", "recommended_case_id", "recommended_case", "alternate_case_ids", "alternate_cases", "recommended_artifacts", "score_components", "reasons"],
+      "properties": {
+        "rank": {"type": "integer", "minimum": 1},
+        "selected": {"type": "boolean"},
+        "recommended_case_id": {"type": ["string", "null"]},
+        "recommended_case": {"anyOf": [{"$ref": "#/definitions/case_reference"}, {"type": "null"}]},
+        "alternate_case_ids": {"type": "array", "items": {"type": "string"}},
+        "alternate_cases": {"type": "array", "items": {"$ref": "#/definitions/case_reference"}},
+        "recommended_artifacts": {"anyOf": [{"$ref": "#/definitions/artifacts"}, {"type": "null"}]},
+        "score_components": {"type": "object"},
+        "reasons": {"type": "array", "items": {"type": "string"}}
+      }
+    },
     "failure_cluster": {
       "type": "object",
       "additionalProperties": true,
       "properties": {
         "cluster_id": {"type": "string"},
         "fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "signature": {"$ref": "#/definitions/cluster_signature"},
         "representative_case_id": {"type": "string"},
         "representative_error": {"$ref": "#/definitions/error"},
         "case_ids": {"type": "array", "items": {"type": "string"}},
-        "recommendation": {
-          "type": "object",
-          "additionalProperties": true,
-          "properties": {
-            "recommended_artifacts": {"anyOf": [{"$ref": "#/definitions/artifacts"}, {"type": "null"}]}
-          }
-        }
+        "recommendation": {"$ref": "#/definitions/cluster_recommendation"}
       }
     }
   },
   "properties": {
     "api_version": {"const": "xlog_bundle.v1"},
-    "schema_revision": {"type": "string", "pattern": "^1\\.[0-9]+$"},
+    "schema_revision": {
+      "type": "string",
+      "pattern": "^1\\.[0-9]+$",
+      "default": "1.0",
+      "description": "Explicit minor contract revision. Omission is accepted only for legacy revision 1.0 bundles."
+    },
     "generated_at": {"type": "string"},
     "source": {"type": "object"},
     "parser_config": {"type": "object"},
@@ -158,7 +228,18 @@
         "debug_budget": {"type": "integer", "minimum": 1},
         "eligible_cluster_count": {"type": "integer", "minimum": 0},
         "selected_cluster_count": {"type": "integer", "minimum": 0},
-        "recommended_debug_cases": {"type": "array", "items": {"type": "object", "additionalProperties": true, "properties": {"artifacts": {"anyOf": [{"$ref": "#/definitions/artifacts"}, {"type": "null"}]}}}},
+        "recommended_debug_cases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["rank", "cluster_id", "case_id", "test_id", "seed", "seed_parse_status", "simulation_time", "artifacts", "alternate_cases", "score_components", "reasons"],
+            "properties": {
+              "artifacts": {"anyOf": [{"$ref": "#/definitions/artifacts"}, {"type": "null"}]},
+              "alternate_cases": {"type": "array", "items": {"$ref": "#/definitions/case_reference"}}
+            }
+          }
+        },
         "deferred_cluster_ids": {"type": "array", "items": {"type": "string"}}
       }
     },

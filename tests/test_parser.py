@@ -51,7 +51,29 @@ def test_parser_supports_vcs_xcelium_sva_and_custom_patterns(tmp_path):
     assert result["top_errors"][1]["location"] == "dut.sv(17)"
     assert result["top_errors"][1]["error_type"] == "SIM_RUNTIME_ERROR"
     assert result["top_errors"][2]["error_type"] == "SV_ASSERTION"
+    assert result["top_errors"][0]["producer"] == "vcs"
+    assert result["top_errors"][0]["scope_hint"] == {
+        "candidate": "shared_public",
+        "status": "non_authoritative",
+        "producer": "vcs",
+        "basis": ["producer=vcs", "error_type=TOOL_ERROR"],
+        "final_routing": "undetermined",
+    }
+    assert result["top_errors"][3]["scope_hint"]["candidate"] == "environment_private"
+    assert result["top_errors"][0]["portable_signature"]["fingerprint"].startswith("sha256:")
     assert result["status"] == "fail"
+
+
+def test_public_description_template_removes_path_line_and_random_values(tmp_path):
+    result = parse_log(_write_log(
+        tmp_path,
+        "public.log",
+        "Error-[SE] /project/a/rtl/dut.sv:17 failed near token 918273\n",
+    ))
+    error = result["primary_error"]
+    assert error["description"] == "/project/a/rtl/dut.sv:17 failed near token 918273"
+    assert error["description_template"] == "<path> failed near token <num>"
+    assert error["scope_hint"]["final_routing"] == "undetermined"
 
 
 def test_parser_prefers_explicit_simulation_end_time(tmp_path):

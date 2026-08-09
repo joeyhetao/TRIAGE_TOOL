@@ -30,6 +30,12 @@ structured fields, but consumers must preserve and accept older valid bundles.
 the template as unknown rather than reconstructing it from log text. Making a
 non-empty template universally mandatory would require a future major bundle version.
 
+Revision `1.2` adds non-authoritative `scope_hint`, a path-independent
+`portable_signature`, explicit recommended/alternate case snapshots, and the RTL
+injection import fixture. These fields are deterministic candidate facts only.
+`scope_hint.final_routing` is always `undetermined`; xlog never emits a Wiki target
+or a root-cause decision.
+
 ## Data Ownership
 
 - A discovered `.log` file is one case. `case_id` is its POSIX path relative to
@@ -42,17 +48,23 @@ non-empty template universally mandatory would require a future major bundle ver
   treats a trailing `_<digits>` suffix in the file stem as the seed; unmatched
   names keep the stem as `test_id` and record `seed_parse_status: fallback`.
 - Only the first non-warning error of a failed case contributes to a failure
-  cluster. Its identity is `level + error_id + location + description_template`;
-  dynamic values are normalized but static message changes create a new cluster.
+  cluster. Environment and unknown-origin identities are
+  `level + error_id + location + description_template`. Tool/framework candidate
+  identities use `level + error_id + producer + portable description_template`,
+  excluding source path, line number and dynamic values. Static message changes
+  still create a new cluster.
 - Each case publishes a structured primary-error report ID, error type, source
   location and event time. Revision 1.1 additionally publishes normalized
   `description_template` plus `description_template_status`; each failure cluster
   publishes the same template/status and a stable SHA-256 fingerprint for xregress
   and xmanager references.
-- `description_template` is a versioned structured fact, never an xlog inference.
+- `description_template` is a versioned structured fact, never a root-cause
+  inference. `scope_hint` distinguishes only a deterministic shared-tool/framework,
+  environment, or unknown candidate based on the parser producer; its status is
+  always non-authoritative and final routing remains undetermined.
   Its absence in a valid legacy bundle remains unknown. xlog never labels an error
-  private/public, chooses a wiki routing target, or names a public ErrorDomain;
-  those are LLM knowledge choices.
+  as final private/public knowledge, chooses a Wiki target, or names a public
+  ErrorDomain; those are LLM knowledge choices.
 - Each case publishes deterministic artifact facts for log, FSDB, daidir, KDB
   and optional xdebug run manifest. Discovery uses explicit log references,
   same-directory conventions and configured templates only; it never performs a
@@ -97,6 +109,15 @@ recommendation path.
   alternates if downstream artifacts are missing. Unclustered failures are not
   automatically selected for xdebug.
 
+## Contract Fixture
+
+`fixtures/rtl_injection_minimal` is the first-stage xregress import fixture. It
+contains VCS-style shared-tool errors, UVM environment errors, a shortest-time
+recommended case with missing artifacts, a complete alternate, and an ambiguous
+FSDB case. `scripts/generate_fixture_bundle.py` regenerates the canonical
+`xlog_bundle.fixture.json`; direct scanning of the fixture input produces a
+machine-local bundle for availability checks.
+
 The recommendation is a deterministic default triage priority, not an xregress
 investigation permission limit. An xregress agent may explicitly elevate a
 deferred or unclustered case only when it records the existing xlog case/cluster
@@ -120,6 +141,7 @@ src/xlog/                CLI, actions, scanner, parser, dedup, recommendation an
 schemas/                 public request and bundle schemas
 config/default_parser.json
 tests/                   parser, dedup, recommendation, scan, CLI and schema tests
+fixtures/                minimal RTL-injection inputs and canonical import bundle
 ```
 
 The package uses only the Python standard library. New scan formats, artifact
