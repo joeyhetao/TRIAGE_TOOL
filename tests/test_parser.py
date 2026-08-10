@@ -141,6 +141,39 @@ def test_parser_pass_semantics_follow_configured_marker(tmp_path):
     assert parse_log(log_path, pass_patterns=[])["status"] == "pass"
 
 
+def test_parser_accepts_zero_error_uvm_report_summary_as_pass_evidence(tmp_path):
+    log_path = _write_log(
+        tmp_path,
+        "uvm-summary-pass.log",
+        "UVM_INFO @ 1885000ps: reporter [3P_CACHE_MAIN_PASS] completed\n"
+        "--- UVM Report Summary ---\n"
+        "UVM_INFO : 12\n"
+        "UVM_WARNING : 0\n"
+        "UVM_ERROR : 0\n"
+        "UVM_FATAL : 0\n",
+    )
+
+    result = parse_log(log_path, pass_patterns=["JVP TEST PASSED"])
+
+    assert result["status"] == "pass"
+    assert result["pass_found"] is True
+
+
+def test_parser_rejects_nonzero_uvm_report_summary_without_pass_marker(tmp_path):
+    log_path = _write_log(
+        tmp_path,
+        "uvm-summary-fail.log",
+        "--- UVM Report Summary ---\n"
+        "UVM_ERROR : 1\n"
+        "UVM_FATAL : 0\n",
+    )
+
+    result = parse_log(log_path, pass_patterns=["JVP TEST PASSED"])
+
+    assert result["status"] == "fail"
+    assert result["pass_found"] is False
+
+
 def test_batch_parser_isolates_unreadable_log(tmp_path):
     good_path = _write_log(tmp_path, "good.log", "JVP TEST PASSED\n")
     results = parse_logs([good_path, str(tmp_path / "missing.log")], pass_patterns=["JVP TEST PASSED"], workers=1)

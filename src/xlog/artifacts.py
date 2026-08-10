@@ -32,6 +32,7 @@ _LOG_REFERENCE_PATTERNS = {
     "kdb": re.compile(r"(?P<path>[^\s'\"<>]+(?:\.kdb|/kdb))\b", re.IGNORECASE),
     "run_manifest": re.compile(r"(?P<path>[^\s'\"<>]*(?:run[_-]?manifest)[^\s'\"<>]*\.json)\b", re.IGNORECASE),
 }
+_LOG_REFERENCE_ASSIGNMENT = re.compile(r"^\+?[A-Z][A-Z0-9_]*=(?P<path>.+)$", re.IGNORECASE)
 
 
 def _absolute_path(value, base_directory):
@@ -102,7 +103,12 @@ def _log_reference_paths(log_path):
         with Path(log_path).open("r", encoding="utf-8", errors="replace") as handle:
             for line in handle:
                 for artifact_kind, pattern in _LOG_REFERENCE_PATTERNS.items():
-                    references[artifact_kind].extend(match.group("path") for match in pattern.finditer(line))
+                    for match in pattern.finditer(line):
+                        value = match.group("path")
+                        assignment = _LOG_REFERENCE_ASSIGNMENT.match(value)
+                        if assignment:
+                            value = assignment.group("path")
+                        references[artifact_kind].append(value.rstrip(",;"))
     except OSError:
         return references
     return references

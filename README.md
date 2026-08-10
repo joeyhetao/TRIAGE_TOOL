@@ -102,6 +102,11 @@ Pass it with `--config /absolute/path/to/parser.json`. Request `args.parser`
 overrides matching config-file fields. The effective result is always recorded
 in the bundle.
 
+When configured pass markers are enabled, a complete standard UVM report
+summary with both `UVM_ERROR : 0` and `UVM_FATAL : 0` is also accepted as
+deterministic pass evidence. A nonzero or incomplete summary does not satisfy
+the pass requirement.
+
 ## xregress integration
 
 Configure `bin/xlog` as an `xlog_provider`. xregress consumes the generated
@@ -122,6 +127,7 @@ artifact paths are needed for an xdebug availability test.
 
 ```bash
 PYTHONPATH=src python3 -m pytest -q
+PYTHONPATH=src python3 scripts/validate_bundle.py /absolute/path/to/xlog_bundle.json
 bash scripts/build_linux_release.sh
 PUBLISH_COMMIT_MSG=Describe-change bash scripts/publish_git.sh
 ```
