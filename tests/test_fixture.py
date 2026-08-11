@@ -24,7 +24,7 @@ def _scan_fixture(tmp_path):
 
 def test_rtl_injection_fixture_exposes_stable_facts_and_alternates(tmp_path):
     bundle = _scan_fixture(tmp_path)
-    assert bundle["schema_revision"] == "1.2"
+    assert bundle["schema_revision"] == "1.3"
 
     public_cluster = next(
         cluster for cluster in bundle["failure_clusters"]
@@ -53,7 +53,7 @@ def test_rtl_injection_fixture_exposes_stable_facts_and_alternates(tmp_path):
 def test_canonical_bundle_fixture_is_importable_and_contains_no_root_cause():
     bundle = json.loads((FIXTURE / "xlog_bundle.fixture.json").read_text(encoding="utf-8"))
     assert bundle["api_version"] == "xlog_bundle.v1"
-    assert bundle["schema_revision"] == "1.2"
+    assert bundle["schema_revision"] == "1.3"
     assert bundle["source"]["regression_root"] == "/fixture/rtl_injection_minimal"
 
     def keys(value):

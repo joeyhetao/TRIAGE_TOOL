@@ -97,6 +97,33 @@
         "reason": {"type": ["string", "null"]}
       }
     },
+    "manifest_descriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_kind", "expected_schema_version", "schema_version", "path", "resolution_status", "parse_status", "document_state", "reason", "candidates"],
+      "properties": {
+        "artifact_kind": {"type": "string", "enum": ["xdebug.run_manifest", "xvp.case_manifest"]},
+        "expected_schema_version": {"type": "string", "minLength": 1},
+        "schema_version": {"type": ["string", "null"]},
+        "path": {"type": ["string", "null"]},
+        "resolution_status": {"type": "string", "enum": ["resolved", "ambiguous", "unavailable"]},
+        "parse_status": {"type": "string", "enum": ["parsed", "not_parsed", "read_error", "invalid_json", "invalid_root", "schema_mismatch", "invalid_state"]},
+        "document_state": {"type": ["string", "null"]},
+        "reason": {"type": ["string", "null"]},
+        "candidates": {"type": "array", "items": {"$ref": "#/definitions/artifact_candidate"}}
+      }
+    },
+    "manifest_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["preferred_kind", "selection_status", "selected", "items"],
+      "properties": {
+        "preferred_kind": {"const": "xdebug.run_manifest"},
+        "selection_status": {"type": "string", "enum": ["preferred", "legacy_fallback", "unavailable"]},
+        "selected": {"anyOf": [{"$ref": "#/definitions/manifest_descriptor"}, {"type": "null"}]},
+        "items": {"type": "array", "items": {"$ref": "#/definitions/manifest_descriptor"}, "minItems": 2}
+      }
+    },
     "artifacts": {
       "type": "object",
       "additionalProperties": false,
@@ -116,6 +143,7 @@
             "run_manifest": {"$ref": "#/definitions/artifact_resource"}
           }
         },
+        "manifests": {"$ref": "#/definitions/manifest_snapshot"},
         "xdebug_target": {
           "type": "object",
           "additionalProperties": false,

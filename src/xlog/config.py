@@ -48,7 +48,14 @@ def _validate_template(template, field):
 def _artifact_mapping(value, source):
     if not isinstance(value, dict):
         raise XlogError("CONFIG_INVALID", "%s must be a JSON object" % source)
-    allowed = {"log_reference_extraction", "fsdb_templates", "daidir_templates", "kdb_templates", "run_manifest_templates"}
+    allowed = {
+        "log_reference_extraction",
+        "fsdb_templates",
+        "daidir_templates",
+        "kdb_templates",
+        "run_manifest_templates",
+        "xdebug_run_manifest_templates",
+    }
     unknown = set(value) - allowed
     if unknown:
         raise XlogError("CONFIG_INVALID", "%s contains unsupported fields" % source, {"fields": sorted(unknown)})

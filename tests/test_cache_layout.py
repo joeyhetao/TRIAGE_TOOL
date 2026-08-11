@@ -74,7 +74,7 @@ def test_cache_layout_resolves_per_case_and_shared_artifacts(tmp_path):
         fsdb_path = case_dir / (case_name + ".fsdb")
         manifest_path = case_dir / "xvp_case_manifest.json"
         fsdb_path.write_bytes(b"fsdb")
-        manifest_path.write_text("{}\n", encoding="utf-8")
+        manifest_path.write_text('{"schema":"xvp_case_manifest.v1"}\n', encoding="utf-8")
         artifact_line = "XVP_ARTIFACT FSDB=%s DAIDIR=%s RUN_MANIFEST=%s\n" % (
             fsdb_path,
             shared_daidir,
@@ -94,7 +94,7 @@ def test_cache_layout_resolves_per_case_and_shared_artifacts(tmp_path):
 
     assert validate_instance(bundle, SCHEMA) is True
     assert bundle["api_version"] == "xlog_bundle.v1"
-    assert bundle["schema_revision"] == "1.2"
+    assert bundle["schema_revision"] == "1.3"
     assert bundle["summary"]["cases_total"] == 5
     assert bundle["summary"]["cases_passed"] == 1
     assert bundle["summary"]["cases_failed"] == 4
@@ -113,6 +113,9 @@ def test_cache_layout_resolves_per_case_and_shared_artifacts(tmp_path):
         assert resources["daidir"]["status"] == "resolved"
         assert resources["kdb"]["status"] == "resolved"
         assert resources["run_manifest"]["status"] == "resolved"
+        assert case["artifacts"]["manifests"]["selection_status"] == "legacy_fallback"
+        assert case["artifacts"]["manifests"]["selected"]["artifact_kind"] == "xvp.case_manifest"
+        assert "run_manifest" not in case["artifacts"]["xdebug_target"]
         assert Path(resources["fsdb"]["selected"]["path"]).parent.name == case["test_id"] + "_1"
         fsdb_paths.add(resources["fsdb"]["selected"]["path"])
         daidir_paths.add(resources["daidir"]["selected"]["path"])

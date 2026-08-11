@@ -107,3 +107,6 @@ def test_scan_config_keeps_parser_and_artifact_contracts_separate(tmp_path):
 
     assert effective["parser"]["pass_patterns"] == ["DONE"]
     assert effective["artifacts"]["fsdb_templates"] == ["{log_dir}/wave.fsdb"]
+    assert effective["artifacts"]["xdebug_run_manifest_templates"] == [
+        "{log_dir}/xdebug.run-manifest.v1.json"
+    ]

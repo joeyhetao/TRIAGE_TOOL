@@ -1,0 +1,11 @@
+{
+  "schema": "xvp_case_manifest.v1",
+  "case_id": "schema_mismatch_1",
+  "external_manifests": [
+    {
+      "kind": "xdebug.run_manifest",
+      "schema_version": "xdebug.run-manifest.v1",
+      "path": "xdebug.run-manifest.v1.json"
+    }
+  ]
+}
