@@ -53,6 +53,27 @@ def test_artifacts_prioritize_log_reference_and_record_ambiguity(tmp_path):
     assert artifacts["xdebug_target"] == {}
 
 
+def test_artifact_log_reference_strips_assignment_labels(tmp_path):
+    root = tmp_path / "regression"
+    root.mkdir()
+    log_path = root / "case.log"
+    fsdb = root / "case.fsdb"
+    daidir = root / "simv.daidir"
+    fsdb.write_bytes(b"wave")
+    daidir.mkdir()
+    log_path.write_text(
+        "XVP_ARTIFACT FSDB=%s DAIDIR=%s\n" % (fsdb, daidir),
+        encoding="utf-8",
+    )
+
+    artifacts = build_case_artifacts(log_path, root, _identity("case"), _rules())
+
+    assert artifacts["resources"]["fsdb"]["selected"]["path"] == str(fsdb)
+    assert artifacts["resources"]["daidir"]["selected"]["path"] == str(daidir)
+    for kind in ("fsdb", "daidir"):
+        assert all("=" not in candidate["path"] for candidate in artifacts["resources"][kind]["candidates"])
+
+
 def test_artifact_templates_adapt_nonstandard_project_layout(tmp_path):
     root = tmp_path / "regression"
     case_dir = root / "logs"

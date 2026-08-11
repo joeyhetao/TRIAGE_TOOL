@@ -20,6 +20,11 @@ _UVM_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _UVM_ANY = re.compile(r"UVM_(?:ERROR|WARNING|FATAL|INFO)\s", re.IGNORECASE)
+_UVM_REPORT_SUMMARY_HEADER = re.compile(r"\bUVM\s+Report\s+Summary\b", re.IGNORECASE)
+_UVM_REPORT_SUMMARY_COUNT = re.compile(
+    r"^\s*(?P<level>UVM_(?:ERROR|FATAL))\s*:\s*(?P<count>\d+)\s*$",
+    re.IGNORECASE,
+)
 
 _VCS_PATTERN = re.compile(r"^(?P<level>Error|Warning|Fatal|Note|Info)-\[(?P<id>[A-Z][A-Z0-9_-]*)\]\s*(?P<msg>.*)", re.IGNORECASE)
 _VCS_ANY = re.compile(r"^(?:Error|Warning|Fatal|Note|Info)-\[", re.IGNORECASE)
@@ -214,11 +219,22 @@ def parse_log(filepath, extra_keywords=None, pass_patterns=None):
     explicit_simulation_time = None
     max_observed_simulation_time = None
     vcs_report_lines_remaining = 0
+    in_uvm_report_summary = False
+    uvm_report_summary_counts = {}
 
     with path.open("r", encoding="utf-8", errors="replace") as handle:
         for raw_line in handle:
             line = raw_line.rstrip("\n")
             stripped = line.strip()
+
+            if _UVM_REPORT_SUMMARY_HEADER.search(line):
+                in_uvm_report_summary = True
+            elif in_uvm_report_summary:
+                summary_match = _UVM_REPORT_SUMMARY_COUNT.match(line)
+                if summary_match:
+                    uvm_report_summary_counts[summary_match.group("level").upper()] = int(
+                        summary_match.group("count")
+                    )
 
             is_vcs_report_header = _is_vcs_report_header(line)
             in_vcs_report = is_vcs_report_header or vcs_report_lines_remaining > 0
@@ -357,6 +373,11 @@ def parse_log(filepath, extra_keywords=None, pass_patterns=None):
     primary_error = top_errors[0] if top_errors else None
     non_warning = {key: value for key, value in statistics.items() if "WARNING" not in key.upper()}
     has_error = any(non_warning.values())
+    uvm_summary_pass = all(
+        uvm_report_summary_counts.get(level) == 0
+        for level in ("UVM_ERROR", "UVM_FATAL")
+    )
+    pass_found = pass_found or uvm_summary_pass
     status = "pass" if ((not has_error and pass_found) if pass_patterns else not has_error) else "fail"
     return {
         "file": path.name,
