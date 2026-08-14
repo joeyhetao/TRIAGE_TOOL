@@ -31,7 +31,8 @@
             "fsdb_templates": {"type": "array", "items": {"type": "string", "minLength": 1}},
             "daidir_templates": {"type": "array", "items": {"type": "string", "minLength": 1}},
             "kdb_templates": {"type": "array", "items": {"type": "string", "minLength": 1}},
-            "run_manifest_templates": {"type": "array", "items": {"type": "string", "minLength": 1}}
+            "run_manifest_templates": {"type": "array", "items": {"type": "string", "minLength": 1}},
+            "xdebug_run_manifest_templates": {"type": "array", "items": {"type": "string", "minLength": 1}}
           }
         }
       }

@@ -22,6 +22,8 @@ def test_actions_and_schema_shortcuts_emit_json(capsys):
     assert request_schema["data"]["schema"]["required"] == ["api_version", "action", "target", "args"]
     assert "debug_budget" in request_schema["data"]["schema"]["properties"]["limits"]["properties"]
     assert "artifacts" in request_schema["data"]["schema"]["properties"]["args"]["properties"]
+    artifact_properties = request_schema["data"]["schema"]["properties"]["args"]["properties"]["artifacts"]["properties"]
+    assert "xdebug_run_manifest_templates" in artifact_properties
     assert "test_id" in schema["data"]["schema"]["definitions"]["case"]["properties"]
 
 

@@ -20,7 +20,7 @@ knowledge database, Excel dependency, or single-log upload workflow.
 The command prints one `xlog.v1` JSON response to stdout and atomically writes
 the complete bundle to `--output`.
 
-New scans emit `xlog_bundle.v1` with `schema_revision: "1.2"`. Primary errors and
+New scans emit `xlog_bundle.v1` with `schema_revision: "1.3"`. Primary errors and
 failure-cluster signatures contain a normalized `description_template` and a
 `description_template_status`. Consumers must still accept legacy 1.0 bundles that
 omit those fields and represent the template as unknown rather than reconstructing it.
@@ -28,6 +28,14 @@ Revision 1.2 also publishes a non-authoritative `scope_hint`, a path-independent
 `portable_signature`, and full recommended/alternate case snapshots. The hint is
 only a candidate clue: `final_routing` remains `undetermined`, and xlog emits no
 root-cause or Wiki-routing decision.
+
+Revision 1.3 adds `artifacts.manifests`. It identifies the xvp business manifest
+as `xvp.case_manifest` / `xvp_case_manifest.v1` and the xdebug resource manifest
+as `xdebug.run_manifest` / `xdebug.run-manifest.v1`, with separate path,
+resolution, parse and schema facts. A parsed, published xdebug manifest is
+preferred. A valid legacy xvp manifest is labeled `legacy_fallback` and is never
+substituted into `xdebug_target.run_manifest`. Revision 1.2 bundles without this
+field remain schema-compatible.
 
 ## JSON action
 
@@ -75,6 +83,9 @@ KDB and optional run-manifest facts, candidate paths and a ready-to-use
 same-directory names and explicit configuration templates, so xlog does not
 accidentally assign another testcase's wave to the current case.
 
+xlog reads manifest kind, declared schema and publication state only. It does
+not inspect FSDB contents, verify manifest resource digests or infer root cause.
+
 The cluster recommendation includes both ID lists and complete
 `recommended_case` / `alternate_cases` snapshots. This lets xregress use an
 alternate without rediscovering artifacts when the shortest-time recommendation
@@ -93,7 +104,9 @@ An optional JSON config can set parser patterns and artifact templates:
   "pass_patterns": ["JVP TEST PASSED"],
   "artifacts": {
     "fsdb_templates": ["{log_dir}/{log_stem}.fsdb"],
-    "daidir_templates": ["{log_dir}/simv.daidir"]
+    "daidir_templates": ["{log_dir}/simv.daidir"],
+    "run_manifest_templates": ["{log_dir}/xvp_case_manifest.json"],
+    "xdebug_run_manifest_templates": ["{log_dir}/xdebug.run-manifest.v1.json"]
   }
 }
 ```
@@ -122,6 +135,10 @@ PYTHONPATH=src python3 scripts/generate_fixture_bundle.py
 
 Scan `fixtures/rtl_injection_minimal/regression` directly when machine-local
 artifact paths are needed for an xdebug availability test.
+
+`fixtures/manifest_kinds/regression` is the synthetic revision 1.3 contract
+fixture for preferred xdebug manifests, legacy xvp fallback, missing paths,
+schema mismatch and equal-priority path ambiguity.
 
 ## Development and release
 

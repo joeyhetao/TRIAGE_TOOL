@@ -1,0 +1,2 @@
+JVP TEST PASSED
+XVP_ARTIFACT FSDB=ambiguous_1.fsdb RUN_MANIFEST=xvp_case_manifest.json XDEBUG_RUN_MANIFEST=first.xdebug.run-manifest.v1.json XDEBUG_RUN_MANIFEST=second.xdebug.run-manifest.v1.json

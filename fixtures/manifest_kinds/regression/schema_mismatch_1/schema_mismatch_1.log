@@ -1,0 +1,2 @@
+JVP TEST PASSED
+XVP_ARTIFACT FSDB=schema_mismatch_1.fsdb RUN_MANIFEST=xvp_case_manifest.json XDEBUG_RUN_MANIFEST=xdebug.run-manifest.v1.json

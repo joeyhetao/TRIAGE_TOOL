@@ -1,0 +1,11 @@
+{
+  "schema_version": "xdebug.run-manifest.v1",
+  "state": "published",
+  "resources": {
+    "fsdb": {
+      "path": "both_1.fsdb",
+      "size_bytes": 5,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  }
+}

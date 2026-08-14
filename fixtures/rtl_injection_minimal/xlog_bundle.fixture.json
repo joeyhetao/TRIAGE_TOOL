@@ -12,12 +12,57 @@
     ],
     "kdb_templates": [],
     "log_reference_extraction": true,
-    "run_manifest_templates": []
+    "run_manifest_templates": [],
+    "xdebug_run_manifest_templates": [
+      "{log_dir}/xdebug.run-manifest.v1.json"
+    ]
   },
   "cases": [
     {
       "artifacts": {
         "case_directory": "/fixture/rtl_injection_minimal",
+        "manifests": {
+          "items": [
+            {
+              "artifact_kind": "xdebug.run_manifest",
+              "candidates": [
+                {
+                  "exists": false,
+                  "expected_kind": "file",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/xdebug.run-manifest.v1.json",
+                  "priority": 10,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                }
+              ],
+              "document_state": null,
+              "expected_schema_version": "xdebug.run-manifest.v1",
+              "parse_status": "not_parsed",
+              "path": "/fixture/rtl_injection_minimal/xdebug.run-manifest.v1.json",
+              "reason": "no_existing_candidates",
+              "resolution_status": "unavailable",
+              "schema_version": null
+            },
+            {
+              "artifact_kind": "xvp.case_manifest",
+              "candidates": [],
+              "document_state": null,
+              "expected_schema_version": "xvp_case_manifest.v1",
+              "parse_status": "not_parsed",
+              "path": null,
+              "reason": "no_candidates",
+              "resolution_status": "unavailable",
+              "schema_version": null
+            }
+          ],
+          "preferred_kind": "xdebug.run_manifest",
+          "selected": null,
+          "selection_status": "unavailable"
+        },
         "resources": {
           "daidir": {
             "candidates": [
@@ -261,6 +306,48 @@
     {
       "artifacts": {
         "case_directory": "/fixture/rtl_injection_minimal/private_complete",
+        "manifests": {
+          "items": [
+            {
+              "artifact_kind": "xdebug.run_manifest",
+              "candidates": [
+                {
+                  "exists": false,
+                  "expected_kind": "file",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/private_complete/xdebug.run-manifest.v1.json",
+                  "priority": 10,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                }
+              ],
+              "document_state": null,
+              "expected_schema_version": "xdebug.run-manifest.v1",
+              "parse_status": "not_parsed",
+              "path": "/fixture/rtl_injection_minimal/private_complete/xdebug.run-manifest.v1.json",
+              "reason": "no_existing_candidates",
+              "resolution_status": "unavailable",
+              "schema_version": null
+            },
+            {
+              "artifact_kind": "xvp.case_manifest",
+              "candidates": [],
+              "document_state": null,
+              "expected_schema_version": "xvp_case_manifest.v1",
+              "parse_status": "not_parsed",
+              "path": null,
+              "reason": "no_candidates",
+              "resolution_status": "unavailable",
+              "schema_version": null
+            }
+          ],
+          "preferred_kind": "xdebug.run_manifest",
+          "selected": null,
+          "selection_status": "unavailable"
+        },
         "resources": {
           "daidir": {
             "candidates": [
@@ -541,6 +628,48 @@
     {
       "artifacts": {
         "case_directory": "/fixture/rtl_injection_minimal/private_missing",
+        "manifests": {
+          "items": [
+            {
+              "artifact_kind": "xdebug.run_manifest",
+              "candidates": [
+                {
+                  "exists": false,
+                  "expected_kind": "file",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/private_missing/xdebug.run-manifest.v1.json",
+                  "priority": 10,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                }
+              ],
+              "document_state": null,
+              "expected_schema_version": "xdebug.run-manifest.v1",
+              "parse_status": "not_parsed",
+              "path": "/fixture/rtl_injection_minimal/private_missing/xdebug.run-manifest.v1.json",
+              "reason": "no_existing_candidates",
+              "resolution_status": "unavailable",
+              "schema_version": null
+            },
+            {
+              "artifact_kind": "xvp.case_manifest",
+              "candidates": [],
+              "document_state": null,
+              "expected_schema_version": "xvp_case_manifest.v1",
+              "parse_status": "not_parsed",
+              "path": null,
+              "reason": "no_candidates",
+              "resolution_status": "unavailable",
+              "schema_version": null
+            }
+          ],
+          "preferred_kind": "xdebug.run_manifest",
+          "selected": null,
+          "selection_status": "unavailable"
+        },
         "resources": {
           "daidir": {
             "candidates": [
@@ -772,6 +901,48 @@
     {
       "artifacts": {
         "case_directory": "/fixture/rtl_injection_minimal",
+        "manifests": {
+          "items": [
+            {
+              "artifact_kind": "xdebug.run_manifest",
+              "candidates": [
+                {
+                  "exists": false,
+                  "expected_kind": "file",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/xdebug.run-manifest.v1.json",
+                  "priority": 10,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                }
+              ],
+              "document_state": null,
+              "expected_schema_version": "xdebug.run-manifest.v1",
+              "parse_status": "not_parsed",
+              "path": "/fixture/rtl_injection_minimal/xdebug.run-manifest.v1.json",
+              "reason": "no_existing_candidates",
+              "resolution_status": "unavailable",
+              "schema_version": null
+            },
+            {
+              "artifact_kind": "xvp.case_manifest",
+              "candidates": [],
+              "document_state": null,
+              "expected_schema_version": "xvp_case_manifest.v1",
+              "parse_status": "not_parsed",
+              "path": null,
+              "reason": "no_candidates",
+              "resolution_status": "unavailable",
+              "schema_version": null
+            }
+          ],
+          "preferred_kind": "xdebug.run_manifest",
+          "selected": null,
+          "selection_status": "unavailable"
+        },
         "resources": {
           "daidir": {
             "candidates": [
@@ -991,6 +1162,48 @@
     {
       "artifacts": {
         "case_directory": "/fixture/rtl_injection_minimal",
+        "manifests": {
+          "items": [
+            {
+              "artifact_kind": "xdebug.run_manifest",
+              "candidates": [
+                {
+                  "exists": false,
+                  "expected_kind": "file",
+                  "file_type": "missing",
+                  "path": "/fixture/rtl_injection_minimal/xdebug.run-manifest.v1.json",
+                  "priority": 10,
+                  "readable": false,
+                  "reason": "not_found",
+                  "size_bytes": null,
+                  "source": "configured_template",
+                  "state": "missing"
+                }
+              ],
+              "document_state": null,
+              "expected_schema_version": "xdebug.run-manifest.v1",
+              "parse_status": "not_parsed",
+              "path": "/fixture/rtl_injection_minimal/xdebug.run-manifest.v1.json",
+              "reason": "no_existing_candidates",
+              "resolution_status": "unavailable",
+              "schema_version": null
+            },
+            {
+              "artifact_kind": "xvp.case_manifest",
+              "candidates": [],
+              "document_state": null,
+              "expected_schema_version": "xvp_case_manifest.v1",
+              "parse_status": "not_parsed",
+              "path": null,
+              "reason": "no_candidates",
+              "resolution_status": "unavailable",
+              "schema_version": null
+            }
+          ],
+          "preferred_kind": "xdebug.run_manifest",
+          "selected": null,
+          "selection_status": "unavailable"
+        },
         "resources": {
           "daidir": {
             "candidates": [
@@ -1219,6 +1432,48 @@
           {
             "artifacts": {
               "case_directory": "/fixture/rtl_injection_minimal/private_complete",
+              "manifests": {
+                "items": [
+                  {
+                    "artifact_kind": "xdebug.run_manifest",
+                    "candidates": [
+                      {
+                        "exists": false,
+                        "expected_kind": "file",
+                        "file_type": "missing",
+                        "path": "/fixture/rtl_injection_minimal/private_complete/xdebug.run-manifest.v1.json",
+                        "priority": 10,
+                        "readable": false,
+                        "reason": "not_found",
+                        "size_bytes": null,
+                        "source": "configured_template",
+                        "state": "missing"
+                      }
+                    ],
+                    "document_state": null,
+                    "expected_schema_version": "xdebug.run-manifest.v1",
+                    "parse_status": "not_parsed",
+                    "path": "/fixture/rtl_injection_minimal/private_complete/xdebug.run-manifest.v1.json",
+                    "reason": "no_existing_candidates",
+                    "resolution_status": "unavailable",
+                    "schema_version": null
+                  },
+                  {
+                    "artifact_kind": "xvp.case_manifest",
+                    "candidates": [],
+                    "document_state": null,
+                    "expected_schema_version": "xvp_case_manifest.v1",
+                    "parse_status": "not_parsed",
+                    "path": null,
+                    "reason": "no_candidates",
+                    "resolution_status": "unavailable",
+                    "schema_version": null
+                  }
+                ],
+                "preferred_kind": "xdebug.run_manifest",
+                "selected": null,
+                "selection_status": "unavailable"
+              },
               "resources": {
                 "daidir": {
                   "candidates": [
@@ -1403,6 +1658,48 @@
         ],
         "artifacts": {
           "case_directory": "/fixture/rtl_injection_minimal/private_missing",
+          "manifests": {
+            "items": [
+              {
+                "artifact_kind": "xdebug.run_manifest",
+                "candidates": [
+                  {
+                    "exists": false,
+                    "expected_kind": "file",
+                    "file_type": "missing",
+                    "path": "/fixture/rtl_injection_minimal/private_missing/xdebug.run-manifest.v1.json",
+                    "priority": 10,
+                    "readable": false,
+                    "reason": "not_found",
+                    "size_bytes": null,
+                    "source": "configured_template",
+                    "state": "missing"
+                  }
+                ],
+                "document_state": null,
+                "expected_schema_version": "xdebug.run-manifest.v1",
+                "parse_status": "not_parsed",
+                "path": "/fixture/rtl_injection_minimal/private_missing/xdebug.run-manifest.v1.json",
+                "reason": "no_existing_candidates",
+                "resolution_status": "unavailable",
+                "schema_version": null
+              },
+              {
+                "artifact_kind": "xvp.case_manifest",
+                "candidates": [],
+                "document_state": null,
+                "expected_schema_version": "xvp_case_manifest.v1",
+                "parse_status": "not_parsed",
+                "path": null,
+                "reason": "no_candidates",
+                "resolution_status": "unavailable",
+                "schema_version": null
+              }
+            ],
+            "preferred_kind": "xdebug.run_manifest",
+            "selected": null,
+            "selection_status": "unavailable"
+          },
           "resources": {
             "daidir": {
               "candidates": [
@@ -1557,6 +1854,48 @@
           {
             "artifacts": {
               "case_directory": "/fixture/rtl_injection_minimal",
+              "manifests": {
+                "items": [
+                  {
+                    "artifact_kind": "xdebug.run_manifest",
+                    "candidates": [
+                      {
+                        "exists": false,
+                        "expected_kind": "file",
+                        "file_type": "missing",
+                        "path": "/fixture/rtl_injection_minimal/xdebug.run-manifest.v1.json",
+                        "priority": 10,
+                        "readable": false,
+                        "reason": "not_found",
+                        "size_bytes": null,
+                        "source": "configured_template",
+                        "state": "missing"
+                      }
+                    ],
+                    "document_state": null,
+                    "expected_schema_version": "xdebug.run-manifest.v1",
+                    "parse_status": "not_parsed",
+                    "path": "/fixture/rtl_injection_minimal/xdebug.run-manifest.v1.json",
+                    "reason": "no_existing_candidates",
+                    "resolution_status": "unavailable",
+                    "schema_version": null
+                  },
+                  {
+                    "artifact_kind": "xvp.case_manifest",
+                    "candidates": [],
+                    "document_state": null,
+                    "expected_schema_version": "xvp_case_manifest.v1",
+                    "parse_status": "not_parsed",
+                    "path": null,
+                    "reason": "no_candidates",
+                    "resolution_status": "unavailable",
+                    "schema_version": null
+                  }
+                ],
+                "preferred_kind": "xdebug.run_manifest",
+                "selected": null,
+                "selection_status": "unavailable"
+              },
               "resources": {
                 "daidir": {
                   "candidates": [
@@ -1680,6 +2019,48 @@
         ],
         "artifacts": {
           "case_directory": "/fixture/rtl_injection_minimal",
+          "manifests": {
+            "items": [
+              {
+                "artifact_kind": "xdebug.run_manifest",
+                "candidates": [
+                  {
+                    "exists": false,
+                    "expected_kind": "file",
+                    "file_type": "missing",
+                    "path": "/fixture/rtl_injection_minimal/xdebug.run-manifest.v1.json",
+                    "priority": 10,
+                    "readable": false,
+                    "reason": "not_found",
+                    "size_bytes": null,
+                    "source": "configured_template",
+                    "state": "missing"
+                  }
+                ],
+                "document_state": null,
+                "expected_schema_version": "xdebug.run-manifest.v1",
+                "parse_status": "not_parsed",
+                "path": "/fixture/rtl_injection_minimal/xdebug.run-manifest.v1.json",
+                "reason": "no_existing_candidates",
+                "resolution_status": "unavailable",
+                "schema_version": null
+              },
+              {
+                "artifact_kind": "xvp.case_manifest",
+                "candidates": [],
+                "document_state": null,
+                "expected_schema_version": "xvp_case_manifest.v1",
+                "parse_status": "not_parsed",
+                "path": null,
+                "reason": "no_candidates",
+                "resolution_status": "unavailable",
+                "schema_version": null
+              }
+            ],
+            "preferred_kind": "xdebug.run_manifest",
+            "selected": null,
+            "selection_status": "unavailable"
+          },
           "resources": {
             "daidir": {
               "candidates": [
@@ -1821,6 +2202,48 @@
         "alternate_cases": [],
         "artifacts": {
           "case_directory": "/fixture/rtl_injection_minimal",
+          "manifests": {
+            "items": [
+              {
+                "artifact_kind": "xdebug.run_manifest",
+                "candidates": [
+                  {
+                    "exists": false,
+                    "expected_kind": "file",
+                    "file_type": "missing",
+                    "path": "/fixture/rtl_injection_minimal/xdebug.run-manifest.v1.json",
+                    "priority": 10,
+                    "readable": false,
+                    "reason": "not_found",
+                    "size_bytes": null,
+                    "source": "configured_template",
+                    "state": "missing"
+                  }
+                ],
+                "document_state": null,
+                "expected_schema_version": "xdebug.run-manifest.v1",
+                "parse_status": "not_parsed",
+                "path": "/fixture/rtl_injection_minimal/xdebug.run-manifest.v1.json",
+                "reason": "no_existing_candidates",
+                "resolution_status": "unavailable",
+                "schema_version": null
+              },
+              {
+                "artifact_kind": "xvp.case_manifest",
+                "candidates": [],
+                "document_state": null,
+                "expected_schema_version": "xvp_case_manifest.v1",
+                "parse_status": "not_parsed",
+                "path": null,
+                "reason": "no_candidates",
+                "resolution_status": "unavailable",
+                "schema_version": null
+              }
+            ],
+            "preferred_kind": "xdebug.run_manifest",
+            "selected": null,
+            "selection_status": "unavailable"
+          },
           "resources": {
             "daidir": {
               "candidates": [
@@ -2006,6 +2429,48 @@
           {
             "artifacts": {
               "case_directory": "/fixture/rtl_injection_minimal",
+              "manifests": {
+                "items": [
+                  {
+                    "artifact_kind": "xdebug.run_manifest",
+                    "candidates": [
+                      {
+                        "exists": false,
+                        "expected_kind": "file",
+                        "file_type": "missing",
+                        "path": "/fixture/rtl_injection_minimal/xdebug.run-manifest.v1.json",
+                        "priority": 10,
+                        "readable": false,
+                        "reason": "not_found",
+                        "size_bytes": null,
+                        "source": "configured_template",
+                        "state": "missing"
+                      }
+                    ],
+                    "document_state": null,
+                    "expected_schema_version": "xdebug.run-manifest.v1",
+                    "parse_status": "not_parsed",
+                    "path": "/fixture/rtl_injection_minimal/xdebug.run-manifest.v1.json",
+                    "reason": "no_existing_candidates",
+                    "resolution_status": "unavailable",
+                    "schema_version": null
+                  },
+                  {
+                    "artifact_kind": "xvp.case_manifest",
+                    "candidates": [],
+                    "document_state": null,
+                    "expected_schema_version": "xvp_case_manifest.v1",
+                    "parse_status": "not_parsed",
+                    "path": null,
+                    "reason": "no_candidates",
+                    "resolution_status": "unavailable",
+                    "schema_version": null
+                  }
+                ],
+                "preferred_kind": "xdebug.run_manifest",
+                "selected": null,
+                "selection_status": "unavailable"
+              },
               "resources": {
                 "daidir": {
                   "candidates": [
@@ -2137,6 +2602,48 @@
         ],
         "recommended_artifacts": {
           "case_directory": "/fixture/rtl_injection_minimal",
+          "manifests": {
+            "items": [
+              {
+                "artifact_kind": "xdebug.run_manifest",
+                "candidates": [
+                  {
+                    "exists": false,
+                    "expected_kind": "file",
+                    "file_type": "missing",
+                    "path": "/fixture/rtl_injection_minimal/xdebug.run-manifest.v1.json",
+                    "priority": 10,
+                    "readable": false,
+                    "reason": "not_found",
+                    "size_bytes": null,
+                    "source": "configured_template",
+                    "state": "missing"
+                  }
+                ],
+                "document_state": null,
+                "expected_schema_version": "xdebug.run-manifest.v1",
+                "parse_status": "not_parsed",
+                "path": "/fixture/rtl_injection_minimal/xdebug.run-manifest.v1.json",
+                "reason": "no_existing_candidates",
+                "resolution_status": "unavailable",
+                "schema_version": null
+              },
+              {
+                "artifact_kind": "xvp.case_manifest",
+                "candidates": [],
+                "document_state": null,
+                "expected_schema_version": "xvp_case_manifest.v1",
+                "parse_status": "not_parsed",
+                "path": null,
+                "reason": "no_candidates",
+                "resolution_status": "unavailable",
+                "schema_version": null
+              }
+            ],
+            "preferred_kind": "xdebug.run_manifest",
+            "selected": null,
+            "selection_status": "unavailable"
+          },
           "resources": {
             "daidir": {
               "candidates": [
@@ -2249,6 +2756,48 @@
         "recommended_case": {
           "artifacts": {
             "case_directory": "/fixture/rtl_injection_minimal",
+            "manifests": {
+              "items": [
+                {
+                  "artifact_kind": "xdebug.run_manifest",
+                  "candidates": [
+                    {
+                      "exists": false,
+                      "expected_kind": "file",
+                      "file_type": "missing",
+                      "path": "/fixture/rtl_injection_minimal/xdebug.run-manifest.v1.json",
+                      "priority": 10,
+                      "readable": false,
+                      "reason": "not_found",
+                      "size_bytes": null,
+                      "source": "configured_template",
+                      "state": "missing"
+                    }
+                  ],
+                  "document_state": null,
+                  "expected_schema_version": "xdebug.run-manifest.v1",
+                  "parse_status": "not_parsed",
+                  "path": "/fixture/rtl_injection_minimal/xdebug.run-manifest.v1.json",
+                  "reason": "no_existing_candidates",
+                  "resolution_status": "unavailable",
+                  "schema_version": null
+                },
+                {
+                  "artifact_kind": "xvp.case_manifest",
+                  "candidates": [],
+                  "document_state": null,
+                  "expected_schema_version": "xvp_case_manifest.v1",
+                  "parse_status": "not_parsed",
+                  "path": null,
+                  "reason": "no_candidates",
+                  "resolution_status": "unavailable",
+                  "schema_version": null
+                }
+              ],
+              "preferred_kind": "xdebug.run_manifest",
+              "selected": null,
+              "selection_status": "unavailable"
+            },
             "resources": {
               "daidir": {
                 "candidates": [
@@ -2476,6 +3025,48 @@
         ],
         "recommended_artifacts": {
           "case_directory": "/fixture/rtl_injection_minimal",
+          "manifests": {
+            "items": [
+              {
+                "artifact_kind": "xdebug.run_manifest",
+                "candidates": [
+                  {
+                    "exists": false,
+                    "expected_kind": "file",
+                    "file_type": "missing",
+                    "path": "/fixture/rtl_injection_minimal/xdebug.run-manifest.v1.json",
+                    "priority": 10,
+                    "readable": false,
+                    "reason": "not_found",
+                    "size_bytes": null,
+                    "source": "configured_template",
+                    "state": "missing"
+                  }
+                ],
+                "document_state": null,
+                "expected_schema_version": "xdebug.run-manifest.v1",
+                "parse_status": "not_parsed",
+                "path": "/fixture/rtl_injection_minimal/xdebug.run-manifest.v1.json",
+                "reason": "no_existing_candidates",
+                "resolution_status": "unavailable",
+                "schema_version": null
+              },
+              {
+                "artifact_kind": "xvp.case_manifest",
+                "candidates": [],
+                "document_state": null,
+                "expected_schema_version": "xvp_case_manifest.v1",
+                "parse_status": "not_parsed",
+                "path": null,
+                "reason": "no_candidates",
+                "resolution_status": "unavailable",
+                "schema_version": null
+              }
+            ],
+            "preferred_kind": "xdebug.run_manifest",
+            "selected": null,
+            "selection_status": "unavailable"
+          },
           "resources": {
             "daidir": {
               "candidates": [
@@ -2612,6 +3203,48 @@
         "recommended_case": {
           "artifacts": {
             "case_directory": "/fixture/rtl_injection_minimal",
+            "manifests": {
+              "items": [
+                {
+                  "artifact_kind": "xdebug.run_manifest",
+                  "candidates": [
+                    {
+                      "exists": false,
+                      "expected_kind": "file",
+                      "file_type": "missing",
+                      "path": "/fixture/rtl_injection_minimal/xdebug.run-manifest.v1.json",
+                      "priority": 10,
+                      "readable": false,
+                      "reason": "not_found",
+                      "size_bytes": null,
+                      "source": "configured_template",
+                      "state": "missing"
+                    }
+                  ],
+                  "document_state": null,
+                  "expected_schema_version": "xdebug.run-manifest.v1",
+                  "parse_status": "not_parsed",
+                  "path": "/fixture/rtl_injection_minimal/xdebug.run-manifest.v1.json",
+                  "reason": "no_existing_candidates",
+                  "resolution_status": "unavailable",
+                  "schema_version": null
+                },
+                {
+                  "artifact_kind": "xvp.case_manifest",
+                  "candidates": [],
+                  "document_state": null,
+                  "expected_schema_version": "xvp_case_manifest.v1",
+                  "parse_status": "not_parsed",
+                  "path": null,
+                  "reason": "no_candidates",
+                  "resolution_status": "unavailable",
+                  "schema_version": null
+                }
+              ],
+              "preferred_kind": "xdebug.run_manifest",
+              "selected": null,
+              "selection_status": "unavailable"
+            },
             "resources": {
               "daidir": {
                 "candidates": [
@@ -2860,6 +3493,48 @@
           {
             "artifacts": {
               "case_directory": "/fixture/rtl_injection_minimal/private_complete",
+              "manifests": {
+                "items": [
+                  {
+                    "artifact_kind": "xdebug.run_manifest",
+                    "candidates": [
+                      {
+                        "exists": false,
+                        "expected_kind": "file",
+                        "file_type": "missing",
+                        "path": "/fixture/rtl_injection_minimal/private_complete/xdebug.run-manifest.v1.json",
+                        "priority": 10,
+                        "readable": false,
+                        "reason": "not_found",
+                        "size_bytes": null,
+                        "source": "configured_template",
+                        "state": "missing"
+                      }
+                    ],
+                    "document_state": null,
+                    "expected_schema_version": "xdebug.run-manifest.v1",
+                    "parse_status": "not_parsed",
+                    "path": "/fixture/rtl_injection_minimal/private_complete/xdebug.run-manifest.v1.json",
+                    "reason": "no_existing_candidates",
+                    "resolution_status": "unavailable",
+                    "schema_version": null
+                  },
+                  {
+                    "artifact_kind": "xvp.case_manifest",
+                    "candidates": [],
+                    "document_state": null,
+                    "expected_schema_version": "xvp_case_manifest.v1",
+                    "parse_status": "not_parsed",
+                    "path": null,
+                    "reason": "no_candidates",
+                    "resolution_status": "unavailable",
+                    "schema_version": null
+                  }
+                ],
+                "preferred_kind": "xdebug.run_manifest",
+                "selected": null,
+                "selection_status": "unavailable"
+              },
               "resources": {
                 "daidir": {
                   "candidates": [
@@ -3052,6 +3727,48 @@
         ],
         "recommended_artifacts": {
           "case_directory": "/fixture/rtl_injection_minimal/private_missing",
+          "manifests": {
+            "items": [
+              {
+                "artifact_kind": "xdebug.run_manifest",
+                "candidates": [
+                  {
+                    "exists": false,
+                    "expected_kind": "file",
+                    "file_type": "missing",
+                    "path": "/fixture/rtl_injection_minimal/private_missing/xdebug.run-manifest.v1.json",
+                    "priority": 10,
+                    "readable": false,
+                    "reason": "not_found",
+                    "size_bytes": null,
+                    "source": "configured_template",
+                    "state": "missing"
+                  }
+                ],
+                "document_state": null,
+                "expected_schema_version": "xdebug.run-manifest.v1",
+                "parse_status": "not_parsed",
+                "path": "/fixture/rtl_injection_minimal/private_missing/xdebug.run-manifest.v1.json",
+                "reason": "no_existing_candidates",
+                "resolution_status": "unavailable",
+                "schema_version": null
+              },
+              {
+                "artifact_kind": "xvp.case_manifest",
+                "candidates": [],
+                "document_state": null,
+                "expected_schema_version": "xvp_case_manifest.v1",
+                "parse_status": "not_parsed",
+                "path": null,
+                "reason": "no_candidates",
+                "resolution_status": "unavailable",
+                "schema_version": null
+              }
+            ],
+            "preferred_kind": "xdebug.run_manifest",
+            "selected": null,
+            "selection_status": "unavailable"
+          },
           "resources": {
             "daidir": {
               "candidates": [
@@ -3176,6 +3893,48 @@
         "recommended_case": {
           "artifacts": {
             "case_directory": "/fixture/rtl_injection_minimal/private_missing",
+            "manifests": {
+              "items": [
+                {
+                  "artifact_kind": "xdebug.run_manifest",
+                  "candidates": [
+                    {
+                      "exists": false,
+                      "expected_kind": "file",
+                      "file_type": "missing",
+                      "path": "/fixture/rtl_injection_minimal/private_missing/xdebug.run-manifest.v1.json",
+                      "priority": 10,
+                      "readable": false,
+                      "reason": "not_found",
+                      "size_bytes": null,
+                      "source": "configured_template",
+                      "state": "missing"
+                    }
+                  ],
+                  "document_state": null,
+                  "expected_schema_version": "xdebug.run-manifest.v1",
+                  "parse_status": "not_parsed",
+                  "path": "/fixture/rtl_injection_minimal/private_missing/xdebug.run-manifest.v1.json",
+                  "reason": "no_existing_candidates",
+                  "resolution_status": "unavailable",
+                  "schema_version": null
+                },
+                {
+                  "artifact_kind": "xvp.case_manifest",
+                  "candidates": [],
+                  "document_state": null,
+                  "expected_schema_version": "xvp_case_manifest.v1",
+                  "parse_status": "not_parsed",
+                  "path": null,
+                  "reason": "no_candidates",
+                  "resolution_status": "unavailable",
+                  "schema_version": null
+                }
+              ],
+              "preferred_kind": "xdebug.run_manifest",
+              "selected": null,
+              "selection_status": "unavailable"
+            },
             "resources": {
               "daidir": {
                 "candidates": [
@@ -3409,7 +4168,7 @@
       "JVP TEST PASSED"
     ]
   },
-  "schema_revision": "1.2",
+  "schema_revision": "1.3",
   "source": {
     "log_suffix": ".log",
     "max_log_files": 100,

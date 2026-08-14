@@ -33,7 +33,7 @@ def test_scan_writes_bundle_with_sorted_cases_clusters_and_recommendation(tmp_pa
     response = dispatch_request(_request(root, output, limits={"workers": 1}))
     bundle = json.loads(output.read_text(encoding="utf-8"))
     assert response["ok"] is True
-    assert bundle["schema_revision"] == "1.2"
+    assert bundle["schema_revision"] == "1.3"
     assert bundle["cases"][0]["primary_error"]["description_template_status"] == "present"
     assert bundle["cases"][0]["primary_error"]["description_template"] == "ceq of function=<num> is full"
     assert response["summary"]["cases_total"] == 3

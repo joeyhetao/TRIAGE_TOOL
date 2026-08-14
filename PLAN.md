@@ -36,6 +36,16 @@ injection import fixture. These fields are deterministic candidate facts only.
 `scope_hint.final_routing` is always `undetermined`; xlog never emits a Wiki target
 or a root-cause decision.
 
+Revision `1.3` adds an explicit `artifacts.manifests` snapshot without changing
+the revision 1.2 meaning of `resources.run_manifest`. The legacy resource remains
+the xvp-owned `xvp_case_manifest.v1`; the new snapshot records separate
+`xvp.case_manifest` and `xdebug.run_manifest` descriptors with expected and
+declared schema versions, path candidates, resolution status, parse status and
+selection status. A valid published `xdebug.run-manifest.v1` is preferred. A
+valid xvp manifest is only a labeled `legacy_fallback` fact and is never passed
+to xdebug as `target.run_manifest`. Revision 1.2 bundles that omit the new
+snapshot remain valid inputs.
+
 ## Data Ownership
 
 - A discovered `.log` file is one case. `case_id` is its POSIX path relative to
@@ -65,10 +75,16 @@ or a root-cause decision.
   Its absence in a valid legacy bundle remains unknown. xlog never labels an error
   as final private/public knowledge, chooses a Wiki target, or names a public
   ErrorDomain; those are LLM knowledge choices.
-- Each case publishes deterministic artifact facts for log, FSDB, daidir, KDB
-  and optional xdebug run manifest. Discovery uses explicit log references,
+- Each case publishes deterministic artifact facts for log, FSDB, daidir, KDB,
+  the legacy xvp case manifest and the optional xdebug run manifest. Discovery
+  uses explicit log references,
   same-directory conventions and configured templates only; it never performs a
   recursive artifact search across the regression.
+- Manifest parsing is intentionally shallow and factual: xlog reads the JSON
+  object, declared schema and published state, but does not validate FSDB/KDB
+  contents, recompute resource digests or infer debugging conclusions. The xvp
+  manifest's versioned `external_manifests[]` path is an explicit discovery
+  source, not permission for directory traversal or peer searches.
 - A cluster publishes a deterministic SHA-256 ID, its first sorted member as the
   representative case, member case IDs, the representative real error, and a
   deterministic recommendation record for downstream xdebug selection.
@@ -118,6 +134,11 @@ FSDB case. `scripts/generate_fixture_bundle.py` regenerates the canonical
 `xlog_bundle.fixture.json`; direct scanning of the fixture input produces a
 machine-local bundle for availability checks.
 
+`fixtures/manifest_kinds` is the revision 1.3 manifest-contract fixture. It
+covers simultaneous xvp/xdebug manifests, legacy-only xvp input, an explicitly
+referenced missing xdebug manifest, declared-schema mismatch and equal-priority
+xdebug path ambiguity.
+
 The recommendation is a deterministic default triage priority, not an xregress
 investigation permission limit. An xregress agent may explicitly elevate a
 deferred or unclustered case only when it records the existing xlog case/cluster
@@ -131,7 +152,10 @@ Built-in defaults preserve the legacy extra-error and PASS markers plus xvp
 artifact naming conventions. An optional JSON config supplies parser fields and
 an `artifacts` object with deterministic path templates. Request `args.parser`
 and `args.artifacts` override matching config-file fields; omitted fields keep
-their lower-priority values. The bundle records both effective configurations.
+their lower-priority values. `run_manifest_templates` names the legacy xvp case
+manifest; `xdebug_run_manifest_templates` names the xdebug manifest and defaults
+to the case-local `xdebug.run-manifest.v1.json`. The bundle records both effective
+configurations.
 
 ## Package Layout
 

@@ -29,10 +29,10 @@ def main(argv=None):
         print("invalid: %s" % exc, file=sys.stderr)
         return 1
 
-    if bundle.get("api_version") != "xlog_bundle.v1" or bundle.get("schema_revision") != "1.2":
-        print("invalid: expected xlog_bundle.v1 schema_revision 1.2", file=sys.stderr)
+    if bundle.get("api_version") != "xlog_bundle.v1" or bundle.get("schema_revision") != "1.3":
+        print("invalid: expected xlog_bundle.v1 schema_revision 1.3", file=sys.stderr)
         return 1
-    print("valid: %s (xlog_bundle.v1 revision 1.2)" % Path(args.bundle))
+    print("valid: %s (xlog_bundle.v1 revision 1.3)" % Path(args.bundle))
     return 0
 
 
