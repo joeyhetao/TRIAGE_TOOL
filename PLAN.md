@@ -2,7 +2,8 @@
 
 ## Positioning
 
-`xlog` is the regression-log provider for `xregress`. It owns recursive log
+`xlog` is the deterministic regression-log provider used by external Agents through
+`xregress` MCP Lite. It owns recursive log
 discovery, case status detection, error extraction, first-error deduplication,
 representative-case selection, xdebug recommendation, and the versioned result
 bundle. It does not provide a web UI, LLM analysis, knowledge-base lookup,
@@ -121,9 +122,9 @@ recommendation path.
 - Recommended debug cases include their artifact snapshot and directly usable
   xdebug target when FSDB and/or daidir were resolved. Missing or ambiguous
   artifacts remain structured facts and never change failure classification.
-- `xregress` should consume the recommended primary case first and may use
-  alternates if downstream artifacts are missing. Unclustered failures are not
-  automatically selected for xdebug.
+- The external Agent may consume a recommended primary case, choose an alternate,
+  or investigate another case. Recommendations are optional deterministic facts,
+  not permissions or a mandatory investigation order.
 
 ## Contract Fixture
 
@@ -139,12 +140,9 @@ covers simultaneous xvp/xdebug manifests, legacy-only xvp input, an explicitly
 referenced missing xdebug manifest, declared-schema mismatch and equal-priority
 xdebug path ambiguity.
 
-The recommendation is a deterministic default triage priority, not an xregress
-investigation permission limit. An xregress agent may explicitly elevate a
-deferred or unclustered case only when it records the existing xlog case/cluster
-and artifact references, a reason, and a separate exploration debug budget.
-That override must not change xlog clustering, ranking, artifact facts, or this
-recommendation algorithm.
+The recommendation is a deterministic default triage priority, not an investigation
+permission limit. An external Agent may inspect deferred or unclustered cases without
+changing xlog clustering, ranking, artifact facts, or this recommendation algorithm.
 
 ## Configuration
 
