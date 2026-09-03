@@ -2,12 +2,16 @@
 
 ## Positioning
 
-`xlog` is the deterministic regression-log provider used by external Agents through
-`xregress` MCP Lite. It owns recursive log
-discovery, case status detection, error extraction, first-error deduplication,
-representative-case selection, xdebug recommendation, and the versioned result
-bundle. It does not provide a web UI, LLM analysis, knowledge-base lookup,
-database storage, or artifact debugging.
+`xlog` is the deterministic regression-log provider consumed through
+`xregress` MCP Lite by a single external Codex/Claude Agent. It owns recursive
+log discovery, case status detection, error extraction, first-error
+deduplication, representative-case selection, optional xdebug recommendation,
+and the versioned result bundle. It does not provide a web UI, LLM analysis,
+knowledge-base lookup, database storage, or artifact debugging.
+
+The external Codex/Claude Agent is the only reasoning and orchestration actor.
+`xlog` publishes deterministic facts and optional recommendations; it never
+chooses whether xverif MCP is invoked or fixes the investigation order.
 
 ## Public Interface
 
@@ -95,13 +99,16 @@ snapshot remain valid inputs.
 
 ## xdebug Recommendation
 
-`xlog` recommends a bounded set of failed cases for later `xdebug` analysis so
-xregress does not need to run expensive debug on every deduplicated error. The
-selection is deterministic and auditable; LLMs are not part of the initial
-recommendation path.
+`xlog` can recommend a bounded set of failed cases as optional input for the
+single external Codex/Claude Agent. The selection is deterministic and
+auditable; LLMs are not part of the recommendation algorithm, and xlog does not
+execute artifact debugging.
 
 - `scan` accepts `limits.debug_budget` and CLI `--debug-budget`; the default is
-  `20`. If fewer clusters are eligible, xlog emits the actual count.
+  `20`. This value is only the maximum number of clusters included in xlog's
+  recommendation output. It is not an Agent execution budget, a permission
+  boundary, an MCP/tool-call limit, or a required investigation stage. If fewer
+  clusters are eligible, xlog emits the actual count.
 - The bundle publishes `debug_recommendation` with policy version, budget,
   eligible count, selected count, `recommended_debug_cases`, and
   `deferred_cluster_ids`.
@@ -122,8 +129,10 @@ recommendation path.
 - Recommended debug cases include their artifact snapshot and directly usable
   xdebug target when FSDB and/or daidir were resolved. Missing or ambiguous
   artifacts remain structured facts and never change failure classification.
-- The external Agent may consume a recommended primary case, choose an alternate,
-  or investigate another case. Recommendations are optional deterministic facts,
+- The single external Codex/Claude Agent may consume a recommended primary case,
+  choose an alternate, inspect a deferred or unclustered case, or decline
+  artifact debugging. The Agent alone decides whether to call xverif MCP and in
+  what order to investigate. Recommendations are optional deterministic facts,
   not permissions or a mandatory investigation order.
 
 ## Contract Fixture

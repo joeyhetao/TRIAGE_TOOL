@@ -2,13 +2,27 @@
 
 ## 当前轮次
 
-- `round_id`: `manifest-kind-v2-adapter`
+- `round_id`: `single-agent-architecture-doc-alignment`
 - 工作树：`/home/melo.liao/worktrees/xlog-manifest-v2`
 - 分支：`agent/xlog-manifest-v2`
-- 起始提交：`ff2c5263a51c02bcefe10c467d0c959b3a6e9fcd`
+- 本轮权威内容基线：`ddc548e11c0c3eac484208648c7a6fc8392a3bbc`
+- 已集成 merge commit：`bf584c90e820d8e74b354b2a3e94c500d71b2906`
 - 冻结 xvp 生产提交：`8b2971b77cce80b991e77d83cfab492405385410`
 - 冻结 xverif 只读提交：`9341b5d42f0f9b6fb634fe568cba0b4b8ebe467b`
-- 本轮只修改 xlog 独立仓库，不修改 xvp、xregress、xmanager、xWiki 或 xverif，不 push。
+- revision 1.3 实现和 `ddc548e` 文档更新均已测试并集成发布。本轮仅追加
+  `PLAN.md`、`HANDOFF.md` 的架构表述对齐，不修改代码、合同或测试，不 push。
+
+## 单一 Agent 架构边界
+
+- Codex/Claude Agent 是唯一推理与编排主体。
+- xlog 只提供确定性日志发现、状态解析、首错聚类、artifact snapshot 和可选的
+  debug recommendation，不执行 xdebug，不作根因判断。
+- xregress MCP Lite 负责向 Agent 提供扫描、case 查询和报告保存能力，不自行执行
+  debug，也不管理 xverif session。
+- Agent 根据证据自主决定是否调用 xverif MCP、选择 recommended 或 alternate case，
+  以及实际调查顺序；xlog 不预设固定调查阶段。
+- `debug_budget` 保留现有字段和兼容语义，只限制 xlog 输出的推荐 cluster 数量；
+  它不是 Agent 执行预算、权限限制、工具调用上限或调查阶段门禁。
 
 ## Bundle 合同
 
@@ -91,11 +105,50 @@ valid: fixtures/rtl_injection_minimal/xlog_bundle.fixture.json (xlog_bundle.v1 r
 
 五个旧 case 的 `xdebug_target` 均保留 FSDB/daidir，但不含 `run_manifest`。扫描前后正式 Cache 三个身份锚点 SHA-256 完全一致，xverif 保持 clean 且 HEAD 不变。
 
+## Typed Cache 五 case 合同验证
+
+新 typed Cache 基准：
+
+```text
+/home/melo.liao/worktrees/integration-runs/typed-cache-v1-20260814_003225/generated/xvp_3p_cache
+```
+
+使用 `run/test` 作为唯一扫描根并使用 `cfg/xlog_scan.json` 显式 artifact
+配置。结果为 `5 cases / 1 pass / 4 fail / 2 clusters / 2 recommendations /
+5 artifact complete`，bundle schema revision 1.3 校验通过，全量测试仍为
+`43 passed`。
+
+- 五个 case 均同时发现 `xvp.case_manifest` 和
+  `xdebug.run_manifest`。
+- 五个 case 均选择 `xdebug.run-manifest.v1`，状态为
+  `preferred / resolved / parsed / published`。
+- 五个 xdebug target 均精确包含逐 case FSDB、共享 daidir 和所选 typed
+  run manifest，且 manifest 路径完全一致。
+- baseline 为 pass，四个注错 case 为 fail；没有 unclustered failure，
+  manifest 选择未出现 legacy fallback、schema mismatch、missing 或
+  ambiguity。
+- 扫描前后 Cache 文件、目录和符号链接身份摘要完全一致；xlog 与 xverif
+  工作树保持 clean。
+
+本次验证 bundle SHA-256：
+`19f25119ed66fd019990591f1bf4a31f6b2b11b80df92189f73e56c4be51d57c`。
+
 ## 遗留风险
 
-- 正式 Cache 是旧 xvp manifest 基准；新 xvp `8b2971b` 的双 manifest 输出已用合成 fixture 覆盖，但尚未对一个新生成的完整 VCS Cache run 做真实扫描。
+- typed Cache 验证覆盖固定的五 case 样本；更大规模回归、额外目录布局和新的
+  manifest 命名仍需通过显式、可配置规则逐项验证。
 - xlog 不验证 xdebug manifest 中 resource path、size、SHA-256 与实际 FSDB/daidir 是否一致；该严格校验仍由 xdebug 在 session open 前执行。
 - revision 1.3 是兼容增加，但 xregress 必须显式消费 `artifacts.manifests`，不能继续把 `resources.run_manifest` 当成 xdebug manifest。
 - 路径存在但 JSON 非法、schema 不匹配、state 非 published 或同优先级歧义时，xlog 只报告事实并降级，不猜测替代文件。
+- deterministic recommendation 只反映当前排序规则，不能替代 Agent 对证据、
+  调查价值和 xverif 调用顺序的判断。
 
-`READY_FOR_INTEGRATION: yes`
+## 发布状态
+
+- `agent/xlog-manifest-v2@ddc548e` 已通过 PR #3 集成，远端 `xlog`
+  指向 merge commit `bf584c9`。
+- xlog bundle revision 1.3 已测试、已完成旧 Cache 兼容验证和 typed Cache
+  五 case 合同验证。
+- 本轮架构对齐为 docs-only 本地提交，不改变已发布合同身份。
+
+`RELEASED_BASELINE: bf584c90e820d8e74b354b2a3e94c500d71b2906`
