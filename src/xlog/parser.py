@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from .artifacts import collect_log_references, new_log_references
 from .config import TOP_ERRORS_PER_CASE
 from .dedup import description_signature, portable_error_signature, scope_hint
 
@@ -197,6 +198,7 @@ def _error_result(filepath, error_msg):
         "primary_error": None,
         "simulation_time": _unavailable_simulation_time(),
         "parse_error": {"code": "LOG_READ_FAILED", "message": error_msg},
+        "artifact_references": None,
     }
 
 
@@ -218,12 +220,14 @@ def parse_log(filepath, extra_keywords=None, pass_patterns=None):
     continuation_lines = []
     explicit_simulation_time = None
     max_observed_simulation_time = None
+    artifact_references = new_log_references()
     vcs_report_lines_remaining = 0
     in_uvm_report_summary = False
     uvm_report_summary_counts = {}
 
     with path.open("r", encoding="utf-8", errors="replace") as handle:
         for raw_line in handle:
+            collect_log_references(raw_line, artifact_references)
             line = raw_line.rstrip("\n")
             stripped = line.strip()
 
@@ -389,6 +393,7 @@ def parse_log(filepath, extra_keywords=None, pass_patterns=None):
         "all_errors": [primary_error] if primary_error else [],
         "primary_error": primary_error,
         "simulation_time": explicit_simulation_time or max_observed_simulation_time or _unavailable_simulation_time(),
+        "artifact_references": artifact_references,
     }
 
 

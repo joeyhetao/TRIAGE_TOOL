@@ -36,7 +36,13 @@ def scan_regression(regression_root, parser_config, artifact_config, max_log_fil
             "simulation_time": result.get("simulation_time"),
         }
         annotate_case_identity(case)
-        case["artifacts"] = build_case_artifacts(path, root, case, artifact_config)
+        case["artifacts"] = build_case_artifacts(
+            path,
+            root,
+            case,
+            artifact_config,
+            log_references=result.get("artifact_references"),
+        )
         if result.get("parse_error"):
             case["parse_error"] = result["parse_error"]
         cases.append(case)

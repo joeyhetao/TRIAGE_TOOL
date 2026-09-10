@@ -2,15 +2,14 @@
 
 ## 当前轮次
 
-- `round_id`: `single-agent-architecture-doc-alignment`
-- 工作树：`/home/melo.liao/worktrees/xlog-manifest-v2`
-- 分支：`agent/xlog-manifest-v2`
-- 本轮权威内容基线：`ddc548e11c0c3eac484208648c7a6fc8392a3bbc`
-- 已集成 merge commit：`bf584c90e820d8e74b354b2a3e94c500d71b2906`
+- `round_id`: `large-regression-scan-v1`
+- 工作树：`/home/melo.liao/worktrees/xlog-large-regression-scan-v1`
+- 分支：`fix/xlog-large-regression-scan-v1`
+- 发布基线：`b457ec8c2ce254f0223aec357f46d46e17075fea`
 - 冻结 xvp 生产提交：`8b2971b77cce80b991e77d83cfab492405385410`
 - 冻结 xverif 只读提交：`9341b5d42f0f9b6fb634fe568cba0b4b8ebe467b`
-- revision 1.3 实现和 `ddc548e` 文档更新均已测试并集成发布。本轮仅追加
-  `PLAN.md`、`HANDOFF.md` 的架构表述对齐，不修改代码、合同或测试，不 push。
+- 本轮只优化 xlog 大回归扫描 I/O，修改 xlog 代码、测试和本文档；不修改
+  xregress、xverif、xmanager、xWiki 或 bundle 合同，不 push。
 
 ## 单一 Agent 架构边界
 
@@ -71,7 +70,7 @@ Manifest descriptor 结构：
 PYTHONPATH=src python3 -m pytest -q
 ```
 
-结果：`43 passed in 0.36s`。
+结果：`51 passed in 3.49s`。
 
 Canonical fixture 校验：
 
@@ -133,22 +132,45 @@ valid: fixtures/rtl_injection_minimal/xlog_bundle.fixture.json (xlog_bundle.v1 r
 本次验证 bundle SHA-256：
 `19f25119ed66fd019990591f1bf4a31f6b2b11b80df92189f73e56c4be51d57c`。
 
+## 大回归扫描性能修复
+
+- 递归发现现在先检查文件名、`.log` 后缀和 `_bk.log` 排除规则，再对日志
+  候选执行 `is_file` 与路径解析；非日志 FSDB 等 artifact 不再进入候选
+  `is_file/stat` 路径。
+- `parse_log` 在原有单次逐行解析中同时收集 FSDB、daidir、KDB、xvp manifest
+  和 xdebug manifest 引用。正常扫描将该映射直接交给 artifact snapshot；
+  已扫描但为空的映射不会触发日志回读。
+- 正常路径从“每份日志完整读取两次，其中第二次串行”降为“每份日志完整读取一次”，
+  全量日志读取次数减少 50%。解析未产出引用集合时保留兼容回退，以维持结构化
+  parse error 和 artifact 信息。
+- 1550 case synthetic 性能门禁为每 case 一份 log 和同目录 4 GiB 稀疏 FSDB。
+  实测扫描 `2.093s`，日志打开 `1550` 次且每份恰好一次，FSDB 内容打开
+  `0` 次；测试采用宽松的 `180s` 上限，避免脆弱低阈值。
+- 修改前后对仓库固定 `rtl_injection_minimal` fixture 的 bundle 在归一化
+  `generated_at` 后完全相等，归一化 SHA-256 为
+  `adcce3aaf82b2ffba54235fd5910f81cb9a707e8b44e4887b57ced96bbbdf7a7`。
+- `xlog.v1`、`xlog_bundle.v1`、schema revision 1.3、action 数量、输出顺序、
+  cluster 和 recommendation 语义均保持不变；未新增进度协议。
+
 ## 遗留风险
 
-- typed Cache 验证覆盖固定的五 case 样本；更大规模回归、额外目录布局和新的
-  manifest 命名仍需通过显式、可配置规则逐项验证。
+- 1550 case 基准使用 synthetic 小日志与稀疏 FSDB；共享存储延迟、超大真实日志和
+  artifact 元数据 `stat` 开销仍需在内网目录上由 xregress 异步扫描观测。
+- artifact candidate 元数据检查当前仍在 bundle 组装阶段串行执行。本轮证据显示
+  消除日志二次读取已解决主要确定性浪费；若真实测量证明 `stat` 成为下一瓶颈，
+  再复用现有 `workers` 做有界并行。
 - xlog 不验证 xdebug manifest 中 resource path、size、SHA-256 与实际 FSDB/daidir 是否一致；该严格校验仍由 xdebug 在 session open 前执行。
 - revision 1.3 是兼容增加，但 xregress 必须显式消费 `artifacts.manifests`，不能继续把 `resources.run_manifest` 当成 xdebug manifest。
 - 路径存在但 JSON 非法、schema 不匹配、state 非 published 或同优先级歧义时，xlog 只报告事实并降级，不猜测替代文件。
 - deterministic recommendation 只反映当前排序规则，不能替代 Agent 对证据、
   调查价值和 xverif 调用顺序的判断。
+- 编译日志伪 case 是既有已知限制，本轮未修改其发现或分类语义。
 
 ## 发布状态
 
-- `agent/xlog-manifest-v2@ddc548e` 已通过 PR #3 集成，远端 `xlog`
-  指向 merge commit `bf584c9`。
-- xlog bundle revision 1.3 已测试、已完成旧 Cache 兼容验证和 typed Cache
-  五 case 合同验证。
-- 本轮架构对齐为 docs-only 本地提交，不改变已发布合同身份。
+- 远端 `xlog` 发布基线为
+  `b457ec8c2ce254f0223aec357f46d46e17075fea`。
+- 本轮性能修复已完成本地实现和测试，尚未 push、创建 PR 或 merge。
+- bundle schema 与 canonical fixture 合同身份保持不变。
 
-`RELEASED_BASELINE: bf584c90e820d8e74b354b2a3e94c500d71b2906`
+`LOCAL_FIX_READY: yes`
