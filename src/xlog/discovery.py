@@ -15,9 +15,9 @@ def discover_log_files(regression_root, max_log_files):
             (
                 path.resolve()
                 for path in resolved_root.rglob("*")
-                if path.is_file()
-                and path.suffix.lower() == ".log"
+                if path.suffix.lower() == ".log"
                 and not path.name.lower().endswith("_bk.log")
+                and path.is_file()
             ),
             key=lambda path: path.relative_to(resolved_root).as_posix(),
         )

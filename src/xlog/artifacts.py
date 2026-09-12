@@ -107,18 +107,27 @@ def _append_candidate(candidates, path, source, priority, expected_kind):
     candidates.append(value)
 
 
+def new_log_references():
+    return dict((artifact_kind, []) for artifact_kind in _LOG_REFERENCE_PATTERNS)
+
+
+def collect_log_references(line, references):
+    for artifact_kind, pattern in _LOG_REFERENCE_PATTERNS.items():
+        for match in pattern.finditer(line):
+            value = match.group("path")
+            assignment = _LOG_REFERENCE_ASSIGNMENT.match(value)
+            if assignment:
+                value = assignment.group("path")
+            references[artifact_kind].append(value.rstrip(",;"))
+    return references
+
+
 def _log_reference_paths(log_path):
-    references = dict((artifact_kind, []) for artifact_kind in _LOG_REFERENCE_PATTERNS)
+    references = new_log_references()
     try:
         with Path(log_path).open("r", encoding="utf-8", errors="replace") as handle:
             for line in handle:
-                for artifact_kind, pattern in _LOG_REFERENCE_PATTERNS.items():
-                    for match in pattern.finditer(line):
-                        value = match.group("path")
-                        assignment = _LOG_REFERENCE_ASSIGNMENT.match(value)
-                        if assignment:
-                            value = assignment.group("path")
-                        references[artifact_kind].append(value.rstrip(",;"))
+                collect_log_references(line, references)
     except OSError:
         return references
     return references
@@ -316,7 +325,7 @@ def _xdebug_target(resources, manifests):
     return target
 
 
-def build_case_artifacts(log_path, regression_root, identity, rules):
+def build_case_artifacts(log_path, regression_root, identity, rules, log_references=None):
     """Discover a case's debug artifacts without recursive regression searches."""
     log_path = _absolute_path(log_path, regression_root)
     log_directory = log_path.parent
@@ -327,7 +336,10 @@ def build_case_artifacts(log_path, regression_root, identity, rules):
         "regression_root": str(regression_root),
     }
     resources = {}
-    log_references = _log_reference_paths(log_path) if rules.get("log_reference_extraction") else {}
+    if not rules.get("log_reference_extraction"):
+        log_references = {}
+    elif log_references is None:
+        log_references = _log_reference_paths(log_path)
     for artifact_kind in ARTIFACT_KINDS:
         expected_kind = _EXPECTED_KIND[artifact_kind]
         candidates = []

@@ -58,6 +58,14 @@ snapshot remain valid inputs.
 - Rerun backup logs whose filename ends in `_bk.log` (case-insensitive) are
   excluded during discovery, before ordering and log-count limits. They never
   enter parsing, case statistics, first-error clustering, or recommendations.
+- Recursive discovery applies the filename, `.log` suffix and backup filters
+  before filesystem type validation. Non-log artifacts therefore do not incur
+  per-path `is_file` or `stat` work in the xlog candidate filter.
+- On the normal scan path, `parse_log` streams each log once and collects
+  parser facts plus artifact references during that same pass. The artifact
+  snapshot consumes the supplied reference set, including an explicitly empty
+  set, without reopening the log. A missing reference set is reserved for
+  compatibility callers and parse-error recovery.
 - Each case keeps the first five non-warning errors in appearance order.
 - Each case derives `test_id` and `seed` from the log filename. The default rule
   treats a trailing `_<digits>` suffix in the file stem as the seed; unmatched
@@ -163,6 +171,23 @@ their lower-priority values. `run_manifest_templates` names the legacy xvp case
 manifest; `xdebug_run_manifest_templates` names the xdebug manifest and defaults
 to the case-local `xdebug.run-manifest.v1.json`. The bundle records both effective
 configurations.
+
+## Large Regression I/O
+
+- A successfully parsed log is opened for content exactly once. Artifact
+  reference extraction no longer performs a second serial full-log pass.
+- Parse failures remain structured. If parsing did not produce a reference set,
+  artifact discovery may use the compatibility fallback to retain available
+  artifact facts.
+- FSDB, KDB and daidir content is never read or hashed. Existing bounded
+  candidate checks inspect only path existence, type, readability and file
+  size, using explicit references, same-directory conventions and configured
+  templates.
+- Parser concurrency remains bounded by the existing `workers` option. No
+  scheduler, cache service, fixed Cache layout, company path or progress
+  protocol is introduced.
+- Discovery ordering, case ordering, cluster identities, recommendation
+  ordering and serialized bundle output remain deterministic.
 
 ## Package Layout
 
