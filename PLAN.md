@@ -172,8 +172,34 @@ manifest; `xdebug_run_manifest_templates` names the xdebug manifest and defaults
 to the case-local `xdebug.run-manifest.v1.json`. The bundle records both effective
 configurations.
 
+## Primary Case Log Discovery
+
+- Discovery remains limited to case-insensitive `.log` files and excludes
+  `*_bk.log` before case construction.
+- Log candidates are grouped by their immediate parent directory. A directory
+  with one candidate keeps that log. A directory with multiple candidates keeps
+  only one log when the parent basename either equals or ends with that log stem,
+  compared case-insensitively, and that match is unique.
+- Zero matches or multiple matches are intentionally unresolved. All candidates
+  remain in deterministic relative-path order for backward compatibility; xlog
+  does not guess which file is primary.
+- The rule is structural rather than project-specific. No auxiliary filename,
+  test prefix, company directory or physical Cache layout is hardcoded.
+- Only selected logs enter parsing and bundle case construction. Their
+  `case_id` remains the stable path relative to the requested regression root.
+  This applies consistently to `xlog.v1 scan`, `scan_regression` and
+  `scan_stream` callers through the shared discovery path.
+
 ## Large Regression I/O
 
+- Each selected primary log is scanned line by line through EOF exactly once
+  with bounded retained state. No head/tail sampling or whole-file buffering is
+  used, so errors in the middle and PASS/simulation-time facts at the tail remain
+  observable.
+- Before expensive regex matching, the parser uses lowercase string sentinels
+  for artifact references, simulation time, UVM, VCS, Xcelium, SVA and configured
+  error families. Regex remains the final authority whenever its necessary
+  sentinel is present.
 - A successfully parsed log is opened for content exactly once. Artifact
   reference extraction no longer performs a second serial full-log pass.
 - Parse failures remain structured. If parsing did not produce a reference set,

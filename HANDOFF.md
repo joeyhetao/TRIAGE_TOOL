@@ -2,14 +2,13 @@
 
 ## 当前轮次
 
-- `round_id`: `large-regression-scan-v1`
-- 工作树：`/home/melo.liao/worktrees/xlog-large-regression-scan-v1`
-- 分支：`fix/xlog-large-regression-scan-v1`
-- 发布基线：`b457ec8c2ce254f0223aec357f46d46e17075fea`
-- 冻结 xvp 生产提交：`8b2971b77cce80b991e77d83cfab492405385410`
+- `round_id`: `primary-case-log-performance-v1`
+- 工作树：`/home/melo.liao/worktrees/xlog-primary-case-log-performance-v1`
+- 分支：`fix/xlog-primary-case-log-performance-v1`
+- 精确锁定集成提交：`39ec9f77c1da29f841fd29848c0002238bc00cee`
 - 冻结 xverif 只读提交：`9341b5d42f0f9b6fb634fe568cba0b4b8ebe467b`
-- 本轮只优化 xlog 大回归扫描 I/O，修改 xlog 代码、测试和本文档；不修改
-  xregress、xverif、xmanager、xWiki 或 bundle 合同，不 push。
+- 本轮只修复 xlog 主用例日志选择和单次逐行解析性能，修改 xlog
+  代码、测试和本文档；不修改外部仓库或 bundle 合同，不 push。
 
 ## 单一 Agent 架构边界
 
@@ -70,7 +69,7 @@ Manifest descriptor 结构：
 PYTHONPATH=src python3 -m pytest -q
 ```
 
-结果：`51 passed in 3.49s`。
+结果：`56 passed in 3.02s`。
 
 Canonical fixture 校验：
 
@@ -151,6 +150,29 @@ valid: fixtures/rtl_injection_minimal/xlog_bundle.fixture.json (xlog_bundle.v1 r
   `adcce3aaf82b2ffba54235fd5910f81cb9a707e8b44e4887b57ced96bbbdf7a7`。
 - `xlog.v1`、`xlog_bundle.v1`、schema revision 1.3、action 数量、输出顺序、
   cluster 和 recommendation 语义均保持不变；未新增进度协议。
+
+## 主用例日志选择与逐行性能修复
+
+- 日志发现仍只接收大小写不敏感的 `.log`，并继续排除
+  `*_bk.log`。候选按直接父目录分组：单候选直接保留；多候选时仅在
+  “父目录 basename 等于或以后缀匹配 log stem”且结果唯一时选择主日志。
+- 匹配大小写不敏感，能够处理目录带额外层级前缀而主日志 stem 较短的
+  布局。实现没有硬编码 `rpe_it_hike_`、`novas_dump.log`、
+  `tr_db.log`、测试名或公司路径。
+- 多日志目录若零匹配或多匹配，继续保留全部候选并按相对路径稳定排序，
+  不做猜测；这是兼容旧布局的明确回退语义，不新增 schema 字段。
+- 只有选中的主日志进入解析。测试证明真实命名目录中的主日志仅打开一次，
+  `*_bk.log` 和两个辅助日志均不打开、不解析，也不生成额外 case。
+- 主日志仍完整逐行扫描到 EOF，不做 head/tail sampling，也不把整文件载入
+  内存。每行先计算一次小写文本，再以廉价字符串哨兵筛选 artifact、
+  simulation time、UVM、VCS、Xcelium、SVA 和配置错误的正则入口；正则仍是
+  最终判定。
+- 50,001 行以上的合成大日志测试把 UVM error 放在中部，把 PASS、VCS
+  report 和总仿真时间放在尾部；结果同时保留中部首错、尾部 PASS 事实和
+  `2us` explicit simulation time。
+- artifact 引用继续在同一次日志读取中收集，正常路径不回读日志；FSDB
+  内容从不打开或哈希。bundle 保持 `xlog_bundle.v1/schema_revision 1.3`，
+  schema 和 canonical fixture SHA-256 均未变化。
 
 ## 遗留风险
 

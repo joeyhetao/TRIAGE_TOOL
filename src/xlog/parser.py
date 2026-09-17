@@ -30,6 +30,7 @@ _UVM_REPORT_SUMMARY_COUNT = re.compile(
 _VCS_PATTERN = re.compile(r"^(?P<level>Error|Warning|Fatal|Note|Info)-\[(?P<id>[A-Z][A-Z0-9_-]*)\]\s*(?P<msg>.*)", re.IGNORECASE)
 _VCS_ANY = re.compile(r"^(?:Error|Warning|Fatal|Note|Info)-\[", re.IGNORECASE)
 _VCS_LEVEL_MAP = {"ERROR": "ERROR", "WARNING": "WARNING", "FATAL": "FATAL"}
+_VCS_LINE_PREFIXES = ("error-[", "warning-[", "fatal-[", "note-[", "info-[")
 
 _XCELIUM_PATTERN = re.compile(
     r"^(?P<tool>xrun|xmsim|xmelab|xmvlog|xmverilog|xmsd|ncsim|ncelab|ncvlog|irun)"
@@ -42,6 +43,7 @@ _XCELIUM_ANY = re.compile(
     re.IGNORECASE,
 )
 _XCELIUM_LEVEL_MAP = {"E": "ERROR", "W": "WARNING", "F": "FATAL", "SE": "ERROR"}
+_XCELIUM_LINE_PREFIXES = ("xrun", "xmsim", "xmelab", "xmvlog", "xmverilog", "xmsd", "ncsim", "ncelab", "ncvlog", "irun")
 
 _SVA_PATTERN = re.compile(r"^(?P<level>SVA_(?:ERROR|WARNING|FATAL))\s*:\s*(?P<msg>.*)", re.IGNORECASE)
 _SVA_ANY = re.compile(r"^SVA_(?:ERROR|WARNING|FATAL)\s*:", re.IGNORECASE)
@@ -65,6 +67,7 @@ _TIME_TO_FS = {
     "s": Decimal("1000000000000000"),
 }
 _VCS_REPORT_LOOKAHEAD_LINES = 20
+_VCS_REPORT_REQUIRED_CHARACTERS = tuple("vcsimulatnrepo")
 
 
 def _build_gen_pattern(keywords):
@@ -214,6 +217,7 @@ def parse_log(filepath, extra_keywords=None, pass_patterns=None):
         statistics.setdefault(keyword, 0)
 
     general_pattern = _build_gen_pattern(extra_keywords)
+    general_prefixes = tuple(extra_keywords)
     pass_found = False
     top_errors = []
     pending = None
@@ -227,32 +231,49 @@ def parse_log(filepath, extra_keywords=None, pass_patterns=None):
 
     with path.open("r", encoding="utf-8", errors="replace") as handle:
         for raw_line in handle:
-            collect_log_references(raw_line, artifact_references)
             line = raw_line.rstrip("\n")
+            lower_line = line.lower()
+            collect_log_references(line, artifact_references, lower_line=lower_line)
             stripped = line.strip()
+            stripped_lower = stripped.lower()
 
-            if _UVM_REPORT_SUMMARY_HEADER.search(line):
+            if (
+                "uvm" in lower_line
+                and "report" in lower_line
+                and "summary" in lower_line
+                and _UVM_REPORT_SUMMARY_HEADER.search(line)
+            ):
                 in_uvm_report_summary = True
-            elif in_uvm_report_summary:
+            elif in_uvm_report_summary and (
+                "uvm_error" in lower_line or "uvm_fatal" in lower_line
+            ):
                 summary_match = _UVM_REPORT_SUMMARY_COUNT.match(line)
                 if summary_match:
                     uvm_report_summary_counts[summary_match.group("level").upper()] = int(
                         summary_match.group("count")
                     )
 
-            is_vcs_report_header = _is_vcs_report_header(line)
+            is_vcs_report_header = (
+                all(character in lower_line for character in _VCS_REPORT_REQUIRED_CHARACTERS)
+                and _is_vcs_report_header(line)
+            )
             in_vcs_report = is_vcs_report_header or vcs_report_lines_remaining > 0
             if is_vcs_report_header:
                 vcs_report_lines_remaining = _VCS_REPORT_LOOKAHEAD_LINES
             elif vcs_report_lines_remaining > 0:
                 vcs_report_lines_remaining -= 1
 
-            explicit_time = _explicit_end_simulation_time(line, in_vcs_report)
-            if explicit_time is not None:
-                explicit_simulation_time = explicit_time
-            for observed_time in _observed_simulation_times(line):
-                if _time_is_larger(observed_time, max_observed_simulation_time):
-                    max_observed_simulation_time = observed_time
+            if in_vcs_report or "$" in line or "simulation" in lower_line:
+                explicit_time = _explicit_end_simulation_time(line, in_vcs_report)
+                if explicit_time is not None:
+                    explicit_simulation_time = explicit_time
+            if "@" in line or "time" in lower_line:
+                for observed_time in _observed_simulation_times(line):
+                    if _time_is_larger(
+                        observed_time,
+                        max_observed_simulation_time,
+                    ):
+                        max_observed_simulation_time = observed_time
 
             if not pass_found and pass_patterns and any(pattern in line for pattern in pass_patterns):
                 pass_found = True
@@ -276,7 +297,7 @@ def parse_log(filepath, extra_keywords=None, pass_patterns=None):
                 pending = None
                 continuation_lines = []
 
-            match = _UVM_PATTERN.search(line)
+            match = _UVM_PATTERN.search(line) if "uvm_" in lower_line else None
             if match:
                 level = match.group("level").upper()
                 statistics[level] = statistics.get(level, 0) + 1
@@ -295,7 +316,11 @@ def parse_log(filepath, extra_keywords=None, pass_patterns=None):
                     continuation_lines = []
                 continue
 
-            vcs_match = _VCS_PATTERN.match(stripped)
+            vcs_match = (
+                _VCS_PATTERN.match(stripped)
+                if stripped_lower.startswith(_VCS_LINE_PREFIXES)
+                else None
+            )
             if vcs_match:
                 level = _VCS_LEVEL_MAP.get(vcs_match.group("level").upper())
                 if level:
@@ -313,7 +338,11 @@ def parse_log(filepath, extra_keywords=None, pass_patterns=None):
                         continuation_lines = []
                 continue
 
-            xcelium_match = _XCELIUM_PATTERN.match(stripped)
+            xcelium_match = (
+                _XCELIUM_PATTERN.match(stripped)
+                if stripped_lower.startswith(_XCELIUM_LINE_PREFIXES)
+                else None
+            )
             if xcelium_match:
                 level = _XCELIUM_LEVEL_MAP.get(xcelium_match.group("level").upper())
                 if level:
@@ -334,7 +363,11 @@ def parse_log(filepath, extra_keywords=None, pass_patterns=None):
                         continuation_lines = []
                 continue
 
-            sva_match = _SVA_PATTERN.match(stripped)
+            sva_match = (
+                _SVA_PATTERN.match(stripped)
+                if stripped_lower.startswith("sva_")
+                else None
+            )
             if sva_match:
                 level = sva_match.group("level").upper()
                 statistics[level] = statistics.get(level, 0) + 1
@@ -343,7 +376,7 @@ def parse_log(filepath, extra_keywords=None, pass_patterns=None):
                     continuation_lines = []
                 continue
 
-            if general_pattern:
+            if general_pattern and stripped.upper().startswith(general_prefixes):
                 general_match = general_pattern.match(stripped)
                 if general_match:
                     level = general_match.group(1).upper()

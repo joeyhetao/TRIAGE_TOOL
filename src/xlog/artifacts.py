@@ -42,6 +42,13 @@ _LOG_REFERENCE_PATTERNS = {
         re.IGNORECASE,
     ),
 }
+_LOG_REFERENCE_SENTINELS = {
+    "fsdb": ((".fsdb",),),
+    "daidir": ((".daidir",),),
+    "kdb": ((".kdb",), ("/kdb",)),
+    "run_manifest": (("xvp_case_manifest",),),
+    "xdebug_run_manifest": (("xdebug", "manifest"),),
+}
 _LOG_REFERENCE_ASSIGNMENT = re.compile(r"^\+?[A-Z][A-Z0-9_]*=(?P<path>.+)$", re.IGNORECASE)
 
 
@@ -111,8 +118,12 @@ def new_log_references():
     return dict((artifact_kind, []) for artifact_kind in _LOG_REFERENCE_PATTERNS)
 
 
-def collect_log_references(line, references):
+def collect_log_references(line, references, lower_line=None):
+    lowered = lower_line if lower_line is not None else line.lower()
     for artifact_kind, pattern in _LOG_REFERENCE_PATTERNS.items():
+        sentinels = _LOG_REFERENCE_SENTINELS[artifact_kind]
+        if not any(all(token in lowered for token in group) for group in sentinels):
+            continue
         for match in pattern.finditer(line):
             value = match.group("path")
             assignment = _LOG_REFERENCE_ASSIGNMENT.match(value)
