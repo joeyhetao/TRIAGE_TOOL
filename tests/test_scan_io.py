@@ -217,7 +217,7 @@ def test_repository_fixture_matches_fallback_scan_semantics(monkeypatch):
     fallback["generated_at"] = "<dynamic>"
     assert optimized == fallback
     assert optimized["api_version"] == "xlog_bundle.v1"
-    assert optimized["schema_revision"] == "1.3"
+    assert optimized["schema_revision"] == "1.4"
     assert optimized["summary"]["failure_clusters"] == 3
 
 

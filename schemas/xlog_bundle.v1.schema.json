@@ -49,6 +49,16 @@
         "fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
       }
     },
+    "diagnostic_hint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "line_number", "text"],
+      "properties": {
+        "code": {"type": "string", "enum": ["JVP_TEST_PASSED", "JVP_TEST_FAILED", "SIMULATION_FINISH", "VCS_SIMULATION_REPORT", "SIM_END_WATCHDOG", "BUS_INACTIVITY", "QP_NOT_COMPLETE", "LOG_READ_FAILED"]},
+        "line_number": {"type": ["integer", "null"], "minimum": 1},
+        "text": {"type": "string", "maxLength": 240}
+      }
+    },
     "error": {
       "type": "object",
       "additionalProperties": true,
@@ -164,6 +174,8 @@
         "log_path": {"type": "string"},
         "working_directory": {"type": "string"},
         "status": {"type": "string", "enum": ["pass", "fail", "error"]},
+        "result_state": {"type": "string", "enum": ["PASS", "FAIL_WITH_ERROR", "INCOMPLETE_NO_ERROR", "PARSE_ERROR"]},
+        "diagnostic_hints": {"type": "array", "maxItems": 8, "items": {"$ref": "#/definitions/diagnostic_hint"}},
         "test_id": {"type": "string"},
         "seed": {"type": ["integer", "null"]},
         "seed_parse_status": {"type": "string", "enum": ["parsed", "fallback"]},
@@ -230,6 +242,19 @@
         "case_ids": {"type": "array", "items": {"type": "string"}},
         "recommendation": {"$ref": "#/definitions/cluster_recommendation"}
       }
+    },
+    "diagnostic_candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["case_id", "result_state", "test_id", "seed", "log_path", "diagnostic_hints"],
+      "properties": {
+        "case_id": {"type": "string"},
+        "result_state": {"type": "string", "enum": ["INCOMPLETE_NO_ERROR", "PARSE_ERROR"]},
+        "test_id": {"type": "string"},
+        "seed": {"type": ["integer", "null"]},
+        "log_path": {"type": "string"},
+        "diagnostic_hints": {"type": "array", "maxItems": 8, "items": {"$ref": "#/definitions/diagnostic_hint"}}
+      }
     }
   },
   "properties": {
@@ -247,6 +272,7 @@
     "summary": {"type": "object"},
     "cases": {"type": "array", "items": {"$ref": "#/definitions/case"}},
     "failure_clusters": {"type": "array", "items": {"$ref": "#/definitions/failure_cluster"}},
+    "diagnostic_candidates": {"type": "array", "items": {"$ref": "#/definitions/diagnostic_candidate"}},
     "debug_recommendation": {
       "type": "object",
       "additionalProperties": true,

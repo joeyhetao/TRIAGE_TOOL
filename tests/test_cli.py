@@ -14,6 +14,8 @@ def test_actions_and_schema_shortcuts_emit_json(capsys):
     assert schema["data"]["schema"]["$id"] == "xlog_bundle.v1.schema.json"
     assert "debug_recommendation" in schema["data"]["schema"]["required"]
     assert "schema_revision" in schema["data"]["schema"]["properties"]
+    assert "result_state" in schema["data"]["schema"]["definitions"]["case"]["properties"]
+    assert "diagnostic_candidates" in schema["data"]["schema"]["properties"]
     assert "scope_hint" in schema["data"]["schema"]["definitions"]["error"]["properties"]
     assert "portable_signature" in schema["data"]["schema"]["definitions"]["cluster_signature"]["properties"]
 

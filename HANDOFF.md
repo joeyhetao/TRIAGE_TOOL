@@ -1,6 +1,23 @@
 # xlog 交接状态
 
-## 当前轮次
+## v1.2.0 当前权威状态
+
+- 基线：`origin/xlog@8347c55188078105d2bececc17602eca0b74e286`。
+- 分支：`feature/xlog-result-state-v1`；工作树：
+  `/home/melo.liao/worktrees/xlog-result-state-v1`。
+- `xlog_bundle.v1` 当前输出 revision 为 `1.4`，新增兼容字段
+  `result_state`、有界 `diagnostic_hints`、顶层 `diagnostic_candidates` 和四态汇总计数。
+- 判定优先级为 `PARSE_ERROR`、`FAIL_WITH_ERROR`、`PASS`、
+  `INCOMPLETE_NO_ERROR`。兼容 `status` 继续映射为 `error`、`fail`、`pass`、`fail`。
+- 无错误但没有明确 PASS 的日志不伪造 `primary_error`，不进入
+  `failure_clusters`，但一定进入 `diagnostic_candidates`。
+- Bundle schema SHA-256：
+  `5635c4633fc9acef37bf12303739b0b8e721b03a59a8573a53ffacc566a38bac`。
+- 六日志 synthetic 场景覆盖 3 个 `FAIL_WITH_ERROR` 和 3 个
+  `INCOMPLETE_NO_ERROR`；当前全量结果为 `58 passed`。
+- 本轮不增加 Agent、根因推断、调度器或 xverif 调用；不 push、PR 或发布。
+
+## 前序轮次（历史）
 
 - `round_id`: `primary-case-log-performance-v1`
 - 工作树：`/home/melo.liao/worktrees/xlog-primary-case-log-performance-v1`
@@ -60,7 +77,7 @@ Manifest descriptor 结构：
 
 ## 合同身份
 
-- Bundle schema SHA-256：`10d01d443657db3335a99f68e85a1c9ddd31bdf1ff95ba91fc19ba34d6cf5e87`
+- 当时 Bundle schema SHA-256：`10d01d443657db3335a99f68e85a1c9ddd31bdf1ff95ba91fc19ba34d6cf5e87`
 - Canonical fixture SHA-256：`e99f650b2d9dadc347d548b9b9d00a750d96bedb434d910ff18b65dd8512e510`
 
 ## 测试
