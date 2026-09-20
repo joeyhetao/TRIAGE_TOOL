@@ -147,6 +147,21 @@ def test_parser_pass_semantics_follow_configured_marker(tmp_path):
     assert without_marker_contract["result_state"] == "INCOMPLETE_NO_ERROR"
 
 
+def test_jvp_test_failed_is_failure_without_configured_error_pattern(tmp_path):
+    log_path = _write_log(tmp_path, "jvp-failed.log", "JVP TEST FAILED\n")
+
+    result = parse_log(
+        log_path,
+        extra_keywords=[],
+        pass_patterns=["JVP TEST PASSED"],
+    )
+
+    assert result["status"] == "fail"
+    assert result["result_state"] == "FAIL_WITH_ERROR"
+    assert result["primary_error"] is None
+    assert result["diagnostic_hints"][0]["code"] == "JVP_TEST_FAILED"
+
+
 def test_parser_distinguishes_incomplete_log_and_collects_bounded_hints(tmp_path):
     log_path = _write_log(
         tmp_path,

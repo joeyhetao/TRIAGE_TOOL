@@ -454,7 +454,8 @@ def parse_log(filepath, extra_keywords=None, pass_patterns=None):
         for level in ("UVM_ERROR", "UVM_FATAL")
     )
     pass_found = pass_found or uvm_summary_pass
-    if has_error:
+    jvp_test_failed = "JVP_TEST_FAILED" in diagnostic_codes
+    if has_error or jvp_test_failed:
         result_state = "FAIL_WITH_ERROR"
     elif pass_found:
         result_state = "PASS"
