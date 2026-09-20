@@ -51,6 +51,14 @@ valid xvp manifest is only a labeled `legacy_fallback` fact and is never passed
 to xdebug as `target.run_manifest`. Revision 1.2 bundles that omit the new
 snapshot remain valid inputs.
 
+Revision `1.4` adds an authoritative per-case `result_state` while retaining the
+legacy `status` field. The precedence is `PARSE_ERROR`, `FAIL_WITH_ERROR`,
+`PASS`, then `INCOMPLETE_NO_ERROR`. Bounded `diagnostic_hints` record literal
+completion/watchdog markers without inventing a `primary_error`. Only cases with
+a real primary error enter `failure_clusters`; every `INCOMPLETE_NO_ERROR` or
+`PARSE_ERROR` case also appears in top-level `diagnostic_candidates`. Summary
+counts expose all four states, while older bundles remain valid inputs.
+
 ## Data Ownership
 
 - A discovered `.log` file is one case. `case_id` is its POSIX path relative to
@@ -101,9 +109,10 @@ snapshot remain valid inputs.
 - A cluster publishes a deterministic SHA-256 ID, its first sorted member as the
   representative case, member case IDs, the representative real error, and a
   deterministic recommendation record for downstream xdebug selection.
-- Per-log read failures remain visible as `status: error` and never stop the
-  batch. A missing PASS marker without a parseable error is a failed,
-  unclustered case.
+- Per-log read failures remain visible as `status: error`,
+  `result_state: PARSE_ERROR`, and never stop the batch. A missing PASS marker
+  without a parseable error is `INCOMPLETE_NO_ERROR`: it maps to legacy
+  `status: fail`, remains unclustered, and is surfaced as a diagnostic candidate.
 
 ## xdebug Recommendation
 

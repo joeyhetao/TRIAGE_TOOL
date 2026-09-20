@@ -29,11 +29,13 @@ def scan_regression(regression_root, parser_config, artifact_config, max_log_fil
             "log_path": str(path),
             "working_directory": str(path.parent),
             "status": result["status"],
+            "result_state": result["result_state"],
             "pass_found": bool(result.get("pass_found")),
             "statistics": result.get("statistics", {}),
             "top_errors": result.get("top_errors", []),
             "primary_error": result.get("primary_error"),
             "simulation_time": result.get("simulation_time"),
+            "diagnostic_hints": result.get("diagnostic_hints", []),
         }
         annotate_case_identity(case)
         case["artifacts"] = build_case_artifacts(
@@ -48,11 +50,31 @@ def scan_regression(regression_root, parser_config, artifact_config, max_log_fil
         cases.append(case)
     clusters, unclustered = build_failure_clusters(cases)
     debug_recommendation = build_debug_recommendation(clusters, cases, debug_budget)
+    diagnostic_candidates = [
+        {
+            "case_id": case["case_id"],
+            "result_state": case["result_state"],
+            "test_id": case.get("test_id"),
+            "seed": case.get("seed"),
+            "log_path": case.get("log_path"),
+            "diagnostic_hints": case.get("diagnostic_hints", []),
+        }
+        for case in cases
+        if case.get("result_state") in ("INCOMPLETE_NO_ERROR", "PARSE_ERROR")
+    ]
+    result_state_counts = {
+        state: sum(case.get("result_state") == state for case in cases)
+        for state in ("PASS", "FAIL_WITH_ERROR", "INCOMPLETE_NO_ERROR", "PARSE_ERROR")
+    }
     summary = {
         "cases_total": len(cases),
         "cases_passed": sum(case["status"] == "pass" for case in cases),
         "cases_failed": sum(case["status"] == "fail" for case in cases),
         "cases_error": sum(case["status"] == "error" for case in cases),
+        "cases_fail_with_error": result_state_counts["FAIL_WITH_ERROR"],
+        "cases_incomplete_no_error": result_state_counts["INCOMPLETE_NO_ERROR"],
+        "cases_parse_error": result_state_counts["PARSE_ERROR"],
+        "result_state_counts": result_state_counts,
         "failure_clusters": len(clusters),
         "debug_recommended_cases": debug_recommendation["selected_cluster_count"],
         "unclustered_failure_cases": len(unclustered),
@@ -63,7 +85,7 @@ def scan_regression(regression_root, parser_config, artifact_config, max_log_fil
     }
     return {
         "api_version": "xlog_bundle.v1",
-        "schema_revision": "1.3",
+        "schema_revision": "1.4",
         "generated_at": _utc_now(),
         "source": {"regression_root": str(root), "log_suffix": ".log", "max_log_files": max_log_files, "workers": workers},
         "parser_config": parser_config,
@@ -72,6 +94,7 @@ def scan_regression(regression_root, parser_config, artifact_config, max_log_fil
         "cases": cases,
         "failure_clusters": clusters,
         "debug_recommendation": debug_recommendation,
+        "diagnostic_candidates": diagnostic_candidates,
         "unclustered_failure_case_ids": unclustered,
     }
 

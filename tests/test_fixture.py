@@ -24,7 +24,7 @@ def _scan_fixture(tmp_path):
 
 def test_rtl_injection_fixture_exposes_stable_facts_and_alternates(tmp_path):
     bundle = _scan_fixture(tmp_path)
-    assert bundle["schema_revision"] == "1.3"
+    assert bundle["schema_revision"] == "1.4"
 
     public_cluster = next(
         cluster for cluster in bundle["failure_clusters"]

@@ -33,7 +33,7 @@ def test_scan_writes_bundle_with_sorted_cases_clusters_and_recommendation(tmp_pa
     response = dispatch_request(_request(root, output, limits={"workers": 1}))
     bundle = json.loads(output.read_text(encoding="utf-8"))
     assert response["ok"] is True
-    assert bundle["schema_revision"] == "1.3"
+    assert bundle["schema_revision"] == "1.4"
     assert bundle["cases"][0]["primary_error"]["description_template_status"] == "present"
     assert bundle["cases"][0]["primary_error"]["description_template"] == "ceq of function=<num> is full"
     assert response["summary"]["cases_total"] == 3
@@ -59,6 +59,52 @@ def test_scan_writes_bundle_with_sorted_cases_clusters_and_recommendation(tmp_pa
     assert bundle["debug_recommendation"]["recommended_debug_cases"][0]["case_id"] == "z/case_9.log"
     assert bundle["debug_recommendation"]["recommended_debug_cases"][0]["artifacts"]["status"] == "complete"
     assert bundle["debug_recommendation"]["recommended_debug_cases"][0]["alternate_cases"][0]["artifacts"]["status"] == "unavailable"
+    assert bundle["summary"]["result_state_counts"] == {
+        "PASS": 1,
+        "FAIL_WITH_ERROR": 2,
+        "INCOMPLETE_NO_ERROR": 0,
+        "PARSE_ERROR": 0,
+    }
+    assert bundle["diagnostic_candidates"] == []
+
+
+def test_scan_exposes_error_and_incomplete_cases_without_fake_primary_errors(tmp_path):
+    root = tmp_path / "regression"
+    root.mkdir()
+    for index in range(3):
+        (root / ("uvm_error_%d.log" % index)).write_text(
+            "UVM_ERROR /tb/dut.sv(%d) @ 1ns: reporter [ERR%d] mismatch\n" % (index + 1, index),
+            encoding="utf-8",
+        )
+    incomplete = (
+        ("watchdog.log", "sim_end_watch_dog fired\n"),
+        ("inactive.log", "bus inactivity detected\n"),
+        ("qp.log", "QP not complete\n"),
+    )
+    for name, content in incomplete:
+        (root / name).write_text(content, encoding="utf-8")
+    output = tmp_path / "bundle.json"
+
+    response = dispatch_request(_request(root, output, limits={"workers": 2}))
+    bundle = json.loads(output.read_text(encoding="utf-8"))
+
+    assert response["ok"] is True
+    assert bundle["summary"]["result_state_counts"] == {
+        "PASS": 0,
+        "FAIL_WITH_ERROR": 3,
+        "INCOMPLETE_NO_ERROR": 3,
+        "PARSE_ERROR": 0,
+    }
+    assert len(bundle["failure_clusters"]) == 3
+    assert [item["case_id"] for item in bundle["diagnostic_candidates"]] == [
+        "inactive.log",
+        "qp.log",
+        "watchdog.log",
+    ]
+    for case in bundle["cases"]:
+        if case["result_state"] == "INCOMPLETE_NO_ERROR":
+            assert case["primary_error"] is None
+            assert case["diagnostic_hints"]
 
 
 def test_scan_debug_budget_limits_recommendations(tmp_path):

@@ -14,6 +14,7 @@ def test_parser_keeps_first_five_non_warning_errors(tmp_path):
     )
     result = parse_log(_write_log(tmp_path, "many.log", content))
     assert result["status"] == "fail"
+    assert result["result_state"] == "FAIL_WITH_ERROR"
     assert len(result["top_errors"]) == 5
     assert result["primary_error"]["error_id"] == "ERR_0"
     assert len(result["all_errors"]) == 1
@@ -137,8 +138,54 @@ def test_parser_reports_unavailable_simulation_time(tmp_path):
 
 def test_parser_pass_semantics_follow_configured_marker(tmp_path):
     log_path = _write_log(tmp_path, "pass.log", "UVM_WARNING /tb/dut.sv(1) @ 1ns: reporter [WARN] benign\nJVP TEST PASSED\n")
-    assert parse_log(log_path, pass_patterns=["JVP TEST PASSED"])["status"] == "pass"
-    assert parse_log(log_path, pass_patterns=[])["status"] == "pass"
+    configured = parse_log(log_path, pass_patterns=["JVP TEST PASSED"])
+    assert configured["status"] == "pass"
+    assert configured["result_state"] == "PASS"
+    assert configured["diagnostic_hints"][0]["code"] == "JVP_TEST_PASSED"
+    without_marker_contract = parse_log(log_path, pass_patterns=[])
+    assert without_marker_contract["status"] == "fail"
+    assert without_marker_contract["result_state"] == "INCOMPLETE_NO_ERROR"
+
+
+def test_jvp_test_failed_is_failure_without_configured_error_pattern(tmp_path):
+    log_path = _write_log(tmp_path, "jvp-failed.log", "JVP TEST FAILED\n")
+
+    result = parse_log(
+        log_path,
+        extra_keywords=[],
+        pass_patterns=["JVP TEST PASSED"],
+    )
+
+    assert result["status"] == "fail"
+    assert result["result_state"] == "FAIL_WITH_ERROR"
+    assert result["primary_error"] is None
+    assert result["diagnostic_hints"][0]["code"] == "JVP_TEST_FAILED"
+
+
+def test_parser_distinguishes_incomplete_log_and_collects_bounded_hints(tmp_path):
+    log_path = _write_log(
+        tmp_path,
+        "incomplete.log",
+        "sim_end_watch_dog fired\n"
+        "bus inactivity detected\n"
+        "QP not complete\n"
+        "$finish called from /tb/top.sv at simulation time 100ns\n"
+        "V C S   S i m u l a t i o n   R e p o r t\n",
+    )
+
+    result = parse_log(log_path, pass_patterns=["JVP TEST PASSED"])
+
+    assert result["status"] == "fail"
+    assert result["result_state"] == "INCOMPLETE_NO_ERROR"
+    assert result["primary_error"] is None
+    assert [item["code"] for item in result["diagnostic_hints"]] == [
+        "SIM_END_WATCHDOG",
+        "BUS_INACTIVITY",
+        "QP_NOT_COMPLETE",
+        "SIMULATION_FINISH",
+        "VCS_SIMULATION_REPORT",
+    ]
+    assert [item["line_number"] for item in result["diagnostic_hints"]] == [1, 2, 3, 4, 5]
 
 
 def test_parser_accepts_zero_error_uvm_report_summary_as_pass_evidence(tmp_path):
@@ -179,5 +226,7 @@ def test_batch_parser_isolates_unreadable_log(tmp_path):
     results = parse_logs([good_path, str(tmp_path / "missing.log")], pass_patterns=["JVP TEST PASSED"], workers=1)
     assert results[0]["status"] == "pass"
     assert results[1]["status"] == "error"
+    assert results[1]["result_state"] == "PARSE_ERROR"
+    assert results[1]["diagnostic_hints"][0]["code"] == "LOG_READ_FAILED"
     assert results[1]["simulation_time"]["source"] == "unavailable"
     assert results[1]["parse_error"]["code"] == "LOG_READ_FAILED"

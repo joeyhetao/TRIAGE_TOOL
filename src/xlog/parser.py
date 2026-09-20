@@ -68,6 +68,16 @@ _TIME_TO_FS = {
 }
 _VCS_REPORT_LOOKAHEAD_LINES = 20
 _VCS_REPORT_REQUIRED_CHARACTERS = tuple("vcsimulatnrepo")
+_MAX_DIAGNOSTIC_HINTS = 8
+_MAX_DIAGNOSTIC_TEXT = 240
+_DIAGNOSTIC_PATTERNS = (
+    ("JVP_TEST_PASSED", re.compile(r"\bJVP\s+TEST\s+PASSED\b", re.IGNORECASE)),
+    ("JVP_TEST_FAILED", re.compile(r"\bJVP\s+TEST\s+FAILED\b", re.IGNORECASE)),
+    ("SIMULATION_FINISH", re.compile(r"\$finish\b", re.IGNORECASE)),
+    ("SIM_END_WATCHDOG", re.compile(r"\bsim[_\s-]*end[_\s-]*watch[_\s-]*dog\b", re.IGNORECASE)),
+    ("BUS_INACTIVITY", re.compile(r"\bbus\s+inactivity\b", re.IGNORECASE)),
+    ("QP_NOT_COMPLETE", re.compile(r"\bQP\s+not\s+complete\b", re.IGNORECASE)),
+)
 
 
 def _build_gen_pattern(keywords):
@@ -195,12 +205,20 @@ def _error_result(filepath, error_msg):
         "filepath": str(filepath),
         "statistics": {"UVM_WARNING": 0, "UVM_ERROR": 0, "UVM_FATAL": 0},
         "status": "error",
+        "result_state": "PARSE_ERROR",
         "pass_found": False,
         "top_errors": [],
         "all_errors": [],
         "primary_error": None,
         "simulation_time": _unavailable_simulation_time(),
         "parse_error": {"code": "LOG_READ_FAILED", "message": error_msg},
+        "diagnostic_hints": [
+            {
+                "code": "LOG_READ_FAILED",
+                "line_number": None,
+                "text": str(error_msg)[:_MAX_DIAGNOSTIC_TEXT],
+            }
+        ],
         "artifact_references": None,
     }
 
@@ -228,14 +246,35 @@ def parse_log(filepath, extra_keywords=None, pass_patterns=None):
     vcs_report_lines_remaining = 0
     in_uvm_report_summary = False
     uvm_report_summary_counts = {}
+    diagnostic_hints = []
+    diagnostic_codes = set()
 
     with path.open("r", encoding="utf-8", errors="replace") as handle:
-        for raw_line in handle:
+        for line_number, raw_line in enumerate(handle, 1):
             line = raw_line.rstrip("\n")
             lower_line = line.lower()
             collect_log_references(line, artifact_references, lower_line=lower_line)
             stripped = line.strip()
             stripped_lower = stripped.lower()
+
+            if len(diagnostic_hints) < _MAX_DIAGNOSTIC_HINTS:
+                matches = list(_DIAGNOSTIC_PATTERNS)
+                if _is_vcs_report_header(line):
+                    matches.append(("VCS_SIMULATION_REPORT", None))
+                for code, pattern in matches:
+                    if code in diagnostic_codes:
+                        continue
+                    if pattern is None or pattern.search(line):
+                        diagnostic_codes.add(code)
+                        diagnostic_hints.append(
+                            {
+                                "code": code,
+                                "line_number": line_number,
+                                "text": stripped[:_MAX_DIAGNOSTIC_TEXT],
+                            }
+                        )
+                        if len(diagnostic_hints) >= _MAX_DIAGNOSTIC_HINTS:
+                            break
 
             if (
                 "uvm" in lower_line
@@ -415,17 +454,26 @@ def parse_log(filepath, extra_keywords=None, pass_patterns=None):
         for level in ("UVM_ERROR", "UVM_FATAL")
     )
     pass_found = pass_found or uvm_summary_pass
-    status = "pass" if ((not has_error and pass_found) if pass_patterns else not has_error) else "fail"
+    jvp_test_failed = "JVP_TEST_FAILED" in diagnostic_codes
+    if has_error or jvp_test_failed:
+        result_state = "FAIL_WITH_ERROR"
+    elif pass_found:
+        result_state = "PASS"
+    else:
+        result_state = "INCOMPLETE_NO_ERROR"
+    status = "pass" if result_state == "PASS" else "fail"
     return {
         "file": path.name,
         "filepath": str(path),
         "statistics": statistics,
         "status": status,
+        "result_state": result_state,
         "pass_found": pass_found,
         "top_errors": top_errors,
         "all_errors": [primary_error] if primary_error else [],
         "primary_error": primary_error,
         "simulation_time": explicit_simulation_time or max_observed_simulation_time or _unavailable_simulation_time(),
+        "diagnostic_hints": diagnostic_hints,
         "artifact_references": artifact_references,
     }
 

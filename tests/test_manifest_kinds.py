@@ -38,7 +38,7 @@ def _manifest(case, artifact_kind):
 def test_manifest_kind_fixture_exposes_preference_and_controlled_fallbacks(tmp_path):
     bundle = _scan(tmp_path)
 
-    assert bundle["schema_revision"] == "1.3"
+    assert bundle["schema_revision"] == "1.4"
     assert validate_instance(bundle, SCHEMA) is True
 
     both = _case(bundle, "both_1")

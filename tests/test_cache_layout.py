@@ -94,7 +94,7 @@ def test_cache_layout_resolves_per_case_and_shared_artifacts(tmp_path):
 
     assert validate_instance(bundle, SCHEMA) is True
     assert bundle["api_version"] == "xlog_bundle.v1"
-    assert bundle["schema_revision"] == "1.3"
+    assert bundle["schema_revision"] == "1.4"
     assert bundle["summary"]["cases_total"] == 5
     assert bundle["summary"]["cases_passed"] == 1
     assert bundle["summary"]["cases_failed"] == 4
